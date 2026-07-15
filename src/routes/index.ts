@@ -10,6 +10,9 @@ import executiveRouter from '../modules/executive/executive.routes';
 import paymentRouter from '../modules/payment/payment.routes';
 import notificationRouter from '../modules/notification/notification.routes';
 import reviewRouter from '../modules/review/review.routes';
+import accountsRouter from '../modules/accounts/accounts.routes';
+import superAdminRouter from '../modules/super-admin/super-admin.routes';
+import socketsRouter from '../modules/sockets/sockets.routes';
 
 const router = Router();
 
@@ -17,7 +20,7 @@ router.get('/health', (req, res) => {
   return successResponse(res, { status: 'ok' }, 'Health check successful');
 });
 
-// Mount master-data, auth, upload, users, customer, partner, executive, payment, notifications, and reviews routes
+// Mount master-data, auth, upload, users, customer, partner, executive, payment, notifications, reviews, accounts, super-admin, and sockets routes
 router.use('/', masterDataRouter);
 router.use('/auth', authRouter);
 router.use('/upload', uploadRouter);
@@ -28,5 +31,8 @@ router.use('/executive', executiveRouter);
 router.use('/payment', paymentRouter);
 router.use('/notifications', notificationRouter);
 router.use('/reviews', reviewRouter);
+router.use('/accounts', accountsRouter);
+router.use('/super-admin', superAdminRouter);
+router.use('/sockets', socketsRouter);
 
 export default router;

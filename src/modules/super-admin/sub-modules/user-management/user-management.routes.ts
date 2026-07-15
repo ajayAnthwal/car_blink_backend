@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import { validate } from '../../../../middlewares/validate.middleware';
+import { userStatusSchema } from './user-management.validation';
+import { UserManagementController } from './user-management.controller';
+
+const router = Router();
+
+router.get('/', UserManagementController.getAllUsers);
+router.patch('/:id/status', validate({ body: userStatusSchema }), UserManagementController.toggleUserStatus);
+
+export default router;

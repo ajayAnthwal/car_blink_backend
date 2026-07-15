@@ -30,6 +30,11 @@ const envSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  DEFAULT_COMMISSION_PERCENT: z.coerce.number().default(10),
+  ENABLE_CRON_JOBS: z.preprocess(
+    (val) => (val === 'false' || val === false ? false : true),
+    z.boolean()
+  ).default(true),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

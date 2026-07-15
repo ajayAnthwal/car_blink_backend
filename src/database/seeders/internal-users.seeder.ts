@@ -29,7 +29,7 @@ const executiveUser = {
 const accountsUser = {
   fullName: 'Test Accounts User',
   email: 'accounts@carblink.com',
-  phone: '7777777777',
+  phone: '7777700000',
   password: 'Password@123', // Hashed by userSchema pre-save hook
   role: ROLES.ACCOUNTS,
   isPhoneVerified: true,
@@ -60,7 +60,9 @@ const seedInternalUsers = async (): Promise<void> => {
       logger.info(`Executive user already exists.`);
     }
 
-    const existingAccounts = await UserModel.findOne({ email: accountsUser.email });
+    const existingAccounts = await UserModel.findOne({
+      $or: [{ email: accountsUser.email }, { phone: accountsUser.phone }],
+    });
     if (!existingAccounts) {
       await UserModel.create(accountsUser);
       logger.info(`Seeded Accounts user successfully.`);

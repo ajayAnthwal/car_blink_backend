@@ -7,6 +7,7 @@ import { pushProvider } from './providers/push.provider';
 import { NotFoundError } from '../../common/errors/NotFoundError';
 import { UnauthorizedError } from '../../common/errors/UnauthorizedError';
 import { logger } from '../../config/logger.config';
+import { emitToUser } from '../../sockets';
 
 export class NotificationService {
   /**
@@ -67,6 +68,13 @@ export class NotificationService {
       providerMessageId,
       metadata,
     });
+
+    // Real-time socket event delivery (isolated)
+    try {
+      emitToUser(userId.toString(), 'notification:new', notification.toJSON());
+    } catch (socketError: any) {
+      logger.error(`[SOCKET] Failed to push live notification to user ${userId}:`, socketError);
+    }
 
     return notification;
   }

@@ -2,6 +2,8 @@ import app from './app';
 import { env } from './config/env.config';
 import { connectDatabase } from './config/database.config';
 import { logger } from './config/logger.config';
+import { initializeCronJobs } from './jobs';
+import { initializeSocket } from './sockets';
 
 const startServer = async (): Promise<void> => {
   try {
@@ -11,6 +13,8 @@ const startServer = async (): Promise<void> => {
     // Start Express server
     const server = app.listen(env.PORT, () => {
       logger.info(`⚡️[server]: Server is running in ${env.NODE_ENV} mode on port ${env.PORT}`);
+      initializeCronJobs();
+      initializeSocket(server);
     });
 
     const gracefulShutdown = (signal: string) => {
