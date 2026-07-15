@@ -13,6 +13,7 @@ export interface IUser extends Document {
   isActive: boolean;
   profileImage?: string;
   lastLoginAt?: Date;
+  deviceTokens?: string[];
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -30,6 +31,7 @@ const userSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     profileImage: { type: String },
     lastLoginAt: { type: Date },
+    deviceTokens: { type: [String], default: [] },
   },
   {
     timestamps: true,

@@ -75,6 +75,28 @@ export class JobService {
       $set: { status: BOOKING_STATUS.IN_PROGRESS },
     });
 
+    // Notify customer that service has started
+    try {
+      const booking = await BookingModel.findById(job.bookingId);
+      if (booking) {
+        const { notificationService } = require('../../../notification/notification.service');
+        const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+        const { logger } = require('../../../../config/logger.config');
+
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.JOB_STATUS,
+          'Service Started',
+          `Your car cleaning service has been started by the partner.`,
+          { bookingId: booking._id.toString(), jobId: job._id.toString() }
+        );
+      }
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send job start notification:', notifErr);
+    }
+
     return job;
   }
 
@@ -113,6 +135,39 @@ export class JobService {
     await BookingModel.findByIdAndUpdate(job.bookingId, {
       $set: { status: BOOKING_STATUS.COMPLETED },
     });
+
+    // Notify customer that service is completed
+    try {
+      const booking = await BookingModel.findById(job.bookingId);
+      if (booking) {
+        const { notificationService } = require('../../../notification/notification.service');
+        const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+        const { logger } = require('../../../../config/logger.config');
+
+        // SMS
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.JOB_STATUS,
+          'Service Completed',
+          `Your car cleaning service is completed. Please review and pay.`,
+          { bookingId: booking._id.toString(), jobId: job._id.toString() }
+        );
+
+        // EMAIL
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.EMAIL,
+          NOTIFICATION_CATEGORY.JOB_STATUS,
+          'Service Completed',
+          `Your car cleaning service has been completed. Please log in to pay and rate the service.`,
+          { bookingId: booking._id.toString(), jobId: job._id.toString() }
+        );
+      }
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send job completion notifications:', notifErr);
+    }
 
     return job;
   }
@@ -209,6 +264,25 @@ export class JobService {
       startDate: new Date(),
       status: 'ACTIVE',
     });
+
+    // Notify customer that warranty is issued
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      const { logger } = require('../../../../config/logger.config');
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.EMAIL,
+        NOTIFICATION_CATEGORY.GENERAL,
+        'Warranty Issued',
+        `A warranty of ${data.warrantyPeriodMonths} months has been issued for your booking ${job.bookingId}.`,
+        { bookingId: job.bookingId.toString(), warrantyId: warranty._id.toString() }
+      );
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send warranty notification:', notifErr);
+    }
 
     return warranty;
   }

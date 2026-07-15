@@ -21,7 +21,11 @@ Last audited: July 15, 2026
 | **6** | Upload Module | ✅ Complete | Multer memory storage stream piping directly into Cloudinary v2 SDK. |
 | **7** | Customer Module | ✅ Complete | Garage CRUD, booking lead creation, read-only warranties, support tickets and replies, with strict service-level ownership checks and role-based access checks. |
 | **8** | Partner Module (Bidding) | ✅ Complete | Profile setup, KYC uploads, bidding flow, job execution, and earnings aggregation. |
-| **9** | Jobs (Cron) & Sockets | ⬜ Not Started | Scheduled bookings verification and real-time bid sockets notifications. |
+| **9** | Executive Module | ✅ Complete | Lead assignment, follow-up call logging, escalation tickets resolution, and customer/partner status aggregation views. |
+| **10** | Payment Module | ✅ Complete | Capture flow, advance & final payments logic, signature verification, and webhook status updates (Gateway running in MOCK mode). |
+| **11** | Notification Module | ✅ Complete | Provider-agnostic SMS, Email, and Push notification services with centralized templates and OTP retrofit (Running in MOCK mode). |
+| **12** | Review Module | ✅ Complete | Ratings and reviews for partners with automated Mongoose aggregate recomputes and SMS notifications. |
+| **13** | Jobs (Cron) & Sockets | ⬜ Not Started | Scheduled bookings verification and real-time bid sockets notifications. |
 
 ---
 
@@ -144,6 +148,7 @@ Last audited: July 15, 2026
 - **File Storage**: Cloudinary (memory storage buffers routed directly through the Cloudinary v2 SDK) in [upload.service.ts](file:///c:/Users/ajay%20anthwal/Desktop/car_blink_backend/src/modules/upload/upload.service.ts).
 - **Authentication**: JWT signing strategy for Access (15 minutes) and Refresh (7 days) tokens in [jwt.strategy.ts](file:///c:/Users/ajay%20anthwal/Desktop/car_blink_backend/src/modules/auth/strategies/jwt.strategy.ts).
 - **OTP Operations**: In-memory `Map` storage with 5-minute TTL in [otp.strategy.ts](file:///c:/Users/ajay%20anthwal/Desktop/car_blink_backend/src/modules/auth/strategies/otp.strategy.ts).
+- **Payment Gateway**: Running in MOCK mode — real Razorpay keys not yet configured (mock mode fallback implemented in [razorpay.provider.ts](file:///c:/Users/ajay%20anthwal/Desktop/car_blink_backend/src/modules/payment/providers/razorpay.provider.ts)).
 - **Seeded Data**:
   - Services: 15 categories (14 defined in `services.seeder.ts` array + 1 tested category).
   - Cities: 27 cities (all 27 defined in `cities.seeder.ts` array).
@@ -160,19 +165,29 @@ Last audited: July 15, 2026
   - `CLOUDINARY_CLOUD_NAME`
   - `CLOUDINARY_API_KEY`
   - `CLOUDINARY_API_SECRET`
+  - `RAZORPAY_KEY_ID` (optional)
+  - `RAZORPAY_KEY_SECRET` (optional)
+  - `RAZORPAY_WEBHOOK_SECRET` (optional)
+  - `TWILIO_ACCOUNT_SID` (optional)
+  - `TWILIO_AUTH_TOKEN` (optional)
+  - `TWILIO_PHONE_NUMBER` (optional)
+  - `SMTP_HOST` (optional)
+  - `SMTP_PORT` (optional)
+  - `SMTP_USER` (optional)
+  - `SMTP_PASS` (optional)
+  - `SMTP_FROM_EMAIL` (optional)
+  - `FIREBASE_PROJECT_ID` (optional)
+  - `FIREBASE_PRIVATE_KEY` (optional)
+  - `FIREBASE_CLIENT_EMAIL` (optional)
 
 ---
 
 ## 6. Not Yet Started
 The following roadmap modules are completely unimplemented:
-1. **Executive Module** (Leads, assigned jobs status).
-2. **Accounts Module** (Settlements, ledger logs).
-3. **Super-Admin Module** (Global configurations, partner validations, analytics).
-4. **Payment Module** (Gateway integration, success checks).
-5. **Notification Module** (SMS & Email alerts).
-6. **Review Module** (Review sub-modules and ratings).
-7. **Jobs (Cron)** (Stale job reviews and state transitions).
-8. **Sockets** (Real-time live updates).
+1. **Accounts Module** (Settlements, ledger logs).
+2. **Super-Admin Module** (Global configurations, partner validations, analytics).
+3. **Jobs (Cron)** (Stale job reviews and state transitions).
+4. **Sockets** (Real-time live updates).
 
 ---
 

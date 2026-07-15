@@ -15,6 +15,28 @@ const adminUser = {
   isActive: true,
 };
 
+const executiveUser = {
+  fullName: 'Test Executive User',
+  email: 'executive@carblink.com',
+  phone: '8888888888',
+  password: 'Password@123', // Hashed by userSchema pre-save hook
+  role: ROLES.EXECUTIVE,
+  isPhoneVerified: true,
+  isEmailVerified: true,
+  isActive: true,
+};
+
+const accountsUser = {
+  fullName: 'Test Accounts User',
+  email: 'accounts@carblink.com',
+  phone: '7777777777',
+  password: 'Password@123', // Hashed by userSchema pre-save hook
+  role: ROLES.ACCOUNTS,
+  isPhoneVerified: true,
+  isEmailVerified: true,
+  isActive: true,
+};
+
 const seedInternalUsers = async (): Promise<void> => {
   try {
     await connectDatabase();
@@ -27,6 +49,24 @@ const seedInternalUsers = async (): Promise<void> => {
       logger.info(`Credentials -> Email: ${adminUser.email}, Password: ${adminUser.password}`);
     } else {
       logger.info(`Super Admin user already exists.`);
+    }
+
+    const existingExecutive = await UserModel.findOne({ email: executiveUser.email });
+    if (!existingExecutive) {
+      await UserModel.create(executiveUser);
+      logger.info(`Seeded Executive user successfully.`);
+      logger.info(`Credentials -> Email: ${executiveUser.email}, Password: ${executiveUser.password}`);
+    } else {
+      logger.info(`Executive user already exists.`);
+    }
+
+    const existingAccounts = await UserModel.findOne({ email: accountsUser.email });
+    if (!existingAccounts) {
+      await UserModel.create(accountsUser);
+      logger.info(`Seeded Accounts user successfully.`);
+      logger.info(`Credentials -> Email: ${accountsUser.email}, Password: ${accountsUser.password}`);
+    } else {
+      logger.info(`Accounts user already exists.`);
     }
 
     await mongoose.disconnect();

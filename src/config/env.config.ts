@@ -16,6 +16,20 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().min(1, "CLOUDINARY_CLOUD_NAME is required"),
   CLOUDINARY_API_KEY: z.string().min(1, "CLOUDINARY_API_KEY is required"),
   CLOUDINARY_API_SECRET: z.string().min(1, "CLOUDINARY_API_SECRET is required"),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_PHONE_NUMBER: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_EMAIL: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

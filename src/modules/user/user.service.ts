@@ -62,5 +62,23 @@ export class UserService {
     }
     return { success: true };
   }
+
+  public static async registerDeviceToken(userId: string, deviceToken: string): Promise<{ success: boolean }> {
+    const user = await UserModel.findOne({ _id: userId, isActive: true });
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (!user.deviceTokens) {
+      user.deviceTokens = [];
+    }
+
+    if (!user.deviceTokens.includes(deviceToken)) {
+      user.deviceTokens.push(deviceToken);
+      await user.save();
+    }
+
+    return { success: true };
+  }
 }
 export default UserService;

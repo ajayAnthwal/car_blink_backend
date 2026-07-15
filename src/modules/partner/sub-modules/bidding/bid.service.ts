@@ -103,6 +103,25 @@ export class BidService {
       await booking.save();
     }
 
+    // Notify Customer of the new quote
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      const { logger } = require('../../../../config/logger.config');
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.BID_RECEIVED,
+        'New Quote Received',
+        `You have received a new quote of INR ${data.quotedAmount} for your booking.`,
+        { bookingId: booking._id.toString(), bidId: bid._id.toString() }
+      );
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send bid received notification:', notifErr);
+    }
+
     return bid;
   }
 

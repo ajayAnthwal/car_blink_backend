@@ -4,6 +4,7 @@ import { ServiceModel } from '../../../master-data/models/service.model';
 import { CityModel } from '../../../master-data/models/city.model';
 import { BidModel } from '../../../partner/sub-modules/bidding/bid.model';
 import { JobModel } from '../../../partner/sub-modules/jobs/job.model';
+import { PartnerModel } from '../../../partner/partner.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { UnauthorizedError } from '../../../../common/errors/UnauthorizedError';
 import { ApiError } from '../../../../common/errors/ApiError';
@@ -204,13 +205,61 @@ export class BookingService {
     await booking.save();
 
     // 5. Auto-create a Job document in NOT_STARTED status
-    await JobModel.create({
+    const job = await JobModel.create({
       bookingId: booking._id,
       partnerId: selectedBid.partnerId,
       bidId: selectedBid._id,
       status: 'NOT_STARTED',
       finalAmount: selectedBid.quotedAmount,
     });
+
+    // 6. Trigger notifications
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+
+      // A. Notify the winning partner
+      const winningPartner = await PartnerModel.findById(selectedBid.partnerId);
+      if (winningPartner) {
+        await notificationService.sendNotification(
+          winningPartner.userId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
+          'Your Quote Was Accepted!',
+          `Your quote of INR ${selectedBid.quotedAmount} for booking ${booking._id} has been accepted.`,
+          { bookingId: booking._id.toString(), jobId: job._id.toString() }
+        );
+      }
+
+      // B. Notify the customer
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.EMAIL,
+        NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
+        'Booking Quote Accepted',
+        `You have accepted the quote for booking ${booking._id}. The job will start soon.`,
+        { bookingId: booking._id.toString() }
+      );
+
+      // C. Notify rejected partners
+      const rejectedBids = await BidModel.find({ bookingId, _id: { $ne: bidId } });
+      const rejectedPartnerIds = rejectedBids.map((b) => b.partnerId);
+      const rejectedPartners = await PartnerModel.find({ _id: { $in: rejectedPartnerIds } });
+
+      for (const partner of rejectedPartners) {
+        await notificationService.sendNotification(
+          partner.userId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
+          'Quote Not Selected',
+          `Your quote for booking ${booking._id} was not selected. Keep bidding!`,
+          { bookingId: booking._id.toString() }
+        );
+      }
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send quote selection notifications:', notifErr);
+    }
 
     return booking;
   }

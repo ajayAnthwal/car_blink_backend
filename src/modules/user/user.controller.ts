@@ -29,5 +29,12 @@ export class UserController {
     const result = await UserService.deactivateOwnAccount(String(userId));
     return successResponse(res, result, 'Account deactivated successfully');
   });
+
+  public static registerDeviceToken = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { deviceToken } = req.body;
+    const result = await UserService.registerDeviceToken(String(userId), deviceToken);
+    return successResponse(res, result, 'Device token registered successfully');
+  });
 }
 export default UserController;

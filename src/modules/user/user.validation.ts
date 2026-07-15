@@ -34,4 +34,9 @@ export const changePasswordSchema = z
     message: 'New passwords do not match',
     path: ['confirmNewPassword'],
   });
+
+export const deviceTokenSchema = z.object({
+  deviceToken: z.string().min(1, 'Device token is required'),
+});
+
 export default passwordSchema;
