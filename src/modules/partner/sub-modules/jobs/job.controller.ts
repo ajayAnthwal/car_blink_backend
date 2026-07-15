@@ -1,0 +1,51 @@
+import { Response } from 'express';
+import { JobService } from './job.service';
+import { successResponse } from '../../../../common/utils/apiResponse.util';
+import { asyncHandler } from '../../../../common/utils/asyncHandler.util';
+import { IRequest } from '../../../../common/interfaces/IRequest';
+
+export class JobController {
+  public static getMyJobs = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const result = await JobService.getMyJobs(String(userId), req.query);
+    return successResponse(res, result, 'My jobs retrieved successfully');
+  });
+
+  public static startJob = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const job = await JobService.startJob(String(userId), id);
+    return successResponse(res, job, 'Job started successfully');
+  });
+
+  public static completeJob = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const job = await JobService.completeJob(String(userId), id, req.body);
+    return successResponse(res, job, 'Job completed successfully');
+  });
+
+  public static uploadInvoice = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { invoiceUrl } = req.body;
+    const job = await JobService.uploadJobInvoice(String(userId), id, invoiceUrl);
+    return successResponse(res, job, 'Invoice uploaded successfully');
+  });
+
+  public static uploadPhotos = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { photos, type } = req.body; // type: 'before' | 'after'
+    const job = await JobService.uploadJobPhotos(String(userId), id, photos, type);
+    return successResponse(res, job, 'Job photos uploaded and synced successfully');
+  });
+
+  public static uploadWarranty = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const warranty = await JobService.uploadJobWarranty(String(userId), id, req.body);
+    return successResponse(res, warranty, 'Warranty issued successfully for completed job', 201);
+  });
+}
+export default JobController;

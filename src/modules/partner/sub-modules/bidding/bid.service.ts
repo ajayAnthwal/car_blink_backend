@@ -1,0 +1,173 @@
+import { BidModel, IBid } from './bid.model';
+import { PartnerModel } from '../../partner.model';
+import { BookingModel, IBooking } from '../../../customer/sub-modules/booking/booking.model';
+import { NotFoundError } from '../../../../common/errors/NotFoundError';
+import { UnauthorizedError } from '../../../../common/errors/UnauthorizedError';
+import { ConflictError } from '../../../../common/errors/ConflictError';
+import { ApiError } from '../../../../common/errors/ApiError';
+import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
+import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
+
+export class BidService {
+  public static async getAvailableLeads(
+    userId: string,
+    query: { page?: string; limit?: string }
+  ): Promise<{ bookings: IBooking[]; total: number; page: number; limit: number }> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) {
+      throw new NotFoundError('Partner profile not found');
+    }
+
+    const page = Math.max(1, parseInt(query.page || '1', 10));
+    const limit = Math.max(1, parseInt(query.limit || '10', 10));
+    const skip = (page - 1) * limit;
+
+    // Find bookings that this partner has already bid on
+    const partnerBids = await BidModel.find({ partnerId: partner._id }).select('bookingId');
+    const biddedBookingIds = partnerBids.map((b) => b.bookingId);
+
+    // Bookings must:
+    // - Be in PENDING status
+    // - Match the partner's city
+    // - Be one of the services the partner offers
+    // - NOT be already bidded on by this partner
+    const filter = {
+      status: BOOKING_STATUS.PENDING,
+      cityId: partner.cityId,
+      serviceId: { $in: partner.servicesOffered },
+      _id: { $nin: biddedBookingIds },
+    };
+
+    const [bookings, total] = await Promise.all([
+      BookingModel.find(filter)
+        .populate('vehicleId')
+        .populate('serviceId')
+        .populate('cityId')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      BookingModel.countDocuments(filter),
+    ]);
+
+    return { bookings, total, page, limit };
+  }
+
+  public static async placeBid(
+    userId: string,
+    data: { bookingId: string; quotedAmount: number; estimatedDuration?: string; notes?: string }
+  ): Promise<IBid> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) {
+      throw new NotFoundError('Partner profile not found');
+    }
+
+    // 1. Verify booking exists and status is PENDING or QUOTED (leads can still receive bids if already quoted by someone else)
+    const booking = await BookingModel.findById(data.bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking lead not found');
+    }
+
+    if (
+      booking.status !== BOOKING_STATUS.PENDING &&
+      booking.status !== BOOKING_STATUS.QUOTED
+    ) {
+      throw new ApiError(
+        400,
+        `Cannot bid on booking in ${booking.status} status`,
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
+    // 2. Verify duplicate check
+    const existingBid = await BidModel.findOne({
+      bookingId: data.bookingId,
+      partnerId: partner._id,
+    });
+    if (existingBid) {
+      throw new ConflictError('You have already placed a bid on this booking');
+    }
+
+    // 3. Create Bid
+    const bid = await BidModel.create({
+      bookingId: data.bookingId,
+      partnerId: partner._id,
+      quotedAmount: data.quotedAmount,
+      estimatedDuration: data.estimatedDuration,
+      notes: data.notes,
+      status: 'PENDING',
+    });
+
+    // 4. Update Booking status to QUOTED if it was still PENDING
+    if (booking.status === BOOKING_STATUS.PENDING) {
+      booking.status = BOOKING_STATUS.QUOTED;
+      await booking.save();
+    }
+
+    return bid;
+  }
+
+  public static async getMyBids(
+    userId: string,
+    query: { status?: string; page?: string; limit?: string }
+  ): Promise<{ bids: IBid[]; total: number; page: number; limit: number }> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) {
+      throw new NotFoundError('Partner profile not found');
+    }
+
+    const page = Math.max(1, parseInt(query.page || '1', 10));
+    const limit = Math.max(1, parseInt(query.limit || '10', 10));
+    const skip = (page - 1) * limit;
+
+    const filter: any = { partnerId: partner._id };
+    if (query.status) {
+      filter.status = query.status;
+    }
+
+    const [bids, total] = await Promise.all([
+      BidModel.find(filter)
+        .populate({
+          path: 'bookingId',
+          populate: [
+            { path: 'vehicleId' },
+            { path: 'serviceId' },
+            { path: 'cityId' }
+          ],
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      BidModel.countDocuments(filter),
+    ]);
+
+    return { bids, total, page, limit };
+  }
+
+  public static async withdrawBid(userId: string, bidId: string): Promise<IBid> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) {
+      throw new NotFoundError('Partner profile not found');
+    }
+
+    const bid = await BidModel.findById(bidId);
+    if (!bid) {
+      throw new NotFoundError('Bid not found');
+    }
+
+    if (bid.partnerId.toString() !== partner._id.toString()) {
+      throw new UnauthorizedError('You are not authorized to withdraw this bid');
+    }
+
+    if (bid.status !== 'PENDING') {
+      throw new ApiError(
+        400,
+        `Cannot withdraw bid in ${bid.status} status`,
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
+    bid.status = 'WITHDRAWN';
+    return bid.save();
+  }
+}
+export default BidService;
