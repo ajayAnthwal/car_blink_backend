@@ -37,6 +37,28 @@ const accountsUser = {
   isActive: true,
 };
 
+const customerUser = {
+  fullName: 'Test Customer User',
+  email: 'customer@carblink.com',
+  phone: '6666600000',
+  password: 'Password@123', // Hashed by userSchema pre-save hook
+  role: ROLES.CUSTOMER,
+  isPhoneVerified: true,
+  isEmailVerified: true,
+  isActive: true,
+};
+
+const partnerUser = {
+  fullName: 'Test Partner User',
+  email: 'partner@carblink.com',
+  phone: '5555500000',
+  password: 'Password@123', // Hashed by userSchema pre-save hook
+  role: ROLES.PARTNER,
+  isPhoneVerified: true,
+  isEmailVerified: true,
+  isActive: true,
+};
+
 const seedInternalUsers = async (): Promise<void> => {
   try {
     await connectDatabase();
@@ -69,6 +91,24 @@ const seedInternalUsers = async (): Promise<void> => {
       logger.info(`Credentials -> Email: ${accountsUser.email}, Password: ${accountsUser.password}`);
     } else {
       logger.info(`Accounts user already exists.`);
+    }
+
+    const existingCustomer = await UserModel.findOne({ email: customerUser.email });
+    if (!existingCustomer) {
+      await UserModel.create(customerUser);
+      logger.info(`Seeded Customer user successfully.`);
+      logger.info(`Credentials -> Email: ${customerUser.email}, Password: ${customerUser.password}`);
+    } else {
+      logger.info(`Customer user already exists.`);
+    }
+
+    const existingPartner = await UserModel.findOne({ email: partnerUser.email });
+    if (!existingPartner) {
+      await UserModel.create(partnerUser);
+      logger.info(`Seeded Partner user successfully.`);
+      logger.info(`Credentials -> Email: ${partnerUser.email}, Password: ${partnerUser.password}`);
+    } else {
+      logger.info(`Partner user already exists.`);
     }
 
     await mongoose.disconnect();

@@ -10,6 +10,7 @@ import financeSummaryRouter from './sub-modules/finance-summary/finance-summary.
 import commissionRouter from './sub-modules/commission/commission.routes';
 import userManagementRouter from './sub-modules/user-management/user-management.routes';
 import reportsHistoryRouter from './sub-modules/reports-history/reports-history.routes';
+import vehiclesRouter from './sub-modules/vehicles/vehicles.routes';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/finance-summary', financeSummaryRouter);
 router.use('/commission', commissionRouter);
 router.use('/users', userManagementRouter);
 router.use('/reports/history', reportsHistoryRouter);
+router.use('/vehicles', vehiclesRouter);
 
 export default router;

@@ -37,11 +37,11 @@ export class BookingService {
       throw new NotFoundError('Service category not found or inactive');
     }
 
-    // 3. Verify city exists
-    const city = await CityModel.findOne({ _id: data.cityId, isActive: true });
-    if (!city) {
-      throw new NotFoundError('City not found or inactive');
-    }
+    // 3. Verify city exists (Bypassed for frontend custom package locations)
+    // const city = await CityModel.findOne({ _id: data.cityId, isActive: true });
+    // if (!city) {
+    //   throw new NotFoundError('City not found or inactive');
+    // }
 
     // 4. Create booking
     const booking = await BookingModel.create({

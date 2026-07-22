@@ -261,6 +261,349 @@ This module provides operational reference data: cities, services, and vehicle c
 
 ---
 
+# Customer API Reference
+
+## Base API path
+- `http://localhost:8000/api`
+
+## Authentication (Customer)
+
+### POST /api/auth/register
+- Request body:
+  ```json
+  {
+    "fullName": "Test Customer",
+    "email": "customer@example.com",
+    "phone": "9998887776",
+    "password": "Password@123",
+    "role": "CUSTOMER"
+  }
+  ```
+- Response: registered user object + OTP sent message
+
+### POST /api/auth/verify-otp
+- Request body:
+  ```json
+  {
+    "identifier": "customer@example.com",
+    "otp": "123456"
+  }
+  ```
+- Response: user object + `accessToken` + `refreshToken`
+
+### POST /api/auth/login
+- Request body:
+  ```json
+  {
+    "identifier": "customer@example.com",
+    "password": "Password@123"
+  }
+  ```
+- Response: user object + `accessToken` + `refreshToken`
+
+### POST /api/auth/refresh-token
+- Request body:
+  ```json
+  {
+    "refreshToken": "<refresh-token>"
+  }
+  ```
+- Response: new `accessToken`
+
+### POST /api/auth/logout
+- Auth required
+- Response: success
+
+---
+
+# Customer Module APIs
+
+> These routes require authentication and `ROLES.CUSTOMER`.
+
+## Garage
+
+### POST /api/customer/garage
+- Request body:
+  ```json
+  {
+    "brand": "Toyota",
+    "model": "Innova",
+    "registrationNumber": "MH12AB1234",
+    "fuelType": "PETROL",
+    "year": 2020
+  }
+  ```
+- Response: created vehicle object
+
+### GET /api/customer/garage
+- Response: list of customer vehicles
+
+### PATCH /api/customer/garage/:id
+- Request body: any updatable vehicle fields
+- Response: updated vehicle object
+
+### DELETE /api/customer/garage/:id
+- Response: deletion result
+
+## Bookings
+
+### POST /api/customer/bookings
+- Request body:
+  ```json
+  {
+    "vehicleId": "<vehicleObjectId>",
+    "serviceId": "<serviceObjectId>",
+    "cityId": "<cityObjectId>",
+    "description": "Car service needed",
+    "preferredDate": "2026-07-20T10:00:00.000Z"
+  }
+  ```
+- Response: created booking object
+
+### GET /api/customer/bookings
+- Response: customer booking list
+
+### GET /api/customer/bookings/:id
+- Response: booking details
+
+### PATCH /api/customer/bookings/:id/cancel
+- Request body:
+  ```json
+  {
+    "reason": "No longer needed"
+  }
+  ```
+- Response: cancelled booking object
+
+### GET /api/customer/bookings/:id/quotes
+- Response: list of quotes for the booking
+
+### POST /api/customer/bookings/:id/select-quote
+- Request body:
+  ```json
+  {
+    "bidId": "<bidObjectId>"
+  }
+  ```
+- Response: booking object with selected quote
+
+## Warranties
+
+### GET /api/customer/warranties
+- Response: warranty list
+
+### GET /api/customer/warranties/:id
+- Response: warranty details
+
+## Support tickets
+
+### POST /api/customer/support-tickets
+- Request body:
+  ```json
+  {
+    "bookingId": "<bookingObjectId>",
+    "subject": "Issue with service",
+    "description": "My car was not serviced properly",
+    "priority": "HIGH"
+  }
+  ```
+- Response: created ticket object
+
+### GET /api/customer/support-tickets
+- Response: customer support ticket list
+
+### GET /api/customer/support-tickets/:id
+- Response: ticket details
+
+### POST /api/customer/support-tickets/:id/reply
+- Request body:
+  ```json
+  {
+    "message": "Please update the status"
+  }
+  ```
+- Response: ticket updated with reply
+
+---
+
+# Customer Payment APIs
+
+> These routes require authentication and `ROLES.CUSTOMER`.
+
+### POST /api/payment/initiate
+- Request body:
+  ```json
+  {
+    "bookingId": "<bookingObjectId>",
+    "amount": 1200,
+    "paymentType": "ADVANCE"
+  }
+  ```
+- Response: payment initiation details
+
+### POST /api/payment/verify
+- Request body:
+  ```json
+  {
+    "paymentId": "<razorpayPaymentId>",
+    "orderId": "<razorpayOrderId>",
+    "signature": "<razorpaySignature>"
+  }
+  ```
+- Response: payment verification result
+
+### GET /api/payment/history
+- Response: payment history
+
+### GET /api/payment/:id
+- Response: payment details
+
+### POST /api/payment/webhook
+- Public route
+- Header: `x-razorpay-signature`
+- Body: Razorpay webhook payload
+- Response: webhook processed
+
+---
+
+# Customer Review APIs
+
+> These routes require authentication and `ROLES.CUSTOMER`, except partner review list.
+
+### POST /api/reviews
+- Request body:
+  ```json
+  {
+    "bookingId": "<bookingObjectId>",
+    "rating": 5,
+    "comment": "Great service"
+  }
+  ```
+- Response: created review
+
+### GET /api/reviews/my-reviews
+- Response: reviews submitted by the current customer
+
+### GET /api/reviews/can-review/:bookingId
+- Response: eligibility check
+
+### GET /api/reviews/partner/:partnerId
+- Response: reviews for the partner
+
+---
+
+# Role-wise responsibilities and sidebar links
+
+## 1. CUSTOMER
+Kaam:
+- Apni garage mein vehicles add/update/delete karna
+- Service bookings karna, booking cancel karna
+- Booking ke quotes dekhna aur quote select karna
+- Warranty details dekhna
+- Support ticket raise karna aur uska reply dekhna
+- Payment initiate/verify karna
+- Apni reviews dekhna / review submit karna
+
+Frontend sidebar/nav items:
+- Dashboard / Home
+- My Garage
+- My Bookings
+- Warranties
+- Support Tickets
+- Payments
+- My Reviews
+- Profile / Account
+
+## 2. PARTNER
+Kaam:
+- Partner profile banaye / dekhe / update kare
+- KYC document upload kare aur status dekhe
+- Available leads dekhe
+- Bids place kare, apne bids dekhe, withdraw kare
+- Assigned jobs dekhe
+- Job start / complete kare
+- Job invoices/photos upload kare
+- Warranty submit kare
+- Earnings aur earning summary dekhe
+
+Frontend sidebar/nav items:
+- Dashboard / Home
+- My Profile
+- KYC
+- Leads
+- My Bids
+- My Jobs
+- Upload Invoice / Photos
+- Warranty
+- Earnings
+- Earnings Summary
+
+## 3. EXECUTIVE
+Kaam:
+- Leads dekhe aur partner assign kare
+- Follow-up calls log kare aur pending follow-ups dekhe
+- Escalations raise kare, assign kare aur resolve kare
+- Customer aur partner status overview dekhe
+
+Frontend sidebar/nav items:
+- Dashboard / Home
+- Leads
+- Follow-up Calls
+- Pending Follow-ups
+- Escalations
+- Customer Status
+- Partner Status
+- Profile / Account
+
+## 4. ACCOUNTS
+Kaam:
+- Refund operations handle kare
+- Settlements manage kare
+- Financial reports dekhe
+
+Frontend sidebar/nav items:
+- Dashboard / Home
+- Refunds
+- Settlements
+- Reports
+- Profile / Account
+
+## 5. SUPER_ADMIN
+Kaam:
+- Poore platform ka high-level control aur reporting
+- Revenue analytics dekhna
+- Aaj ke leads dekhnna
+- Growth metrics dekhna
+- Marketing metrics dekhna
+- Finance summary dekhna
+- Commission settings dekhna
+- User management (admin/users)
+- Historical reports dekhna
+
+Frontend sidebar/nav items:
+- Dashboard / Home
+- Revenue
+- Leads Today
+- Growth
+- Marketing
+- Finance Summary
+- Commission
+- User Management
+- Reports History
+- Profile / Account
+
+## Response format
+Successful responses use:
+```json
+{
+  "success": true,
+  "message": "string",
+  "data": { ... }
+}
+```
+
+---
+
 ## 7. Delete Service Category (Logical Deactivation)
 
 **Method & Path:** `DELETE /api/services/:id`
