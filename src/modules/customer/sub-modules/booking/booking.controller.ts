@@ -46,5 +46,20 @@ export class BookingController {
     const booking = await BookingService.selectQuote(String(customerId), id, bidId);
     return successResponse(res, booking, 'Quote selected successfully');
   });
+
+  public static respondToExtension = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = req.user?.userId;
+    const { id, extId } = req.params;
+    const { status } = req.body; // 'APPROVED' | 'REJECTED'
+    const job = await BookingService.respondToExtension(String(customerId), id, extId, status);
+    return successResponse(res, job, 'Extension responded successfully');
+  });
+
+  public static getTracking = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = req.user?.userId;
+    const { id } = req.params;
+    const logistics = await BookingService.getTracking(String(customerId), id);
+    return successResponse(res, logistics, 'Tracking retrieved successfully');
+  });
 }
 export default BookingController;

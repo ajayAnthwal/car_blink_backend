@@ -11,4 +11,8 @@ router.get('/', SettlementController.getAllSettlements);
 router.patch('/:id/process', validate({ body: processSettlementSchema }), SettlementController.processSettlement);
 router.get('/partner/:partnerId', SettlementController.getPartnerSettlementHistory);
 
+import multer from 'multer';
+const upload = multer({ storage: multer.memoryStorage() });
+router.post('/reconciliation', upload.single('file'), SettlementController.uploadReconciliationCsv);
+
 export default router;

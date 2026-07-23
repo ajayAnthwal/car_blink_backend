@@ -11,6 +11,7 @@ export interface IUser extends Document {
   isPhoneVerified: boolean;
   isEmailVerified: boolean;
   isActive: boolean;
+  customRoleId?: Schema.Types.ObjectId;
   profileImage?: string;
   lastLoginAt?: Date;
   deviceTokens?: string[];
@@ -30,6 +31,7 @@ const userSchema = new Schema<IUser>(
     isEmailVerified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     profileImage: { type: String },
+    customRoleId: { type: Schema.Types.ObjectId, ref: 'CustomRole' },
     lastLoginAt: { type: Date },
     deviceTokens: { type: [String], default: [] },
   },

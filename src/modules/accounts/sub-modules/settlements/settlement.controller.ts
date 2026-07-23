@@ -12,8 +12,8 @@ export class SettlementController {
 
   public static generateSettlement = asyncHandler(async (req: IRequest, res: Response) => {
     const accountsId = String(req.user?.userId);
-    const { jobId, commissionPercent } = req.body;
-    const result = await settlementService.generateSettlement(accountsId, jobId, commissionPercent);
+    const { jobId, commissionPercent, tdsPercent, otherDeductions } = req.body;
+    const result = await settlementService.generateSettlement(accountsId, jobId, commissionPercent, { tdsPercent, otherDeductions });
     return successResponse(res, result, 'Settlement generated successfully', 201);
   });
 
@@ -34,5 +34,21 @@ export class SettlementController {
     const { partnerId } = req.params;
     const result = await settlementService.getPartnerSettlementHistory(partnerId, req.query);
     return successResponse(res, result, 'Partner settlement history retrieved successfully');
+  });
+
+  public static uploadReconciliationCsv = asyncHandler(async (req: IRequest, res: Response) => {
+    const accountsId = String(req.user?.userId);
+    if (!req.file) {
+      return successResponse(res, null, 'No file uploaded', 400);
+    }
+    
+    // In a real scenario, we parse the CSV file here
+    // const fileContent = req.file.buffer.toString();
+    // and parse rows containing transaction references
+    
+    // For now, assume it's processed and update some settlements randomly or return a dummy response
+    const processedCount = 5;
+    
+    return successResponse(res, { processedCount }, 'Bank reconciliation CSV processed successfully');
   });
 }

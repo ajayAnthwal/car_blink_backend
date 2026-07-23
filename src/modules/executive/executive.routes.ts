@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import logisticsRouter from './sub-modules/logistics/logistics.routes';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/role.middleware';
 import { ROLES } from '../../common/constants/roles.constant';
@@ -38,5 +39,10 @@ router.patch('/escalations/:id/resolve', validate({ body: updateEscalationSchema
 // SUB-MODULE 4: Status Tracking (Top-Level views)
 router.get('/customer-status', ExecutiveController.getCustomerStatusOverview);
 router.get('/partner-status', ExecutiveController.getPartnerStatusOverview);
+
+// SUB-MODULE 5: Communications
+router.post('/call', ExecutiveController.clickToCall);
+
+router.use("/logistics", logisticsRouter);
 
 export default router;

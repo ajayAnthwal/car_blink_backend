@@ -11,6 +11,8 @@ export interface IEscalation extends Document {
   status: ESCALATION_STATUS;
   description: string;
   resolutionNotes?: string;
+  slaBreachAt?: Date;
+  isSlaBreached: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -59,6 +61,13 @@ const EscalationSchema = new Schema<IEscalation>(
     resolutionNotes: {
       type: String,
       trim: true,
+    },
+    slaBreachAt: {
+      type: Date,
+    },
+    isSlaBreached: {
+      type: Boolean,
+      default: false,
     },
   },
   {

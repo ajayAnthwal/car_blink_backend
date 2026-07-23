@@ -22,5 +22,11 @@ export class PartnerController {
     const partner = await PartnerService.updatePartnerProfile(String(userId), req.body);
     return successResponse(res, partner, 'Partner profile updated successfully');
   });
+
+  public static updateCapacity = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const partner = await PartnerService.updateCapacity(String(userId), req.body);
+    return successResponse(res, partner, 'Partner capacity updated successfully');
+  });
 }
 export default PartnerController;

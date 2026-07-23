@@ -5,6 +5,8 @@ export interface ISettlement extends Document {
   jobId: mongoose.Types.ObjectId;
   grossAmount: number;
   platformCommission: number;
+  tdsAmount: number;
+  otherDeductions: number;
   netPayoutAmount: number;
   status: 'PENDING' | 'PROCESSED' | 'FAILED';
   processedByAccountsId?: mongoose.Types.ObjectId;
@@ -34,6 +36,14 @@ const SettlementSchema = new Schema<ISettlement>(
     platformCommission: {
       type: Number,
       required: [true, 'Platform commission is required'],
+    },
+    tdsAmount: {
+      type: Number,
+      default: 0,
+    },
+    otherDeductions: {
+      type: Number,
+      default: 0,
     },
     netPayoutAmount: {
       type: Number,

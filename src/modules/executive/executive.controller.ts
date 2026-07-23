@@ -14,4 +14,19 @@ export class ExecutiveController {
     const overview = await executiveService.getPartnerStatusOverview(req.query);
     return successResponse(res, overview, 'Partner status overview retrieved successfully');
   });
+
+  public static clickToCall = asyncHandler(async (req: IRequest, res: Response) => {
+    const { targetUserId, phoneNumber } = req.body;
+    
+    // In a real application, you would integrate with Exotel, Twilio, etc here.
+    // For now, this is a dummy integration.
+    
+    console.log(`[TELEPHONY] Executive ${req.user?.userId} initiated a call to ${phoneNumber || targetUserId}`);
+    
+    return successResponse(res, {
+      status: 'INITIATED',
+      callId: `CALL-${Date.now()}`,
+      message: 'Call has been initiated. Waiting for connection.'
+    }, 'Call initiated successfully');
+  });
 }

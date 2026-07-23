@@ -12,6 +12,8 @@ export interface IPartner extends Document {
   rejectionReason?: string;
   rating: number;
   totalReviews: number;
+  dailyCapacity: number;
+  blockedDates: Date[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +74,14 @@ const PartnerSchema = new Schema<IPartner>(
     totalReviews: {
       type: Number,
       default: 0,
+    },
+    dailyCapacity: {
+      type: Number,
+      default: 5,
+    },
+    blockedDates: {
+      type: [Date],
+      default: [],
     },
   },
   {

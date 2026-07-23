@@ -10,6 +10,13 @@ export interface IJob extends Document {
   invoiceUrl?: string;
   beforePhotos: string[];
   afterPhotos: string[];
+  jobExtensions: {
+    _id?: mongoose.Types.ObjectId;
+    partName: string;
+    cost: number;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  }[];
+  staffId?: mongoose.Types.ObjectId;
   finalAmount?: number;
   createdAt: Date;
   updatedAt: Date;
@@ -56,6 +63,18 @@ const JobSchema = new Schema<IJob>(
     afterPhotos: {
       type: [String],
       default: [],
+    },
+    jobExtensions: [
+      {
+        partName: { type: String, required: true },
+        cost: { type: Number, required: true },
+        status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' }
+      }
+    ],
+    staffId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Staff',
+      default: null
     },
     finalAmount: {
       type: Number,

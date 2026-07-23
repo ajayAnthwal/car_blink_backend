@@ -284,7 +284,69 @@ export class JobService {
       logger.warn('Failed to send warranty notification:', notifErr);
     }
 
-    return warranty;
+  }
+
+  public static async requestJobExtension(
+    userId: string,
+    jobId: string,
+    data: { partName: string; cost: number }
+  ): Promise<IJob> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) throw new NotFoundError('Partner profile not found');
+
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new NotFoundError('Job not found');
+    if (job.partnerId.toString() !== partner._id.toString()) {
+      throw new UnauthorizedError('Not authorized');
+    }
+
+    job.jobExtensions.push({
+      partName: data.partName,
+      cost: data.cost,
+      status: 'PENDING'
+    });
+
+    await job.save();
+
+    // Notify customer about extension request
+    try {
+      const booking = await BookingModel.findById(job.bookingId);
+      if (booking) {
+        const { notificationService } = require('../../../notification/notification.service');
+        const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.EMAIL,
+          NOTIFICATION_CATEGORY.GENERAL,
+          'Approval Needed for Extra Part',
+          `The garage has requested an extension for part: ${data.partName} costing ${data.cost}. Please approve or reject.`,
+          { bookingId: booking._id.toString() }
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to send extension notification', e);
+    }
+
+    return job;
+  }
+
+  public static async assignStaff(
+    userId: string,
+    jobId: string,
+    staffId: string
+  ): Promise<IJob> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) throw new NotFoundError('Partner profile not found');
+
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new NotFoundError('Job not found');
+    if (job.partnerId.toString() !== partner._id.toString()) {
+      throw new UnauthorizedError('Not authorized');
+    }
+
+    // Assign staff
+    job.staffId = staffId as any;
+    return job.save();
   }
 }
 export default JobService;

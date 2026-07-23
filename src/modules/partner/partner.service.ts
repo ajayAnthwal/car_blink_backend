@@ -61,5 +61,23 @@ export class PartnerService {
 
     return partner;
   }
+  public static async updateCapacity(
+    userId: string,
+    data: { dailyCapacity?: number; blockedDates?: string[] }
+  ): Promise<IPartner> {
+    const updateData: any = {};
+    if (data.dailyCapacity !== undefined) updateData.dailyCapacity = data.dailyCapacity;
+    if (data.blockedDates !== undefined) {
+      updateData.blockedDates = data.blockedDates.map(d => new Date(d));
+    }
+
+    const partner = await PartnerModel.findOneAndUpdate(
+      { userId },
+      { $set: updateData },
+      { new: true }
+    );
+    if (!partner) throw new NotFoundError('Partner profile not found');
+    return partner;
+  }
 }
 export default PartnerService;

@@ -62,7 +62,8 @@ export class SettlementService {
   async generateSettlement(
     accountsId: string,
     jobId: string,
-    commissionPercent: number
+    commissionPercent: number,
+    deductions: { tdsPercent?: number; otherDeductions?: number } = {}
   ): Promise<ISettlement> {
     // 1. Check if already settled
     const existing = await SettlementModel.findOne({ jobId });
@@ -109,7 +110,13 @@ export class SettlementService {
     // 4. Compute amounts
     const grossAmount = job.finalAmount ?? 0;
     const platformCommission = grossAmount * (commissionPercent / 100);
-    const netPayoutAmount = grossAmount - platformCommission;
+    const amountAfterCommission = grossAmount - platformCommission;
+    
+    // Calculate TDS (usually on gross or amountAfterCommission, assuming on gross for now)
+    const tdsAmount = grossAmount * ((deductions.tdsPercent || 0) / 100);
+    const otherDeductions = deductions.otherDeductions || 0;
+    
+    const netPayoutAmount = amountAfterCommission - tdsAmount - otherDeductions;
 
     // 5. Create Settlement
     const settlement = await SettlementModel.create({
@@ -117,6 +124,8 @@ export class SettlementService {
       jobId,
       grossAmount,
       platformCommission: Number(platformCommission.toFixed(2)),
+      tdsAmount: Number(tdsAmount.toFixed(2)),
+      otherDeductions: Number(otherDeductions.toFixed(2)),
       netPayoutAmount: Number(netPayoutAmount.toFixed(2)),
       status: 'PENDING',
       processedByAccountsId: accountsId,

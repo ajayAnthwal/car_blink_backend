@@ -118,6 +118,37 @@ export class AssignmentService {
       if (!partner.isVerified) {
         throw new BadRequestError('Partner is not verified');
       }
+
+      // Slot & Capacity Enforcement
+      const checkDate = booking.preferredDate || new Date();
+      checkDate.setHours(0, 0, 0, 0);
+
+      // Check blocked dates
+      const isBlocked = partner.blockedDates?.some((blockedDate: Date) => {
+        const bd = new Date(blockedDate);
+        bd.setHours(0, 0, 0, 0);
+        return bd.getTime() === checkDate.getTime();
+      });
+
+      if (isBlocked) {
+        throw new BadRequestError(`Partner is blocked for date: ${checkDate.toDateString()}`);
+      }
+
+      // Check daily capacity by counting active jobs or accepted bookings for this partner on that day
+      const startOfDay = new Date(checkDate);
+      const endOfDay = new Date(checkDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const { default: Job } = require('../../../partner/sub-modules/jobs/job.model');
+      const activeJobsCount = await Job.countDocuments({
+        partnerId,
+        createdAt: { $gte: startOfDay, $lte: endOfDay },
+        status: { $in: ['NOT_STARTED', 'IN_PROGRESS'] }
+      });
+
+      if (activeJobsCount >= (partner.dailyCapacity || 5)) {
+        throw new BadRequestError('Partner has reached maximum daily capacity for this date');
+      }
     }
 
     const assignment = await AssignmentModel.findOneAndUpdate(

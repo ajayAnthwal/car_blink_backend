@@ -47,5 +47,20 @@ export class JobController {
     const warranty = await JobService.uploadJobWarranty(String(userId), id, req.body);
     return successResponse(res, warranty, 'Warranty issued successfully for completed job', 201);
   });
+  public static requestExtension = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { partName, cost } = req.body;
+    const job = await JobService.requestJobExtension(String(userId), id, { partName, cost });
+    return successResponse(res, job, 'Job extension requested successfully');
+  });
+
+  public static assignStaff = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { staffId } = req.body;
+    const job = await JobService.assignStaff(String(userId), id, staffId);
+    return successResponse(res, job, 'Staff assigned successfully');
+  });
 }
 export default JobController;

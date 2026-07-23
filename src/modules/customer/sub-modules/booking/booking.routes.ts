@@ -10,6 +10,19 @@ router.get('/', BookingController.getMyBookings);
 router.get('/:id', BookingController.getBookingById);
 router.patch('/:id/cancel', validate({ body: cancelBookingSchema }), BookingController.cancelBooking);
 router.get('/:id/quotes', BookingController.getQuotes);
-router.post('/:id/select-quote', validate({ body: selectQuoteSchema }), BookingController.selectQuote);
+router.patch(
+  '/:id/quotes',
+  validate({ body: selectQuoteSchema }),
+  BookingController.selectQuote
+);
+
+// Respond to job extension
+router.patch(
+  '/:id/extensions/:extId',
+  BookingController.respondToExtension
+);
+
+// Get tracking info
+router.get('/:id/tracking', BookingController.getTracking);
 
 export default router;

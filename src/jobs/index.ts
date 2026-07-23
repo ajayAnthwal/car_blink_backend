@@ -4,6 +4,7 @@ import { logger } from '../config/logger.config';
 import { runSettlementCron } from './settlement.cron';
 import { runReminderCron } from './reminder.cron';
 import { runReportGeneratorCron } from './reportGenerator.cron';
+import { runSlaCron } from './sla.cron';
 
 /**
  * Initialize all background cron jobs and register schedules.
@@ -43,6 +44,15 @@ export function initializeCronJobs(): void {
     );
   });
   logger.info('[CRON] Registered Daily Report Generator Job schedule: 0 0 * * *');
+
+  // 4. SLA Breach Cron Job: Every 15 minutes
+  cron.schedule('*/15 * * * *', () => {
+    logger.info('[CRON] Firing scheduled SLA Breach Job (*/15 * * * *)...');
+    runSlaCron().catch((err) =>
+      logger.error(`[CRON] SLA Breach Job execution failed: ${err.message}`)
+    );
+  });
+  logger.info('[CRON] Registered SLA Breach Job schedule: */15 * * * *');
 
   logger.info('[CRON] All background cron jobs registered successfully.');
 }

@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/role.middleware';
+import inventoryRouter from "./sub-modules/inventory/inventory.routes";
+import staffRouter from "./sub-modules/staff/staff.routes";
+import posRouter from "./sub-modules/pos/pos.routes";
 import { validate } from '../../middlewares/validate.middleware';
 import { ROLES } from '../../common/constants/roles.constant';
 
@@ -22,6 +25,7 @@ router.use(roleMiddleware([ROLES.PARTNER]) as any);
 router.post('/profile', PartnerController.createProfile);
 router.get('/profile', PartnerController.getProfile);
 router.patch('/profile', PartnerController.updateProfile);
+router.patch('/capacity', PartnerController.updateCapacity);
 
 // 2. KYC
 router.post('/kyc', KycController.uploadKycDocument);
@@ -40,9 +44,15 @@ router.patch('/jobs/:id/complete', JobController.completeJob);
 router.post('/jobs/:id/invoice', JobController.uploadInvoice);
 router.post('/jobs/:id/photos', JobController.uploadPhotos);
 router.post('/jobs/:id/warranty', JobController.uploadWarranty);
+router.post('/jobs/:id/extensions', JobController.requestExtension);
+router.patch('/jobs/:id/assign-staff', JobController.assignStaff);
 
 // 5. Earnings
 router.get('/earnings', EarningsController.getMyEarnings);
 router.get('/earnings/summary', EarningsController.getEarningsSummary);
+
+router.use("/inventory", inventoryRouter);
+router.use("/staff", staffRouter);
+router.use("/pos", posRouter);
 
 export default router;

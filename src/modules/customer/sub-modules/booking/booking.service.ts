@@ -263,5 +263,71 @@ export class BookingService {
 
     return booking;
   }
+  public static async respondToExtension(
+    customerId: string,
+    bookingId: string,
+    extId: string,
+    status: 'APPROVED' | 'REJECTED'
+  ): Promise<any> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) throw new NotFoundError('Booking not found');
+    if (booking.customerId.toString() !== customerId) {
+      throw new UnauthorizedError('Not authorized');
+    }
+
+    const job = await JobModel.findOne({ bookingId });
+    if (!job) throw new NotFoundError('Job not found for this booking');
+
+    const extension = job.jobExtensions.find(e => e._id?.toString() === extId);
+    if (!extension) throw new NotFoundError('Extension not found');
+    if (extension.status !== 'PENDING') {
+      throw new ApiError(400, 'Extension is already processed', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    extension.status = status;
+    
+    // if approved, add cost to finalAmount
+    if (status === 'APPROVED') {
+      job.finalAmount = (job.finalAmount || 0) + extension.cost;
+    }
+    await job.save();
+
+    // notify partner
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      const partner = await PartnerModel.findById(job.partnerId);
+      if (partner) {
+        await notificationService.sendNotification(
+          partner.userId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.GENERAL,
+          `Extension ${status}`,
+          `Customer has ${status} the extra part request (${extension.partName}).`,
+          { jobId: job._id.toString() }
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to send partner notification', e);
+    }
+
+    return job;
+  }
+
+  public static async getTracking(customerId: string, bookingId: string): Promise<any> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) throw new NotFoundError('Booking not found');
+    if (booking.customerId.toString() !== customerId) {
+      throw new UnauthorizedError('Not authorized');
+    }
+
+    const { default: LogisticsModel } = require('../../../executive/sub-modules/logistics/logistics.model');
+    const logistics = await LogisticsModel.findOne({ bookingId }).sort({ createdAt: -1 });
+    if (!logistics) {
+      throw new NotFoundError('No active logistics tracking found for this booking');
+    }
+    
+    return logistics;
+  }
 }
 export default BookingService;
