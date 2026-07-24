@@ -11,6 +11,8 @@ export const createBookingSchema = z.object({
       message: 'Invalid preferredDate format',
     })
     .optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
 });
 
 export const cancelBookingSchema = z.object({

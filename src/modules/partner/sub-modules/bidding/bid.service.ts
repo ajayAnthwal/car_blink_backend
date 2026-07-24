@@ -26,16 +26,25 @@ export class BidService {
     const partnerBids = await BidModel.find({ partnerId: partner._id }).select('bookingId');
     const biddedBookingIds = partnerBids.map((b) => b.bookingId);
 
+    // Find explicitly assigned leads
+    const { AssignmentModel } = require('../../../executive/sub-modules/lead-assignment/assignment.model');
+    const assignedLeads = await AssignmentModel.find({ assignedPartnerId: partner._id }).select('bookingId');
+    const assignedBookingIds = assignedLeads.map((a: any) => a.bookingId);
+
     // Bookings must:
     // - Be in PENDING status
-    // - Match the partner's city
-    // - Be one of the services the partner offers
     // - NOT be already bidded on by this partner
-    const filter = {
+    // - EITHER match the partner's city & services OR be explicitly assigned to them
+    const filter: any = {
       status: BOOKING_STATUS.PENDING,
-      cityId: partner.cityId,
-      serviceId: { $in: partner.servicesOffered },
       _id: { $nin: biddedBookingIds },
+      $or: [
+        {
+          cityId: partner.cityId,
+          serviceId: { $in: partner.servicesOffered }
+        },
+        { _id: { $in: assignedBookingIds } }
+      ]
     };
 
     const [bookings, total] = await Promise.all([

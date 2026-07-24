@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
 import { PartnerModel } from '../../../partner/partner.model';
 import { BidModel } from '../../../partner/sub-modules/bidding/bid.model';
@@ -152,7 +153,7 @@ export class AssignmentService {
     }
 
     const assignment = await AssignmentModel.findOneAndUpdate(
-      { bookingId },
+      { bookingId: new mongoose.Types.ObjectId(bookingId) },
       {
         assignedExecutiveId: executiveId,
         assignedPartnerId: partnerId || undefined,

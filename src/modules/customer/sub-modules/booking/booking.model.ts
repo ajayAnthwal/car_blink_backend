@@ -14,6 +14,10 @@ export interface IBooking extends Document {
   beforePhotos: string[];
   afterPhotos: string[];
   cancellationReason?: string;
+  location?: {
+    type: string;
+    coordinates: number[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,6 +82,15 @@ const BookingSchema = new Schema<IBooking>(
       type: String,
       trim: true,
     },
+    location: {
+      type: {
+        type: String,
+        enum: ['Point'],
+      },
+      coordinates: {
+        type: [Number],
+      },
+    },
   },
   {
     timestamps: true,
@@ -87,6 +100,7 @@ const BookingSchema = new Schema<IBooking>(
 // Add compound indexes for query efficiency
 BookingSchema.index({ customerId: 1, status: 1 });
 BookingSchema.index({ cityId: 1, serviceId: 1, status: 1 });
+BookingSchema.index({ location: '2dsphere' });
 
 export const BookingModel = mongoose.model<IBooking>('Booking', BookingSchema);
 export default BookingModel;

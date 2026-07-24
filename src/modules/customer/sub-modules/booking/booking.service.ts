@@ -20,6 +20,8 @@ export class BookingService {
       cityId: string;
       description?: string;
       preferredDate?: string;
+      latitude?: number;
+      longitude?: number;
     }
   ): Promise<IBooking> {
     // 1. Verify vehicle ownership
@@ -44,7 +46,7 @@ export class BookingService {
     // }
 
     // 4. Create booking
-    const booking = await BookingModel.create({
+    const bookingData: any = {
       customerId,
       vehicleId: data.vehicleId,
       serviceId: data.serviceId,
@@ -52,7 +54,16 @@ export class BookingService {
       description: data.description,
       preferredDate: data.preferredDate ? new Date(data.preferredDate) : undefined,
       status: BOOKING_STATUS.PENDING,
-    });
+    };
+
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      bookingData.location = {
+        type: 'Point',
+        coordinates: [data.longitude, data.latitude] // GeoJSON is [lng, lat]
+      };
+    }
+
+    const booking = await BookingModel.create(bookingData);
 
     return booking;
   }

@@ -14,6 +14,10 @@ export interface IPartner extends Document {
   totalReviews: number;
   dailyCapacity: number;
   blockedDates: Date[];
+  location?: {
+    type: string;
+    coordinates: number[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -83,11 +87,22 @@ const PartnerSchema = new Schema<IPartner>(
       type: [Date],
       default: [],
     },
+    location: {
+      type: {
+        type: String,
+        enum: ['Point'],
+      },
+      coordinates: {
+        type: [Number],
+      },
+    },
   },
   {
     timestamps: true,
   }
 );
+
+PartnerSchema.index({ location: '2dsphere' });
 
 export const PartnerModel = mongoose.model<IPartner>('Partner', PartnerSchema);
 export default PartnerModel;

@@ -5,11 +5,20 @@ import { NotFoundError } from '../../common/errors/NotFoundError';
 export class PartnerService {
   public static async createPartnerProfile(
     userId: string,
-    data: Partial<IPartner>
+    data: any
   ): Promise<IPartner> {
     const existing = await PartnerModel.findOne({ userId });
     if (existing) {
       throw new ConflictError('Partner profile already exists');
+    }
+
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      data.location = {
+        type: 'Point',
+        coordinates: [data.longitude, data.latitude]
+      };
+      delete data.latitude;
+      delete data.longitude;
     }
 
     const partner = await PartnerModel.create({
@@ -38,7 +47,7 @@ export class PartnerService {
 
   public static async updatePartnerProfile(
     userId: string,
-    data: Partial<IPartner>
+    data: any
   ): Promise<IPartner> {
     // Prevent updating userId, rating, isVerified, verificationStatus via this route
     delete data.userId;
@@ -46,6 +55,15 @@ export class PartnerService {
     delete data.verificationStatus;
     delete data.rating;
     delete data.totalReviews;
+
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      data.location = {
+        type: 'Point',
+        coordinates: [data.longitude, data.latitude]
+      };
+      delete data.latitude;
+      delete data.longitude;
+    }
 
     const partner = await PartnerModel.findOneAndUpdate(
       { userId },
