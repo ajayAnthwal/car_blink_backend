@@ -10,6 +10,7 @@ export interface IBooking extends Document {
   preferredDate?: Date;
   status: BOOKING_STATUS;
   acceptedBidId?: mongoose.Types.ObjectId;
+  forwardedBidIds?: mongoose.Types.ObjectId[];
   assignedExecutiveId?: mongoose.Types.ObjectId;
   beforePhotos: string[];
   afterPhotos: string[];
@@ -65,6 +66,10 @@ const BookingSchema = new Schema<IBooking>(
       ref: 'Bid', // future Bid model
       default: null,
     },
+    forwardedBidIds: [{
+      type: Schema.Types.ObjectId,
+      ref: 'Bid',
+    }],
     assignedExecutiveId: {
       type: Schema.Types.ObjectId,
       ref: 'User',

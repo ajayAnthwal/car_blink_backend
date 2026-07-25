@@ -4,7 +4,7 @@ import { ASSIGNMENT_TYPE } from '../../../../common/constants/status.constant';
 export interface IAssignment extends Document {
   bookingId: mongoose.Types.ObjectId;
   assignedExecutiveId: mongoose.Types.ObjectId;
-  assignedPartnerId?: mongoose.Types.ObjectId;
+  assignedPartnerIds?: mongoose.Types.ObjectId[];
   assignmentType: ASSIGNMENT_TYPE;
   notes?: string;
   createdAt: Date;
@@ -24,10 +24,10 @@ const AssignmentSchema = new Schema<IAssignment>(
       ref: 'User',
       required: [true, 'Assigned Executive ID is required'],
     },
-    assignedPartnerId: {
+    assignedPartnerIds: [{
       type: Schema.Types.ObjectId,
       ref: 'Partner',
-    },
+    }],
     assignmentType: {
       type: String,
       enum: Object.values(ASSIGNMENT_TYPE),

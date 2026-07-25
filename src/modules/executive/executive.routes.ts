@@ -22,6 +22,7 @@ router.use(roleMiddleware([ROLES.EXECUTIVE]) as any);
 router.get('/leads', AssignmentController.getAllLeads);
 router.get('/leads/:id', AssignmentController.getLeadById);
 router.patch('/leads/:id/assign-partner', AssignmentController.assignPartnerToLead);
+router.post('/leads/:id/forward-quote', AssignmentController.forwardQuoteToCustomer);
 
 // SUB-MODULE 2: Follow-Up Calls
 router.post('/follow-ups', validate({ body: createFollowUpSchema }), FollowUpController.logFollowUpCall);

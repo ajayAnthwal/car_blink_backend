@@ -49,6 +49,10 @@ export const initializeSocket = (httpServer: HttpServer): SocketServer => {
 
     // Join room named after the userId (e.g. user:userId)
     socket.join(`user:${userId}`);
+    // Join room named after the role
+    if (role) {
+      socket.join(`role:${role}`);
+    }
 
     socket.on('disconnect', () => {
       logger.info(`[SOCKET] User ${userId} disconnected. Socket ID: ${socket.id}`);
@@ -70,6 +74,19 @@ export const emitToUser = (userId: string, event: string, payload: any): void =>
 
   logger.info(`[SOCKET] Emitting event "${event}" to user room "user:${userId}"`);
   io.to(`user:${userId}`).emit(event, payload);
+};
+
+/**
+ * Push an event to a specific role room
+ */
+export const emitToRole = (role: string, event: string, payload: any): void => {
+  if (!io) {
+    logger.warn(`[SOCKET] Cannot emit event "${event}". Socket.io is not initialized yet.`);
+    return;
+  }
+
+  logger.info(`[SOCKET] Emitting event "${event}" to role room "role:${role}"`);
+  io.to(`role:${role}`).emit(event, payload);
 };
 
 /**

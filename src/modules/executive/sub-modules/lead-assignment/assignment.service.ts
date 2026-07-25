@@ -17,7 +17,16 @@ export class AssignmentService {
     const skip = (page - 1) * limit;
 
     const filter: any = {};
-    if (query.status) filter.status = query.status;
+    if (query.status) {
+      if (Array.isArray(query.status)) {
+        filter.status = { $in: query.status };
+      } else if (typeof query.status === 'string' && query.status.includes(',')) {
+        filter.status = { $in: query.status.split(',').map((s: string) => s.trim()) };
+      } else {
+        filter.status = query.status;
+      }
+    }
+    console.log("DEBUG FILTER:", filter);
     if (query.cityId) filter.cityId = query.cityId;
     if (query.serviceId) filter.serviceId = query.serviceId;
 
@@ -38,15 +47,30 @@ export class AssignmentService {
     const bookingIds = bookings.map((b: any) => b._id);
     const assignments = await AssignmentModel.find({ bookingId: { $in: bookingIds } })
       .populate('assignedExecutiveId', 'fullName email')
-      .populate('assignedPartnerId', 'businessName isVerified')
+      .populate('assignedPartnerIds', 'businessName isVerified')
+      .lean();
+
+    const bids = await BidModel.find({ bookingId: { $in: bookingIds } })
+      .populate({
+        path: 'partnerId',
+        select: 'businessName isVerified rating'
+      })
       .lean();
 
     const assignmentMap = new Map();
     assignments.forEach((a: any) => assignmentMap.set(a.bookingId.toString(), a));
 
+    const bidsMap = new Map();
+    bids.forEach((b: any) => {
+      const bidList = bidsMap.get(b.bookingId.toString()) || [];
+      bidList.push(b);
+      bidsMap.set(b.bookingId.toString(), bidList);
+    });
+
     const leads = bookings.map((booking: any) => ({
       ...booking,
       assignment: assignmentMap.get(booking._id.toString()) || null,
+      bids: bidsMap.get(booking._id.toString()) || [],
     }));
 
     return { leads, total, page, limit };
@@ -93,12 +117,12 @@ export class AssignmentService {
   }
 
   /**
-   * Assign or nudge a partner for a lead
+   * Assign or nudge partners for a lead
    */
   async assignPartnerToLead(
     executiveId: string,
     bookingId: string,
-    partnerId?: string,
+    partnerIds?: string[],
     notes?: string
   ): Promise<any> {
     const booking = await BookingModel.findById(bookingId);
@@ -111,44 +135,45 @@ export class AssignmentService {
       throw new BadRequestError('Booking is already accepted, completed, or cancelled');
     }
 
-    if (partnerId) {
-      const partner = await PartnerModel.findById(partnerId);
-      if (!partner) {
-        throw new NotFoundError('Partner not found');
-      }
-      if (!partner.isVerified) {
-        throw new BadRequestError('Partner is not verified');
+    if (partnerIds && partnerIds.length > 0) {
+      const partners = await PartnerModel.find({ _id: { $in: partnerIds } });
+      if (partners.length !== partnerIds.length) {
+        throw new NotFoundError('One or more partners not found');
       }
 
-      // Slot & Capacity Enforcement
       const checkDate = booking.preferredDate || new Date();
       checkDate.setHours(0, 0, 0, 0);
-
-      // Check blocked dates
-      const isBlocked = partner.blockedDates?.some((blockedDate: Date) => {
-        const bd = new Date(blockedDate);
-        bd.setHours(0, 0, 0, 0);
-        return bd.getTime() === checkDate.getTime();
-      });
-
-      if (isBlocked) {
-        throw new BadRequestError(`Partner is blocked for date: ${checkDate.toDateString()}`);
-      }
-
-      // Check daily capacity by counting active jobs or accepted bookings for this partner on that day
       const startOfDay = new Date(checkDate);
       const endOfDay = new Date(checkDate);
       endOfDay.setHours(23, 59, 59, 999);
-
       const { default: Job } = require('../../../partner/sub-modules/jobs/job.model');
-      const activeJobsCount = await Job.countDocuments({
-        partnerId,
-        createdAt: { $gte: startOfDay, $lte: endOfDay },
-        status: { $in: ['NOT_STARTED', 'IN_PROGRESS'] }
-      });
 
-      if (activeJobsCount >= (partner.dailyCapacity || 5)) {
-        throw new BadRequestError('Partner has reached maximum daily capacity for this date');
+      for (const partner of partners) {
+        if (!partner.isVerified) {
+          throw new BadRequestError(`Partner ${partner.businessName || partner._id} is not verified`);
+        }
+
+        // Check blocked dates
+        const isBlocked = partner.blockedDates?.some((blockedDate: Date) => {
+          const bd = new Date(blockedDate);
+          bd.setHours(0, 0, 0, 0);
+          return bd.getTime() === checkDate.getTime();
+        });
+  
+        if (isBlocked) {
+          throw new BadRequestError(`Partner ${partner.businessName} is blocked for date: ${checkDate.toDateString()}`);
+        }
+  
+        // Check daily capacity
+        const activeJobsCount = await Job.countDocuments({
+          partnerId: partner._id,
+          createdAt: { $gte: startOfDay, $lte: endOfDay },
+          status: { $in: ['NOT_STARTED', 'IN_PROGRESS'] }
+        });
+  
+        if (activeJobsCount >= (partner.dailyCapacity || 5)) {
+          throw new BadRequestError(`Partner ${partner.businessName} has reached maximum daily capacity for this date`);
+        }
       }
     }
 
@@ -156,20 +181,82 @@ export class AssignmentService {
       { bookingId: new mongoose.Types.ObjectId(bookingId) },
       {
         assignedExecutiveId: executiveId,
-        assignedPartnerId: partnerId || undefined,
+        assignedPartnerIds: partnerIds && partnerIds.length > 0 ? partnerIds : undefined,
         assignmentType: ASSIGNMENT_TYPE.MANUALLY_ASSIGNED,
         notes,
       },
       { upsert: true, new: true }
     )
       .populate('assignedExecutiveId', 'fullName email')
-      .populate('assignedPartnerId', 'businessName isVerified');
+      .populate('assignedPartnerIds', 'businessName isVerified');
 
     await BookingModel.findByIdAndUpdate(bookingId, {
       assignedExecutiveId: executiveId,
     });
 
+    // Emit socket event to notify partners (simulate real-time alert)
+    try {
+      const { emitToRole } = require('../../../../sockets');
+      emitToRole('PARTNER', 'new_lead', { bookingId }); // Since we do not have specific user socket tracking readily available in emitToUser, we broadcast to PARTNER role.
+    } catch (err) {
+      console.error('Failed to emit new_lead event', err);
+    }
+
     return assignment;
+  }
+
+  /**
+   * Forward a partner's quote to the customer
+   */
+  async forwardQuoteToCustomer(
+    executiveId: string,
+    bookingId: string,
+    bidIds: string[],
+    notes?: string
+  ): Promise<any> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (!bidIds || bidIds.length === 0) {
+      throw new BadRequestError('At least one bid ID is required');
+    }
+
+    const bids = await BidModel.find({ _id: { $in: bidIds } }).populate('partnerId');
+    if (bids.length !== bidIds.length) {
+      throw new NotFoundError('One or more bids not found');
+    }
+
+    const invalidBids = bids.filter(bid => bid.bookingId.toString() !== bookingId);
+    if (invalidBids.length > 0) {
+      throw new BadRequestError('One or more bids do not belong to this booking');
+    }
+
+    // Update booking
+    booking.status = BOOKING_STATUS.QUOTED;
+    booking.forwardedBidIds = bidIds.map(id => new mongoose.Types.ObjectId(id));
+    await booking.save();
+
+    // Notify Customer
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.BID_RECEIVED,
+        'New Quotes Received',
+        `You have received ${bidIds.length} new quote(s) for your service request.`,
+        { bookingId: booking._id.toString() }
+      );
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send quote forwarded notification:', notifErr);
+    }
+
+    return booking;
   }
 }
 

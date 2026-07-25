@@ -10,6 +10,7 @@ import { UnauthorizedError } from '../../../../common/errors/UnauthorizedError';
 import { ApiError } from '../../../../common/errors/ApiError';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
+import { emitToUser, emitToRole } from '../../../../sockets';
 
 export class BookingService {
   public static async createBooking(
@@ -156,8 +157,12 @@ export class BookingService {
       throw new UnauthorizedError('You are not authorized to view quotes for this booking');
     }
 
-    // 2. Fetch all bids
-    const bids = await BidModel.find({ bookingId, status: { $ne: 'WITHDRAWN' } })
+    // 2. Fetch the forwarded bids (if they exist)
+    if (!booking.forwardedBidIds || booking.forwardedBidIds.length === 0) {
+      return [];
+    }
+
+    const bids = await BidModel.find({ _id: { $in: booking.forwardedBidIds }, status: { $ne: 'WITHDRAWN' } })
       .populate({
         path: 'partnerId',
         populate: { path: 'userId', select: 'fullName email phone' }
@@ -190,7 +195,7 @@ export class BookingService {
     }
 
     // 2. Verify bid exists and belongs to this booking
-    const selectedBid = await BidModel.findById(bidId);
+    const selectedBid = await BidModel.findById(bidId).populate('partnerId');
     if (!selectedBid) {
       throw new NotFoundError('Bid not found');
     }
@@ -215,7 +220,25 @@ export class BookingService {
     booking.acceptedBidId = selectedBid._id;
     await booking.save();
 
-    // 5. Auto-create a Job document in NOT_STARTED status
+    // 5. Emit live socket events
+    const partnerUserId = (selectedBid.partnerId as any)?.userId?.toString();
+    const executiveUserId = booking.assignedExecutiveId?.toString();
+
+    const eventPayload = {
+      bookingId: booking._id,
+      status: BOOKING_STATUS.ACCEPTED,
+      message: 'Booking confirmed and quote accepted.'
+    };
+
+    if (partnerUserId) {
+      emitToUser(partnerUserId, 'quote_accepted', eventPayload);
+    }
+    if (executiveUserId) {
+      emitToUser(executiveUserId, 'booking_confirmed', eventPayload);
+    }
+    emitToRole('SUPER_ADMIN', 'booking_confirmed', eventPayload);
+
+    // 6. Auto-create a Job document in NOT_STARTED status
     const job = await JobModel.create({
       bookingId: booking._id,
       partnerId: selectedBid.partnerId,

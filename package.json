@@ -12,7 +12,8 @@
     "test": "jest",
     "seed:services": "ts-node src/database/seeders/services.seeder.ts",
     "seed:cities": "ts-node src/database/seeders/cities.seeder.ts",
-    "seed:internal-users": "ts-node src/database/seeders/internal-users.seeder.ts"
+    "seed:internal-users": "ts-node src/database/seeders/internal-users.seeder.ts",
+    "seed:fresh": "ts-node src/database/seeders/fresh-seed.seeder.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

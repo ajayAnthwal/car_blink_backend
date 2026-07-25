@@ -28,7 +28,7 @@ export class BidService {
 
     // Find explicitly assigned leads
     const { AssignmentModel } = require('../../../executive/sub-modules/lead-assignment/assignment.model');
-    const assignedLeads = await AssignmentModel.find({ assignedPartnerId: partner._id }).select('bookingId');
+    const assignedLeads = await AssignmentModel.find({ assignedPartnerIds: partner._id }).select('bookingId');
     const assignedBookingIds = assignedLeads.map((a: any) => a.bookingId);
 
     // Bookings must:
@@ -106,26 +106,23 @@ export class BidService {
       status: 'PENDING',
     });
 
-    // 4. Update Booking status to QUOTED if it was still PENDING
-    if (booking.status === BOOKING_STATUS.PENDING) {
-      booking.status = BOOKING_STATUS.QUOTED;
-      await booking.save();
-    }
-
-    // Notify Customer of the new quote
+    // Notify Executive of the new quote
     try {
       const { notificationService } = require('../../../notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
-      const { logger } = require('../../../../config/logger.config');
-
-      await notificationService.sendNotification(
-        booking.customerId.toString(),
-        NOTIFICATION_TYPE.SMS,
-        NOTIFICATION_CATEGORY.BID_RECEIVED,
-        'New Quote Received',
-        `You have received a new quote of INR ${data.quotedAmount} for your booking.`,
-        { bookingId: booking._id.toString(), bidId: bid._id.toString() }
-      );
+      
+      // If we have an assigned executive, notify them. Otherwise, notify a default executive or role.
+      // For now, we'll assume the booking has an assignedExecutiveId if it was manually assigned.
+      if (booking.assignedExecutiveId) {
+        await notificationService.sendNotification(
+          booking.assignedExecutiveId.toString(),
+          NOTIFICATION_TYPE.SYSTEM,
+          NOTIFICATION_CATEGORY.BID_RECEIVED,
+          'New Partner Bid Received',
+          `${partner.businessName} has submitted a bid of INR ${data.quotedAmount}.`,
+          { bookingId: booking._id.toString(), bidId: bid._id.toString() }
+        );
+      }
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');
       logger.warn('Failed to send bid received notification:', notifErr);

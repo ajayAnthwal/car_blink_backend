@@ -19,13 +19,25 @@ export class AssignmentController {
   public static assignPartnerToLead = asyncHandler(async (req: IRequest, res: Response) => {
     const executiveId = req.user?.userId;
     const { id } = req.params;
-    const { partnerId, notes } = req.body;
+    const { partnerIds, notes } = req.body;
     const assignment = await assignmentService.assignPartnerToLead(
       String(executiveId),
       id,
-      partnerId,
+      partnerIds,
       notes
     );
-    return successResponse(res, assignment, 'Partner assigned to lead successfully');
+    return successResponse(res, assignment, 'Partners assigned to lead successfully');
+  });
+  public static forwardQuoteToCustomer = asyncHandler(async (req: IRequest, res: Response) => {
+    const executiveId = req.user?.userId;
+    const { id } = req.params;
+    const { bidIds, notes } = req.body;
+    const booking = await assignmentService.forwardQuoteToCustomer(
+      String(executiveId),
+      id,
+      bidIds,
+      notes
+    );
+    return successResponse(res, booking, 'Quotes forwarded to customer successfully');
   });
 }
