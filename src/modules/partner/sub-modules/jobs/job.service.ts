@@ -7,6 +7,7 @@ import { UnauthorizedError } from '../../../../common/errors/UnauthorizedError';
 import { ApiError } from '../../../../common/errors/ApiError';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
+import { emitToUser } from '../../../../sockets';
 
 export class JobService {
   public static async getMyJobs(
@@ -88,9 +89,15 @@ export class JobService {
           NOTIFICATION_TYPE.SMS,
           NOTIFICATION_CATEGORY.JOB_STATUS,
           'Service Started',
-          `Your car cleaning service has been started by the partner.`,
+          `Your car service has been started by the partner.`,
           { bookingId: booking._id.toString(), jobId: job._id.toString() }
         );
+
+        // Emit live socket event to customer
+        emitToUser(booking.customerId.toString(), 'booking_status_update', {
+          bookingId: booking._id.toString(),
+          status: BOOKING_STATUS.IN_PROGRESS
+        });
       }
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');
@@ -160,9 +167,15 @@ export class JobService {
           NOTIFICATION_TYPE.EMAIL,
           NOTIFICATION_CATEGORY.JOB_STATUS,
           'Service Completed',
-          `Your car cleaning service has been completed. Please log in to pay and rate the service.`,
+          `Your car service has been completed. Please log in to pay and rate the service.`,
           { bookingId: booking._id.toString(), jobId: job._id.toString() }
         );
+
+        // Emit live socket event to customer
+        emitToUser(booking.customerId.toString(), 'booking_status_update', {
+          bookingId: booking._id.toString(),
+          status: BOOKING_STATUS.COMPLETED
+        });
       }
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');
@@ -215,15 +228,18 @@ export class JobService {
       throw new UnauthorizedError('You are not authorized to upload photos for this job');
     }
 
-    if (type === 'before') {
-      job.beforePhotos = photos;
-      await BookingModel.findByIdAndUpdate(job.bookingId, { $set: { beforePhotos: photos } });
+    console.log(`uploadJobPhotos triggered with type: ${type}, photos: ${photos}`);
+    if (type?.toLowerCase() === 'before') {
+      job.beforePhotos = [...(job.beforePhotos || []), ...photos];
+      job.markModified('beforePhotos');
     } else {
-      job.afterPhotos = photos;
-      await BookingModel.findByIdAndUpdate(job.bookingId, { $set: { afterPhotos: photos } });
+      job.afterPhotos = [...(job.afterPhotos || []), ...photos];
+      job.markModified('afterPhotos');
     }
-
-    return job.save();
+    
+    console.log(`Saving job with beforePhotos: ${job.beforePhotos}, afterPhotos: ${job.afterPhotos}`);
+    await job.save();
+    return job;
   }
 
   public static async uploadJobWarranty(

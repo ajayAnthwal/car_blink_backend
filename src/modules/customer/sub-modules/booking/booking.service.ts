@@ -96,11 +96,12 @@ export class BookingService {
     return { bookings, total, page, limit };
   }
 
-  public static async getBookingById(customerId: string, bookingId: string): Promise<IBooking> {
+  public static async getBookingById(customerId: string, bookingId: string): Promise<any> {
     const booking = await BookingModel.findById(bookingId)
       .populate('vehicleId')
       .populate('serviceId')
-      .populate('cityId');
+      .populate('cityId')
+      .lean();
 
     if (!booking) {
       throw new NotFoundError('Booking not found');
@@ -110,7 +111,13 @@ export class BookingService {
       throw new UnauthorizedError('You are not authorized to view this booking');
     }
 
-    return booking;
+    // Fetch associated job details (which includes photos and extensions)
+    const jobDetails = await JobModel.findOne({ bookingId }).lean();
+
+    return {
+      ...booking,
+      jobDetails: jobDetails || null
+    };
   }
 
   public static async cancelBooking(
