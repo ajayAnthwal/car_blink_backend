@@ -229,17 +229,44 @@ export class JobService {
     }
 
     console.log(`uploadJobPhotos triggered with type: ${type}, photos: ${photos}`);
-    if (type?.toLowerCase() === 'before') {
-      job.beforePhotos = [...(job.beforePhotos || []), ...photos];
-      job.markModified('beforePhotos');
-    } else {
-      job.afterPhotos = [...(job.afterPhotos || []), ...photos];
-      job.markModified('afterPhotos');
-    }
     
-    console.log(`Saving job with beforePhotos: ${job.beforePhotos}, afterPhotos: ${job.afterPhotos}`);
-    await job.save();
-    return job;
+    const updateField = type?.toLowerCase() === 'before' ? 'beforePhotos' : 'afterPhotos';
+    
+    const updatedJob = await JobModel.findByIdAndUpdate(
+      jobId,
+      { $push: { [updateField]: { $each: photos } } },
+      { new: true }
+    );
+    
+    if (!updatedJob) throw new NotFoundError('Job not found after update');
+    return updatedJob as any;
+  }
+
+  public static async deleteJobPhoto(
+    partnerId: string,
+    jobId: string,
+    photoUrl: string,
+    type: 'BEFORE' | 'AFTER'
+  ): Promise<any> {
+    const partner = await PartnerModel.findOne({ userId: partnerId });
+    if (!partner) throw new NotFoundError('Partner not found');
+
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new NotFoundError('Job not found');
+
+    if (job.partnerId.toString() !== partner._id.toString()) {
+      throw new UnauthorizedError('You are not authorized to modify photos for this job');
+    }
+
+    const updateField = type?.toLowerCase() === 'before' ? 'beforePhotos' : 'afterPhotos';
+    
+    const updatedJob = await JobModel.findByIdAndUpdate(
+      jobId,
+      { $pull: { [updateField]: photoUrl } },
+      { new: true }
+    );
+    
+    return updatedJob;
   }
 
   public static async uploadJobWarranty(

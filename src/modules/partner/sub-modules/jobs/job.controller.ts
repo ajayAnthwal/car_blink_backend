@@ -41,6 +41,14 @@ export class JobController {
     return successResponse(res, job, 'Job photos uploaded and synced successfully');
   });
 
+  public static deletePhoto = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { photoUrl, type } = req.body; // type: 'before' | 'after'
+    const job = await JobService.deleteJobPhoto(String(userId), id, photoUrl, type);
+    return successResponse(res, job, 'Job photo deleted successfully');
+  });
+
   public static uploadWarranty = asyncHandler(async (req: IRequest, res: Response) => {
     const userId = req.user?.userId;
     const { id } = req.params;

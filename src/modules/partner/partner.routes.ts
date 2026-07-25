@@ -43,6 +43,7 @@ router.patch('/jobs/:id/start', JobController.startJob);
 router.patch('/jobs/:id/complete', JobController.completeJob);
 router.post('/jobs/:id/invoice', JobController.uploadInvoice);
 router.post('/jobs/:id/photos', JobController.uploadPhotos);
+router.delete('/jobs/:id/photos', JobController.deletePhoto);
 router.post('/jobs/:id/warranty', JobController.uploadWarranty);
 router.post('/jobs/:id/extensions', JobController.requestExtension);
 router.patch('/jobs/:id/assign-staff', JobController.assignStaff);

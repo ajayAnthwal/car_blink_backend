@@ -31,3 +31,6 @@ export const createUploader = (allowedMimeTypes: string[], maxSizeMB: number) =>
 
 // Default preconfigured instance for images (jpeg, jpg, png, webp) max 5MB
 export const uploadImage = createUploader(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'], 5);
+
+// Preconfigured instance for documents including PDFs max 50MB
+export const uploadDocument = createUploader(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'], 50);
