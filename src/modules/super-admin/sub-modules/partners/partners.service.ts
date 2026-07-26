@@ -44,7 +44,7 @@ export class SuperAdminPartnersService {
   /**
    * Get specific partner details including KYC documents
    */
-  async getPartnerDetails(partnerId: string) {
+  async getPartnerDetails(partnerId: string): Promise<any> {
     const partner = await PartnerModel.findById(partnerId)
       .populate('userId', 'fullName email phone')
       .populate('cityId', 'name state')
