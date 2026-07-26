@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { JobModel, IJob } from './job.model';
 import { PartnerModel } from '../../partner.model';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
@@ -40,11 +41,23 @@ export class JobService {
         })
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       JobModel.countDocuments(filter),
     ]);
 
-    return { jobs, total, page, limit };
+    // Fetch payments for these jobs
+    const bookingIds = jobs.map(j => j.bookingId?._id || j.bookingId);
+    const PaymentModel = mongoose.model('Payment');
+    const payments = await PaymentModel.find({ bookingId: { $in: bookingIds } }).lean();
+
+    const jobsWithPayments = jobs.map(job => {
+      const bIdStr = (job.bookingId?._id || job.bookingId).toString();
+      const jobPayments = payments.filter((p: any) => p.bookingId.toString() === bIdStr);
+      return { ...job, payments: jobPayments };
+    });
+
+    return { jobs: jobsWithPayments as any, total, page, limit };
   }
 
   public static async startJob(userId: string, jobId: string): Promise<IJob> {

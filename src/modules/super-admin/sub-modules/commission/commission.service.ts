@@ -1,4 +1,6 @@
 import { SettlementModel, ISettlement } from '../../../accounts/sub-modules/settlements/settlement.model';
+import { PaymentModel } from '../../../payment/payment.model';
+import { PAYMENT_STATUS } from '../../../../common/constants/status.constant';
 
 export class CommissionService {
   /**
@@ -31,13 +33,40 @@ export class CommissionService {
         select: 'businessName userId',
         populate: { path: 'userId', select: 'fullName' },
       })
-      .populate('jobId')
-      .sort({ createdAt: -1 });
+      .populate({
+        path: 'jobId',
+        populate: { path: 'bookingId' }
+      })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const totalCommission = settlements.reduce((acc, s) => acc + s.platformCommission, 0);
+    const enhancedSettlements = await Promise.all(settlements.map(async (s: any) => {
+      let cashCollected = 0;
+      let onlinePaid = 0;
+
+      if (s.jobId?.bookingId) {
+        const payments = await PaymentModel.find({
+          bookingId: s.jobId.bookingId._id || s.jobId.bookingId,
+          status: PAYMENT_STATUS.SUCCESS
+        }).lean();
+
+        payments.forEach(p => {
+          if (p.provider === 'CASH') cashCollected += p.amount;
+          else onlinePaid += p.amount;
+        });
+      }
+
+      return {
+        ...s,
+        cashCollected,
+        onlinePaid
+      };
+    }));
+
+    const totalCommission = enhancedSettlements.reduce((acc, s) => acc + s.platformCommission, 0);
 
     return {
-      settlements,
+      settlements: enhancedSettlements as any,
       totalCommission: Number(totalCommission.toFixed(2)),
     };
   }

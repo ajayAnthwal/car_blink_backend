@@ -32,6 +32,7 @@ export enum PAYMENT_TYPE {
 export enum PAYMENT_PROVIDER {
   RAZORPAY = 'RAZORPAY',
   STRIPE = 'STRIPE',
+  CASH = 'CASH',
 }
 
 export enum ASSIGNMENT_TYPE {

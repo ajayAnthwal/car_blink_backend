@@ -1,12 +1,15 @@
+import mongoose from 'mongoose';
 import { JobModel } from '../jobs/job.model';
 import { PartnerModel } from '../../partner.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
+import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
+import { PaymentModel } from '../../../payment/payment.model';
 
 export class EarningsService {
   public static async getMyEarnings(
     userId: string,
     query: { period?: 'today' | 'week' | 'month' }
-  ): Promise<{ totalEarnings: number; period: string }> {
+  ): Promise<{ totalEarnings: number; cashCollected: number; onlineEarnings: number; transactions: any[]; period: string }> {
     const partner = await PartnerModel.findOne({ userId });
     if (!partner) {
       throw new NotFoundError('Partner profile not found');
@@ -23,24 +26,38 @@ export class EarningsService {
       startDate = new Date(now.setMonth(now.getMonth() - 1));
     }
 
-    const result = await JobModel.aggregate([
-      {
-        $match: {
-          partnerId: partner._id,
-          status: 'COMPLETED',
-          completedAt: { $gte: startDate },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalEarnings: { $sum: '$finalAmount' },
-        },
-      },
-    ]);
+    const jobs = await JobModel.find({
+      partnerId: partner._id,
+      status: 'COMPLETED',
+      completedAt: { $gte: startDate },
+    }).lean();
+    console.log(`[EARNINGS] partnerId: ${partner._id}, startDate: ${startDate}, found jobs: ${jobs.length}`);
 
-    const totalEarnings = result.length > 0 ? result[0].totalEarnings : 0;
-    return { totalEarnings, period: query.period || 'all' };
+    const totalEarnings = jobs.reduce((sum, job) => sum + (job.finalAmount || 0), 0);
+
+    const bookingIds = jobs.map(j => j.bookingId);
+    const payments = await PaymentModel.find({
+      bookingId: { $in: bookingIds },
+      status: 'SUCCESS'
+    }).lean();
+
+    let cashCollected = 0;
+    let onlineEarnings = 0;
+
+    const transactions = payments.map(p => {
+      if (p.provider === 'CASH') cashCollected += p.amount;
+      else onlineEarnings += p.amount;
+
+      return {
+        jobId: jobs.find(j => j.bookingId.toString() === p.bookingId.toString())?._id,
+        amount: p.amount,
+        paymentType: p.paymentType,
+        provider: p.provider,
+        createdAt: p.paidAt || p.createdAt
+      };
+    });
+
+    return { totalEarnings, cashCollected, onlineEarnings, transactions, period: query.period || 'all' };
   }
 
   public static async getEarningsSummary(

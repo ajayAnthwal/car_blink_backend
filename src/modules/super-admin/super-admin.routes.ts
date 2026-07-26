@@ -15,6 +15,15 @@ import reportsHistoryRouter from './sub-modules/reports-history/reports-history.
 import vehiclesRouter from './sub-modules/vehicles/vehicles.routes';
 import auditLogRouter from './sub-modules/audit-logs/audit-log.routes';
 import customRolesRouter from './sub-modules/roles/role.routes';
+import bookingsRouter from './sub-modules/bookings/bookings.routes';
+import partnersRouter from './sub-modules/partners/partners.routes';
+import ticketsRouter from './sub-modules/tickets/tickets.routes';
+import staffRouter from './sub-modules/staff/staff.routes';
+import settlementsRouter from './sub-modules/settlements/settlements.routes';
+import settingsRouter from './sub-modules/settings/settings.routes';
+import notificationsRouter from './sub-modules/notifications/notifications.routes';
+import zonesRouter from './sub-modules/zones/zones.routes';
+import taxReportsRouter from './sub-modules/tax-reports/tax-reports.routes';
 
 const router = Router();
 
@@ -33,6 +42,15 @@ router.use('/reports/history', reportsHistoryRouter);
 router.use('/vehicles', vehiclesRouter);
 router.use('/audit-logs', auditLogRouter);
 router.use('/custom-roles', customRolesRouter);
+router.use('/bookings', bookingsRouter);
+router.use('/partners', partnersRouter);
+router.use('/tickets', ticketsRouter);
+router.use('/staff', staffRouter);
+router.use('/settlements', settlementsRouter);
+router.use('/settings', settingsRouter);
+router.use('/notifications', notificationsRouter);
+router.use('/zones', zonesRouter);
+router.use('/tax-reports', taxReportsRouter);
 
 router.use("/coupons", couponsRouter);
 router.use("/vendors", vendorRouter);

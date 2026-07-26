@@ -3,6 +3,7 @@ import { JobModel } from '../../../partner/sub-modules/jobs/job.model';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
 import { PaymentModel } from '../../../payment/payment.model';
 import { PartnerModel } from '../../../partner/partner.model';
+import { GarageModel } from '../../../customer/sub-modules/garage/garage.model';
 import { notificationService } from '../../../notification/notification.service';
 import { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } from '../../../notification/notification.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
@@ -43,13 +44,24 @@ export class SettlementService {
         continue;
       }
 
-      const successPayment = await PaymentModel.findOne({
+      const payments = await PaymentModel.find({
         bookingId: booking._id,
         status: PAYMENT_STATUS.SUCCESS,
       });
 
-      if (successPayment) {
-        eligibleJobs.push(job);
+      if (payments.length > 0) {
+        let cashCollected = 0;
+        let onlinePaid = 0;
+        payments.forEach(p => {
+          if (p.provider === 'CASH') cashCollected += p.amount;
+          else onlinePaid += p.amount;
+        });
+
+        const jobObj = job.toObject() as any;
+        jobObj.cashCollected = cashCollected;
+        jobObj.onlinePaid = onlinePaid;
+        
+        eligibleJobs.push(jobObj);
       }
     }
 

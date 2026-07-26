@@ -2,10 +2,12 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { PaymentModel, IPayment } from './payment.model';
 import { BookingModel } from '../customer/sub-modules/booking/booking.model';
+import { JobModel } from '../partner/sub-modules/jobs/job.model';
 import { razorpayProvider } from './providers/razorpay.provider';
 import { NotFoundError } from '../../common/errors/NotFoundError';
 import { UnauthorizedError } from '../../common/errors/UnauthorizedError';
 import { BadRequestError } from '../../common/errors/BadRequestError';
+import { ConflictError } from '../../common/errors/ConflictError';
 import { env } from '../../config/env.config';
 import { logger } from '../../config/logger.config';
 import { PAYMENT_STATUS, PAYMENT_TYPE, PAYMENT_PROVIDER, BOOKING_STATUS } from '../../common/constants/status.constant';
@@ -32,8 +34,12 @@ export class PaymentService {
 
     // Verify booking state depending on paymentType
     if (paymentType === PAYMENT_TYPE.ADVANCE) {
-      if (booking.status !== BOOKING_STATUS.ACCEPTED) {
-        throw new BadRequestError('Advance payment requires the booking to be in ACCEPTED status');
+      if (
+        booking.status !== BOOKING_STATUS.ACCEPTED &&
+        booking.status !== BOOKING_STATUS.IN_PROGRESS &&
+        booking.status !== BOOKING_STATUS.COMPLETED
+      ) {
+        throw new BadRequestError('Advance payment requires the booking to be in ACCEPTED, IN_PROGRESS, or COMPLETED status');
       }
     } else if (paymentType === PAYMENT_TYPE.FINAL) {
       if (booking.status !== BOOKING_STATUS.COMPLETED) {
@@ -109,7 +115,7 @@ export class PaymentService {
         const { notificationService } = require('../notification/notification.service');
         const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
         const payAmount = payment.amount;
-        
+
         // SMS
         await notificationService.sendNotification(
           payment.customerId.toString(),
@@ -119,7 +125,7 @@ export class PaymentService {
           `Your payment of INR ${payAmount} for booking ${payment.bookingId} has been successfully processed.`,
           { bookingId: payment.bookingId.toString(), paymentId: payment._id.toString() }
         );
-        
+
         // EMAIL
         await notificationService.sendNotification(
           payment.customerId.toString(),
@@ -176,6 +182,141 @@ export class PaymentService {
 
     if (payment.customerId.toString() !== customerId) {
       throw new UnauthorizedError('You are not authorized to view this payment');
+    }
+
+    return payment;
+  }
+
+  /**
+   * Mark a payment as completed offline (CASH)
+   */
+  async markOfflinePayment(
+    bookingId: string,
+    amount: number,
+    paymentType: PAYMENT_TYPE,
+    userId: string, // Could be customer or partner ID
+    isPartner: boolean = false
+  ): Promise<IPayment> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (!isPartner && booking.customerId.toString() !== userId) {
+      throw new UnauthorizedError('You are not authorized for this booking');
+    }
+
+    // Prevent duplicate payments of the same type
+    const existingPayment = await PaymentModel.findOne({
+      bookingId,
+      paymentType,
+      status: { $in: [PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.PENDING] }
+    });
+
+    if (existingPayment) {
+      throw new ConflictError(`A ${paymentType} payment already exists or is pending for this booking.`);
+    }
+
+    const tempPaymentId = new mongoose.Types.ObjectId();
+    const providerOrderId = `CASH_${tempPaymentId.toString()}`;
+
+    const finalStatus = isPartner ? PAYMENT_STATUS.SUCCESS : PAYMENT_STATUS.PENDING;
+
+    const payment = await PaymentModel.create({
+      _id: tempPaymentId,
+      bookingId,
+      customerId: booking.customerId,
+      amount,
+      currency: 'INR',
+      paymentType,
+      provider: PAYMENT_PROVIDER.CASH,
+      providerOrderId,
+      status: finalStatus,
+      paidAt: isPartner ? new Date() : undefined,
+    });
+
+    // Send notifications if needed
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+      if (isPartner) {
+        // Partner collected cash
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Cash Payment Successful',
+          `Your offline cash payment of INR ${amount} for booking ${bookingId} has been successfully collected by the partner.`,
+          { bookingId: booking._id.toString(), paymentId: payment._id.toString() }
+        );
+      } else {
+        // Customer intends to pay cash
+        // Customer intends to pay cash
+        const job = await JobModel.findOne({ bookingId });
+        if (job && job.partnerId) {
+          await notificationService.sendNotification(
+            job.partnerId.toString(),
+            NOTIFICATION_TYPE.PUSH,
+            NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+            'Cash Payment Requested',
+            `The customer has requested to pay INR ${amount} in cash for booking ${bookingId}. Please verify upon collection.`,
+            { bookingId: booking._id.toString(), paymentId: payment._id.toString() }
+          );
+        }
+      }
+    } catch (notifErr: any) {
+      logger.warn('Failed to send offline payment notifications:', notifErr);
+    }
+
+    return payment;
+  }
+
+  /**
+   * Verify an offline payment (Partner verifies customer's cash payment)
+   */
+  async verifyOfflinePayment(paymentId: string, partnerId: string): Promise<IPayment> {
+    const payment = await PaymentModel.findById(paymentId);
+    if (!payment) {
+      throw new NotFoundError('Payment not found');
+    }
+
+    if (payment.provider !== PAYMENT_PROVIDER.CASH) {
+      throw new BadRequestError('Only cash payments can be verified offline');
+    }
+
+    if (payment.status === PAYMENT_STATUS.SUCCESS) {
+      return payment; // Already verified
+    }
+
+    const booking = await BookingModel.findById(payment.bookingId);
+    if (!booking) {
+      throw new NotFoundError('Associated booking not found');
+    }
+
+    const job = await JobModel.findOne({ bookingId: payment.bookingId });
+    if (!job || job.partnerId?.toString() !== partnerId) {
+      throw new UnauthorizedError('You are not authorized to verify this payment');
+    }
+
+    payment.status = PAYMENT_STATUS.SUCCESS;
+    payment.paidAt = new Date();
+    await payment.save();
+
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Cash Payment Verified',
+        `Your offline cash payment of INR ${payment.amount} has been verified by the partner.`,
+        { bookingId: booking._id.toString(), paymentId: payment._id.toString() }
+      );
+    } catch (notifErr: any) {
+      logger.warn('Failed to send offline payment verification notification:', notifErr);
     }
 
     return payment;

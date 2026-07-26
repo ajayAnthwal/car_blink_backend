@@ -16,3 +16,7 @@ export const verifyPaymentSchema = z.object({
   orderId: z.string().min(1, 'orderId is required'),
   signature: z.string().min(1, 'signature is required'),
 });
+
+export const verifyOfflinePaymentSchema = z.object({
+  paymentId: z.string().regex(objectIdRegex, 'Invalid paymentId format'),
+});

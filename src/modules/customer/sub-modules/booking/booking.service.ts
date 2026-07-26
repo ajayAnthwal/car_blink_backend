@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { BookingModel, IBooking } from './booking.model';
 import { GarageModel } from '../garage/garage.model';
 import { ServiceModel } from '../../../master-data/models/service.model';
@@ -113,10 +114,15 @@ export class BookingService {
 
     // Fetch associated job details (which includes photos and extensions)
     const jobDetails = await JobModel.findOne({ bookingId }).lean();
+    
+    // Fetch payments
+    const PaymentModel = mongoose.model('Payment');
+    const payments = await PaymentModel.find({ bookingId }).lean();
 
     return {
       ...booking,
-      jobDetails: jobDetails || null
+      jobDetails: jobDetails || null,
+      payments: payments || []
     };
   }
 

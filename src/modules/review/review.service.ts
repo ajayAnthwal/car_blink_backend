@@ -65,7 +65,7 @@ export class ReviewService {
     // 6. Recalculate partner aggregate rating and reviews count
     try {
       const stats = await ReviewModel.aggregate([
-        { $match: { partnerId: job.partnerId } },
+        { $match: { partnerId: new mongoose.Types.ObjectId(job.partnerId.toString()) } },
         {
           $group: {
             _id: '$partnerId',

@@ -4,6 +4,7 @@ import { env } from '../config/env.config';
 import { logger } from '../config/logger.config';
 import { UserModel } from '../modules/user/user.model';
 import { ROLES } from '../common/constants/roles.constant';
+import { GlobalSettingsModel } from '../modules/super-admin/sub-modules/settings/settings.model';
 
 /**
  * Contain the core logic for generating pending settlements for completed jobs.
@@ -29,6 +30,14 @@ export async function runSettlementCron(): Promise<void> {
     let successCount = 0;
     let failureCount = 0;
 
+    let globalSettings = await GlobalSettingsModel.findOne();
+    if (!globalSettings) {
+      globalSettings = await GlobalSettingsModel.create({});
+    }
+
+    const commissionPercent = globalSettings?.platformCommissionRate ?? env.DEFAULT_COMMISSION_PERCENT ?? 15;
+    const tdsPercent = globalSettings?.tdsRate ?? 1;
+
     for (const job of eligibleJobs) {
       try {
         // NOTE: This job only GENERATES settlements (status PENDING) — it does NOT auto-process/pay them out,
@@ -36,7 +45,8 @@ export async function runSettlementCron(): Promise<void> {
         await settlementService.generateSettlement(
           accountsId,
           job._id.toString(),
-          env.DEFAULT_COMMISSION_PERCENT
+          commissionPercent,
+          { tdsPercent }
         );
         successCount++;
         logger.info(`[CRON] Successfully generated pending settlement for Job ID: ${job._id}`);
