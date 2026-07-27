@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { PaymentModel, IPayment } from "./payment.model";
 import { BookingModel } from "../customer/sub-modules/booking/booking.model";
 import { JobModel } from "../partner/sub-modules/jobs/job.model";
+import { PartnerModel } from "../partner/partner.model";
 import { razorpayProvider } from "./providers/razorpay.provider";
 import { NotFoundError } from "../../common/errors/NotFoundError";
 import { UnauthorizedError } from "../../common/errors/UnauthorizedError";
@@ -321,6 +322,17 @@ export class PaymentService {
       paidAt: isPartner ? new Date() : undefined,
     });
 
+    // Update Partner Dues if payment is SUCCESS
+    if (finalStatus === PAYMENT_STATUS.SUCCESS) {
+      const job = await JobModel.findOne({ bookingId });
+      if (job && job.partnerId) {
+        const commissionAmount = amount * 0.15; // 15% flat commission for now
+        await PartnerModel.findByIdAndUpdate(job.partnerId, {
+          $inc: { outstandingDues: commissionAmount },
+        });
+      }
+    }
+
     // Send notifications if needed
     try {
       const {
@@ -429,6 +441,12 @@ export class PaymentService {
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.paidAt = new Date();
     await payment.save();
+
+    // Deduct 15% commission as outstanding dues
+    const commissionAmount = payment.amount * 0.15;
+    await PartnerModel.findByIdAndUpdate(job.partnerId, {
+      $inc: { outstandingDues: commissionAmount },
+    });
 
     try {
       const {

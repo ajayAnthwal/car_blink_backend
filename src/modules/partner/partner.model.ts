@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
 export interface IPartner extends Document {
   userId: mongoose.Types.ObjectId;
@@ -8,12 +8,14 @@ export interface IPartner extends Document {
   servicesOffered: mongoose.Types.ObjectId[];
   gstNumber?: string;
   isVerified: boolean;
-  verificationStatus: 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
+  verificationStatus: "PENDING" | "UNDER_REVIEW" | "APPROVED" | "REJECTED";
   rejectionReason?: string;
   rating: number;
   totalReviews: number;
   dailyCapacity: number;
   blockedDates: Date[];
+  outstandingDues: number;
+  walletBalance: number;
   location?: {
     type: string;
     coordinates: number[];
@@ -26,29 +28,29 @@ const PartnerSchema = new Schema<IPartner>(
   {
     userId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'User ID is required'],
+      ref: "User",
+      required: [true, "User ID is required"],
       unique: true,
     },
     businessName: {
       type: String,
-      required: [true, 'Business name is required'],
+      required: [true, "Business name is required"],
       trim: true,
     },
     businessAddress: {
       type: String,
-      required: [true, 'Business address is required'],
+      required: [true, "Business address is required"],
       trim: true,
     },
     cityId: {
       type: Schema.Types.ObjectId,
-      ref: 'City',
-      required: [true, 'City ID is required'],
+      ref: "City",
+      required: [true, "City ID is required"],
     },
     servicesOffered: [
       {
         type: Schema.Types.ObjectId,
-        ref: 'Service',
+        ref: "Service",
       },
     ],
     gstNumber: {
@@ -61,8 +63,8 @@ const PartnerSchema = new Schema<IPartner>(
     },
     verificationStatus: {
       type: String,
-      enum: ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'],
-      default: 'PENDING',
+      enum: ["PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED"],
+      default: "PENDING",
       required: true,
     },
     rejectionReason: {
@@ -87,10 +89,18 @@ const PartnerSchema = new Schema<IPartner>(
       type: [Date],
       default: [],
     },
+    outstandingDues: {
+      type: Number,
+      default: 0,
+    },
+    walletBalance: {
+      type: Number,
+      default: 0,
+    },
     location: {
       type: {
         type: String,
-        enum: ['Point'],
+        enum: ["Point"],
       },
       coordinates: {
         type: [Number],
@@ -99,10 +109,10 @@ const PartnerSchema = new Schema<IPartner>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-PartnerSchema.index({ location: '2dsphere' });
+PartnerSchema.index({ location: "2dsphere" });
 
-export const PartnerModel = mongoose.model<IPartner>('Partner', PartnerSchema);
+export const PartnerModel = mongoose.model<IPartner>("Partner", PartnerSchema);
 export default PartnerModel;

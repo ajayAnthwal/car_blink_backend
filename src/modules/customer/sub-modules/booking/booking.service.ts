@@ -332,11 +332,6 @@ export class BookingService {
     }
 
     extension.status = status;
-    
-    // if approved, add cost to finalAmount
-    if (status === 'APPROVED') {
-      job.finalAmount = (job.finalAmount || 0) + extension.cost;
-    }
     await job.save();
 
     // notify partner
