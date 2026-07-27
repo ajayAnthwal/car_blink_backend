@@ -7,8 +7,15 @@ export const paginationQuerySchema = z.object({
 
 export const createServiceSchema = z.object({
   name: z.string().min(1, 'Service name is required'),
+  slug: z.string().min(1, 'Slug is required'),
   icon: z.string().min(1, 'Icon key or URL is required'),
   category: z.string().optional(),
+  description: z.string().optional(),
+  fullDescription: z.string().optional(),
+  price: z.number().optional(),
+  estimatedDuration: z.string().optional(),
+  includedServices: z.array(z.string()).optional(),
+  benefits: z.array(z.string()).optional(),
 });
 
 export const updateServiceSchema = createServiceSchema.partial();

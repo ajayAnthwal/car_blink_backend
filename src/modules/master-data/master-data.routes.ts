@@ -18,6 +18,7 @@ const router = Router();
 
 // Public Read Routes
 router.get('/services', validate({ query: paginationQuerySchema }), MasterDataController.getServices);
+router.get('/services/:slug', MasterDataController.getServiceBySlug);
 router.get('/cities', validate({ query: paginationQuerySchema }), MasterDataController.getCities);
 router.get('/vehicle-brands', MasterDataController.getVehicleBrands);
 router.get('/vehicle-models', MasterDataController.getVehicleModels);

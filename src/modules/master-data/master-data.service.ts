@@ -6,14 +6,30 @@ import { NotFoundError } from '../../common/errors/NotFoundError';
 
 export class MasterDataService {
   // Services
-  public static async getAllServices(query: { page?: number; limit?: number }): Promise<IPaginatedResult<IService>> {
+  public static async getAllServices(query: { page?: number; limit?: number; search?: string; category?: string }): Promise<IPaginatedResult<IService>> {
     const { page, limit, skip } = getPaginationOptions(query);
-    const filter = { isActive: true };
+    const filter: any = { isActive: true };
+    
+    if (query.search) {
+      filter.name = { $regex: query.search, $options: 'i' };
+    }
+    if (query.category) {
+      filter.category = query.category;
+    }
+
     const [data, total] = await Promise.all([
       ServiceModel.find(filter).skip(skip).limit(limit).sort({ name: 1 }),
       ServiceModel.countDocuments(filter),
     ]);
     return formatPaginatedResponse(data, total, page, limit);
+  }
+
+  public static async getServiceBySlug(slug: string): Promise<IService> {
+    const service = await ServiceModel.findOne({ slug, isActive: true });
+    if (!service) {
+      throw new NotFoundError('Service not found');
+    }
+    return service;
   }
 
   public static async createService(data: Partial<IService>): Promise<IService> {

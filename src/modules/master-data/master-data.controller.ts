@@ -9,9 +9,17 @@ export class MasterDataController {
     const query = {
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      category: req.query.category ? String(req.query.category) : undefined,
     };
     const result = await MasterDataService.getAllServices(query);
     return successResponse(res, result, 'Services retrieved successfully');
+  });
+
+  public static getServiceBySlug = asyncHandler(async (req: Request, res: Response) => {
+    const { slug } = req.params;
+    const result = await MasterDataService.getServiceBySlug(slug);
+    return successResponse(res, result, 'Service details retrieved successfully');
   });
 
   public static createService = asyncHandler(async (req: Request, res: Response) => {
