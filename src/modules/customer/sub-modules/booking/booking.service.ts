@@ -11,6 +11,7 @@ import { UnauthorizedError } from '../../../../common/errors/UnauthorizedError';
 import { ApiError } from '../../../../common/errors/ApiError';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
+import { Types } from 'mongoose';
 import { emitToUser, emitToRole } from '../../../../sockets';
 
 export class BookingService {
@@ -348,6 +349,9 @@ export class BookingService {
           `Customer has ${status} the extra part request (${extension.partName}).`,
           { jobId: job._id.toString() }
         );
+        emitToUser(partner.userId.toString(), 'job_updated', { jobId: job._id.toString() });
+        emitToRole('SUPER_ADMIN', 'booking_updated', { bookingId: booking._id.toString() });
+        emitToRole('ACCOUNTS', 'booking_updated', { bookingId: booking._id.toString() });
       }
     } catch (e) {
       console.warn('Failed to send partner notification', e);

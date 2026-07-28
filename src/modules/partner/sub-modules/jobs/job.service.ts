@@ -463,6 +463,9 @@ export class JobService {
           `The garage has requested an extension for part: ${data.partName} costing ${data.cost}. Please approve or reject.`,
           { bookingId: booking._id.toString() },
         );
+        emitToUser(booking.customerId.toString(), "booking_updated", {
+          bookingId: booking._id.toString(),
+        });
       }
     } catch (e) {
       console.warn("Failed to send extension notification", e);

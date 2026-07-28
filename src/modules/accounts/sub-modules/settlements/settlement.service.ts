@@ -12,6 +12,7 @@ import { ApiError } from '../../../../common/errors/ApiError';
 import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
 import { logger } from '../../../../config/logger.config';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../../common/constants/status.constant';
+import { emitToUser } from '../../../../sockets';
 
 export class SettlementService {
   /**
@@ -143,6 +144,15 @@ export class SettlementService {
       processedByAccountsId: accountsId,
     });
 
+    try {
+      const partner = await PartnerModel.findById(job.partnerId);
+      if (partner) {
+        emitToUser(partner.userId.toString(), 'settlement_updated', { settlementId: settlement._id.toString() });
+      }
+    } catch (e) {
+      logger.warn('Failed to emit settlement event', e);
+    }
+
     return settlement;
   }
 
@@ -220,6 +230,7 @@ export class SettlementService {
           `Your payout settlement of INR ${settlement.netPayoutAmount} has been processed. Ref: ${transactionReference}`,
           { settlementId: settlement._id.toString(), jobId: settlement.jobId.toString() }
         );
+        emitToUser(partner.userId.toString(), 'settlement_updated', { settlementId: settlement._id.toString() });
       }
     } catch (notifErr: any) {
       logger.warn('Failed to send settlement processed notification to partner:', notifErr);
