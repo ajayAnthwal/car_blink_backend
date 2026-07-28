@@ -24,5 +24,19 @@ export class StaffController {
     const staff = await StaffService.updateStatus(String(userId), id, status);
     return successResponse(res, staff, 'Staff status updated successfully');
   });
+
+  public static updateStaff = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const staff = await StaffService.updateStaff(String(userId), id, req.body);
+    return successResponse(res, staff, 'Staff updated successfully');
+  });
+
+  public static deleteStaff = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    await StaffService.deleteStaff(String(userId), id);
+    return successResponse(res, null, 'Staff deleted successfully');
+  });
 }
 export default StaffController;

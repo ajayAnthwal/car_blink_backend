@@ -4,6 +4,7 @@ import { PartnerModel } from '../../partner.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
 import { PaymentModel } from '../../../payment/payment.model';
+import { SettlementModel } from '../../../accounts/sub-modules/settlements/settlement.model';
 
 export class EarningsService {
   public static async getMyEarnings(
@@ -88,6 +89,20 @@ export class EarningsService {
 
     const lifetimeEarnings = result.length > 0 ? result[0].totalEarnings : 0;
     return { lifetimeEarnings, completedJobsCount };
+  }
+
+  public static async getMySettlements(userId: string): Promise<any[]> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) {
+      throw new NotFoundError('Partner profile not found');
+    }
+
+    const settlements = await SettlementModel.find({ partnerId: partner._id })
+      .populate('jobId')
+      .sort({ createdAt: -1 })
+      .lean();
+      
+    return settlements;
   }
 }
 export default EarningsService;

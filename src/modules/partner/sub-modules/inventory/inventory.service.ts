@@ -10,10 +10,10 @@ export class InventoryService {
     return await InventoryModel.find({ partnerId }).sort({ createdAt: -1 });
   }
 
-  public static async updateQuantity(partnerId: string, id: string, quantity: number) {
+  public static async updateStockItem(partnerId: string, id: string, data: any) {
     const item = await InventoryModel.findOneAndUpdate(
       { _id: id, partnerId },
-      { quantity },
+      data,
       { new: true }
     );
     if (!item) throw new NotFoundError('Inventory item not found');

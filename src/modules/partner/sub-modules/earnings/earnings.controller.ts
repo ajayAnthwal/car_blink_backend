@@ -16,5 +16,11 @@ export class EarningsController {
     const result = await EarningsService.getEarningsSummary(String(userId));
     return successResponse(res, result, 'Earnings summary retrieved successfully');
   });
+
+  public static getMySettlements = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const result = await EarningsService.getMySettlements(String(userId));
+    return successResponse(res, result, 'Settlements retrieved successfully');
+  });
 }
 export default EarningsController;

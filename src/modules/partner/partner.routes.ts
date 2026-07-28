@@ -51,6 +51,7 @@ router.patch('/jobs/:id/assign-staff', JobController.assignStaff);
 // 5. Earnings
 router.get('/earnings', EarningsController.getMyEarnings);
 router.get('/earnings/summary', EarningsController.getEarningsSummary);
+router.get('/earnings/settlements', EarningsController.getMySettlements);
 
 router.use("/inventory", inventoryRouter);
 router.use("/staff", staffRouter);

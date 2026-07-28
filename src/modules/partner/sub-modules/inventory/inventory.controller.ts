@@ -17,12 +17,11 @@ export class InventoryController {
     return successResponse(res, items, 'Inventory retrieved successfully');
   });
 
-  public static updateQuantity = asyncHandler(async (req: IRequest, res: Response) => {
+  public static updateStockItem = asyncHandler(async (req: IRequest, res: Response) => {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { quantity } = req.body;
-    const item = await InventoryService.updateQuantity(String(userId), id, quantity);
-    return successResponse(res, item, 'Quantity updated successfully');
+    const item = await InventoryService.updateStockItem(String(userId), id, req.body);
+    return successResponse(res, item, 'Inventory item updated successfully');
   });
 
   public static deleteItem = asyncHandler(async (req: IRequest, res: Response) => {

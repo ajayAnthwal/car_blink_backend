@@ -10,7 +10,7 @@ router.use(authMiddleware, roleMiddleware([ROLES.PARTNER]));
 
 router.post('/', InventoryController.addStock);
 router.get('/', InventoryController.getStock);
-router.patch('/:id', InventoryController.updateQuantity);
+router.patch('/:id', InventoryController.updateStockItem);
 router.delete('/:id', InventoryController.deleteItem);
 
 export default router;

@@ -19,4 +19,20 @@ export class StaffService {
     if (!staff) throw new NotFoundError('Staff member not found');
     return staff;
   }
+
+  public static async updateStaff(partnerId: string, id: string, data: any) {
+    const staff = await StaffModel.findOneAndUpdate(
+      { _id: id, partnerId },
+      data,
+      { new: true }
+    );
+    if (!staff) throw new NotFoundError('Staff member not found');
+    return staff;
+  }
+
+  public static async deleteStaff(partnerId: string, id: string) {
+    const staff = await StaffModel.findOneAndDelete({ _id: id, partnerId });
+    if (!staff) throw new NotFoundError('Staff member not found');
+    return staff;
+  }
 }
