@@ -34,6 +34,12 @@ export class SuperAdminNotificationsService {
     if (targetAudience === 'CUSTOMERS' || targetAudience === 'ALL') {
       emitToRole('CUSTOMER', 'notification:new', payload);
     }
+    if (targetAudience === 'ALL') {
+      emitToRole('SUPER_ADMIN', 'notification:new', payload);
+      emitToRole('ADMIN', 'notification:new', payload);
+      emitToRole('EXECUTIVE', 'notification:new', payload);
+      emitToRole('ACCOUNTS', 'notification:new', payload);
+    }
 
     // Insert notifications into database for all targeted users
     let roleFilter = {};
