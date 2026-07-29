@@ -13,6 +13,9 @@ export interface IPayment extends Document {
   status: PAYMENT_STATUS;
   failureReason?: string;
   paidAt?: Date;
+  couponCode?: string;
+  baseAmount?: number;
+  discountAmount?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,6 +72,19 @@ const PaymentSchema = new Schema<IPayment>(
     },
     paidAt: {
       type: Date,
+    },
+    couponCode: {
+      type: String,
+      trim: true,
+    },
+    baseAmount: {
+      type: Number,
+      min: 0,
+    },
+    discountAmount: {
+      type: Number,
+      min: 0,
+      default: 0,
     },
   },
   {

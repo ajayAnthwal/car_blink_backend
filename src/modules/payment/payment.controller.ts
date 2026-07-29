@@ -7,9 +7,9 @@ import { IRequest } from '../../common/interfaces/IRequest';
 export class PaymentController {
   public static initiate = asyncHandler(async (req: IRequest, res: Response) => {
     const customerId = String(req.user?.userId);
-    const { bookingId, amount, paymentType } = req.body;
+    const { bookingId, amount, paymentType, couponCode } = req.body;
 
-    const result = await paymentService.initiatePayment(customerId, bookingId, amount, paymentType);
+    const result = await paymentService.initiatePayment(customerId, bookingId, amount, paymentType, couponCode);
     return successResponse(res, result, 'Payment initiated successfully', 201);
   });
 
@@ -29,9 +29,9 @@ export class PaymentController {
     try {
       const userId = String(req.user?.userId);
       const isPartner = req.user?.role === 'PARTNER'; // Check if the user is a partner
-      const { bookingId, amount, paymentType } = req.body;
+      const { bookingId, amount, paymentType, couponCode } = req.body;
   
-      const result = await paymentService.markOfflinePayment(bookingId, amount, paymentType, userId, isPartner);
+      const result = await paymentService.markOfflinePayment(bookingId, amount, paymentType, userId, isPartner, couponCode);
       return successResponse(res, result, 'Offline payment marked successfully');
     } catch (err: any) {
       require('fs').writeFileSync('c:\\Users\\ajay anthwal\\Desktop\\car_blink_backend\\offline_error.txt', JSON.stringify({ message: err.message, stack: err.stack }));

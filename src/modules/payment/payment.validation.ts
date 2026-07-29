@@ -9,6 +9,7 @@ export const initiatePaymentSchema = z.object({
   paymentType: z.nativeEnum(PAYMENT_TYPE, {
     errorMap: () => ({ message: 'Invalid paymentType' }),
   }),
+  couponCode: z.string().optional(),
 });
 
 export const verifyPaymentSchema = z.object({

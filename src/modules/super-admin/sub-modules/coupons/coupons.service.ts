@@ -13,6 +13,14 @@ export class CouponService {
     return await CouponModel.findOne({ code: code.toUpperCase(), isActive: true }); 
   }
 
+  static async incrementCouponUsage(code: string) {
+    return await CouponModel.findOneAndUpdate(
+      { code: code.toUpperCase() },
+      { $inc: { currentUses: 1 } },
+      { new: true }
+    );
+  }
+
   static async getAllCoupons() {
     return await CouponModel.find({}).sort({ createdAt: -1 }).lean();
   }

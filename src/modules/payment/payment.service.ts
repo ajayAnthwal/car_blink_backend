@@ -27,6 +27,7 @@ export class PaymentService {
     bookingId: string,
     amount: number,
     paymentType: PAYMENT_TYPE,
+    couponCode?: string,
   ): Promise<{
     orderId: string;
     amount: number;
@@ -74,6 +75,29 @@ export class PaymentService {
       }
     }
 
+    let baseAmount = amount;
+    let discountAmount = 0;
+
+    if (couponCode) {
+      const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
+      const coupon = await CouponService.validate(couponCode);
+      if (!coupon) {
+        throw new BadRequestError("Invalid or expired coupon code");
+      }
+      if (coupon.currentUses >= coupon.maxUses) {
+        throw new BadRequestError("Coupon usage limit reached");
+      }
+      
+      if (coupon.discountType === 'PERCENTAGE') {
+        discountAmount = baseAmount * (coupon.discountValue / 100);
+      } else {
+        discountAmount = coupon.discountValue;
+      }
+      
+      if (discountAmount > baseAmount) discountAmount = baseAmount;
+      amount = baseAmount - discountAmount;
+    }
+
     const tempPaymentId = new mongoose.Types.ObjectId();
 
     // Call the provider to create an order
@@ -89,6 +113,9 @@ export class PaymentService {
       bookingId,
       customerId,
       amount,
+      baseAmount,
+      discountAmount,
+      couponCode,
       currency: "INR",
       paymentType,
       provider: PAYMENT_PROVIDER.RAZORPAY,
@@ -136,6 +163,11 @@ export class PaymentService {
       payment.providerPaymentId = data.paymentId;
       payment.paidAt = new Date();
       await payment.save();
+
+      if (payment.couponCode) {
+        const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
+        await CouponService.incrementCouponUsage(payment.couponCode);
+      }
 
       // Notify customer of successful payment
       try {
@@ -279,6 +311,7 @@ export class PaymentService {
     paymentType: PAYMENT_TYPE,
     userId: string, // Could be customer or partner ID
     isPartner: boolean = false,
+    couponCode?: string,
   ): Promise<IPayment> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) {
@@ -302,6 +335,29 @@ export class PaymentService {
       );
     }
 
+    let baseAmount = amount;
+    let discountAmount = 0;
+
+    if (couponCode) {
+      const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
+      const coupon = await CouponService.validate(couponCode);
+      if (!coupon) {
+        throw new BadRequestError("Invalid or expired coupon code");
+      }
+      if (coupon.currentUses >= coupon.maxUses) {
+        throw new BadRequestError("Coupon usage limit reached");
+      }
+      
+      if (coupon.discountType === 'PERCENTAGE') {
+        discountAmount = baseAmount * (coupon.discountValue / 100);
+      } else {
+        discountAmount = coupon.discountValue;
+      }
+      
+      if (discountAmount > baseAmount) discountAmount = baseAmount;
+      amount = baseAmount - discountAmount;
+    }
+
     const tempPaymentId = new mongoose.Types.ObjectId();
     const providerOrderId = `CASH_${tempPaymentId.toString()}`;
 
@@ -314,6 +370,9 @@ export class PaymentService {
       bookingId,
       customerId: booking.customerId,
       amount,
+      baseAmount,
+      discountAmount,
+      couponCode,
       currency: "INR",
       paymentType,
       provider: PAYMENT_PROVIDER.CASH,
@@ -326,10 +385,19 @@ export class PaymentService {
     if (finalStatus === PAYMENT_STATUS.SUCCESS) {
       const job = await JobModel.findOne({ bookingId });
       if (job && job.partnerId) {
-        const commissionAmount = amount * 0.15; // 15% flat commission for now
+        const _baseAmount = payment.baseAmount || payment.amount;
+        const _discountAmount = payment.discountAmount || 0;
+        const commissionAmount = _baseAmount * 0.15;
+        const duesToAdd = commissionAmount - _discountAmount;
+
         await PartnerModel.findByIdAndUpdate(job.partnerId, {
-          $inc: { outstandingDues: commissionAmount },
+          $inc: { outstandingDues: duesToAdd },
         });
+      }
+
+      if (payment.couponCode) {
+        const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
+        await CouponService.incrementCouponUsage(payment.couponCode);
       }
     }
 
@@ -442,11 +510,20 @@ export class PaymentService {
     payment.paidAt = new Date();
     await payment.save();
 
-    // Deduct 15% commission as outstanding dues
-    const commissionAmount = payment.amount * 0.15;
+    // Deduct commission as outstanding dues, adjusted for any discount borne by the platform
+    const baseAmount = payment.baseAmount || payment.amount;
+    const discountAmount = payment.discountAmount || 0;
+    const commissionAmount = baseAmount * 0.15;
+    const duesToAdd = commissionAmount - discountAmount;
+    
     await PartnerModel.findByIdAndUpdate(job.partnerId, {
-      $inc: { outstandingDues: commissionAmount },
+      $inc: { outstandingDues: duesToAdd },
     });
+
+    if (payment.couponCode) {
+      const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
+      await CouponService.incrementCouponUsage(payment.couponCode);
+    }
 
     try {
       const {
