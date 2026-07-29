@@ -1,5 +1,7 @@
 import { NotificationHistoryModel } from './notifications.model';
 import { emitToRole } from '../../../../sockets';
+import { UserModel } from '../../../user/user.model';
+import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATION_STATUS } from '../../../notification/notification.model';
 
 export class SuperAdminNotificationsService {
   async getHistory() {
@@ -25,13 +27,37 @@ export class SuperAdminNotificationsService {
     });
 
     // Emit live socket event
-    const payload = { title, message: body, timestamp: new Date() };
-    if (targetAudience === 'ALL_PARTNERS' || targetAudience === 'ALL_USERS') {
+    const payload = { title, message: body, timestamp: new Date(), isRead: false, category: NOTIFICATION_CATEGORY.GENERAL };
+    if (targetAudience === 'PARTNERS' || targetAudience === 'ALL') {
       emitToRole('PARTNER', 'notification:new', payload);
     }
-    if (targetAudience === 'ALL_CUSTOMERS' || targetAudience === 'ALL_USERS') {
+    if (targetAudience === 'CUSTOMERS' || targetAudience === 'ALL') {
       emitToRole('CUSTOMER', 'notification:new', payload);
     }
+
+    // Insert notifications into database for all targeted users
+    let roleFilter = {};
+    if (targetAudience === 'PARTNERS') roleFilter = { role: 'PARTNER' };
+    else if (targetAudience === 'CUSTOMERS') roleFilter = { role: 'CUSTOMER' };
+    
+    // Asynchronous bulk insert to not block the request
+    UserModel.find(roleFilter).select('_id').lean().then(async (users) => {
+      if (users.length > 0) {
+        const notificationsToInsert = users.map(u => ({
+          userId: u._id,
+          type: NOTIFICATION_TYPE.PUSH,
+          category: NOTIFICATION_CATEGORY.GENERAL,
+          title,
+          message: body,
+          status: NOTIFICATION_STATUS.SENT,
+          isRead: false,
+        }));
+        // Use NotificationModel directly
+        await NotificationModel.insertMany(notificationsToInsert);
+      }
+    }).catch(err => {
+      console.error("Failed to bulk insert notifications", err);
+    });
 
     return record;
   }
