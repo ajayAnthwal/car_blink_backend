@@ -4,7 +4,7 @@ import { BookingModel } from '../customer/sub-modules/booking/booking.model';
 import { PartnerModel } from '../partner/partner.model';
 import { BidModel } from '../partner/sub-modules/bidding/bid.model';
 import { JobModel } from '../partner/sub-modules/jobs/job.model';
-import { KycDocumentModel } from '../../partner/sub-modules/kyc/kyc.model';
+import { KycDocumentModel } from '../partner/sub-modules/kyc/kyc.model';
 import { emitToUser, emitToRole } from '../../sockets';
 import { ROLES } from '../../common/constants/roles.constant';
 import { BOOKING_STATUS } from '../../common/constants/status.constant';
@@ -181,7 +181,7 @@ export class ExecutiveService {
 
     const kycDocs = await KycDocumentModel.find({ partnerId: { $in: partnerIds } }).lean();
     const kycDocsMap = new Map();
-    kycDocs.forEach((doc) => {
+    kycDocs.forEach((doc: any) => {
       const pid = doc.partnerId.toString();
       if (!kycDocsMap.has(pid)) kycDocsMap.set(pid, []);
       kycDocsMap.get(pid).push(doc);
