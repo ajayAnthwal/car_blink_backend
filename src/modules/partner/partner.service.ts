@@ -97,5 +97,13 @@ export class PartnerService {
     if (!partner) throw new NotFoundError('Partner profile not found');
     return partner;
   }
+
+  public static async getTopWorkshops(): Promise<IPartner[]> {
+    // Fetch top 4 verified workshops, sorted by rating
+    return await PartnerModel.find({ isVerified: true })
+      .populate('cityId', 'name')
+      .sort({ rating: -1, totalReviews: -1 })
+      .limit(4);
+  }
 }
 export default PartnerService;

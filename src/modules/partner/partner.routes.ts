@@ -18,6 +18,9 @@ import { placeBidSchema } from './sub-modules/bidding/bid.validation';
 
 const router = Router();
 
+// Public Routes
+router.get('/public/top-workshops', PartnerController.getTopWorkshops);
+
 // Secure all partner routes with auth + role restriction
 router.use(authMiddleware as any);
 router.use(roleMiddleware([ROLES.PARTNER]) as any);

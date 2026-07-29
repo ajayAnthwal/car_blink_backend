@@ -1,6 +1,7 @@
 import { ServiceModel, IService } from './models/service.model';
 import { CityModel, ICity } from './models/city.model';
 import { VehicleBrandModel, VehicleModelModel, IVehicleBrand, IVehicleModel } from './models/vehicle.model';
+import { PlanModel, IPlan } from './models/plan.model';
 import { getPaginationOptions, formatPaginatedResponse, IPaginatedResult } from '../../common/utils/pagination.util';
 import { NotFoundError } from '../../common/errors/NotFoundError';
 
@@ -107,5 +108,10 @@ export class MasterDataService {
     }
     const model = await VehicleModelModel.create(data);
     return await model.populate('brandId');
+  }
+
+  // Plans
+  public static async getAllPlans(): Promise<IPlan[]> {
+    return await PlanModel.find({ isActive: true }).sort({ price: 1 });
   }
 }

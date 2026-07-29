@@ -87,4 +87,10 @@ export class MasterDataController {
     const result = await MasterDataService.createVehicleModel(req.body);
     return successResponse(res, result, 'Vehicle model created successfully', 201);
   });
+
+  // Plans
+  public static getPlans = asyncHandler(async (req: Request, res: Response) => {
+    const result = await MasterDataService.getAllPlans();
+    return successResponse(res, result, 'Plans retrieved successfully');
+  });
 }
