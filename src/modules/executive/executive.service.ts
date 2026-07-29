@@ -4,6 +4,8 @@ import { BookingModel } from '../customer/sub-modules/booking/booking.model';
 import { PartnerModel } from '../partner/partner.model';
 import { BidModel } from '../partner/sub-modules/bidding/bid.model';
 import { JobModel } from '../partner/sub-modules/jobs/job.model';
+import { KycDocumentModel } from '../../partner/sub-modules/kyc/kyc.model';
+import { emitToUser, emitToRole } from '../../sockets';
 import { ROLES } from '../../common/constants/roles.constant';
 import { BOOKING_STATUS } from '../../common/constants/status.constant';
 
@@ -29,7 +31,7 @@ export class ExecutiveService {
 
     // First find matching customer users
     const customers = await UserModel.find(matchUser)
-      .select('fullName email phone isActive createdAt')
+      .select('fullName email phone isActive isPhoneVerified isEmailVerified createdAt')
       .skip(skip)
       .limit(limit)
       .lean();
@@ -77,6 +79,8 @@ export class ExecutiveService {
       };
       return {
         ...customer,
+        status: customer.isActive ? 'ACTIVE' : 'INACTIVE',
+        isVerified: customer.isPhoneVerified && customer.isEmailVerified,
         totalBookings: stats.totalBookings,
         activeBookings: stats.activeBookings,
         lastBookingDate: stats.lastBookingDate,
@@ -175,11 +179,20 @@ export class ExecutiveService {
     const bidStatsMap = new Map();
     bidStats.forEach((stat) => bidStatsMap.set(stat._id.toString(), stat.activeBidsCount));
 
+    const kycDocs = await KycDocumentModel.find({ partnerId: { $in: partnerIds } }).lean();
+    const kycDocsMap = new Map();
+    kycDocs.forEach((doc) => {
+      const pid = doc.partnerId.toString();
+      if (!kycDocsMap.has(pid)) kycDocsMap.set(pid, []);
+      kycDocsMap.get(pid).push(doc);
+    });
+
     const partnersWithStats = partners.map((partner) => {
       return {
         ...partner,
         totalJobsCompleted: jobStatsMap.get(partner._id.toString()) || 0,
         activeBidsCount: bidStatsMap.get(partner._id.toString()) || 0,
+        kycDocuments: kycDocsMap.get(partner._id.toString()) || [],
       };
     });
 
@@ -189,6 +202,65 @@ export class ExecutiveService {
       page,
       limit,
     };
+  }
+
+  /**
+   * Verify a customer
+   */
+  async verifyCustomer(id: string): Promise<any> {
+    const user = await UserModel.findByIdAndUpdate(
+      id,
+      { isActive: true, isPhoneVerified: true, isEmailVerified: true },
+      { new: true }
+    );
+    if (!user) {
+      throw new Error('Customer not found');
+    }
+    return user;
+  }
+
+  /**
+   * Verify a partner
+   */
+  async verifyPartner(id: string, status: 'APPROVED' | 'REJECTED' = 'APPROVED', reason?: string): Promise<any> {
+    const updateData: any = { verificationStatus: status };
+    if (status === 'APPROVED') {
+      updateData.isVerified = true;
+    }
+    if (reason) {
+      updateData.rejectionReason = reason;
+    }
+
+    const partner = await PartnerModel.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true }
+    );
+    if (!partner) {
+      throw new Error('Partner not found');
+    }
+    if (status === 'APPROVED') {
+      await UserModel.findByIdAndUpdate(partner.userId, { isActive: true });
+      await KycDocumentModel.updateMany({ partnerId: id }, { status: 'APPROVED' });
+    } else {
+      await KycDocumentModel.updateMany({ partnerId: id }, { status: 'REJECTED' });
+    }
+
+    try {
+      emitToUser(partner.userId.toString(), 'kyc_status_changed', { 
+        status, 
+        reason,
+        message: `Your KYC verification has been ${status.toLowerCase()}.` 
+      });
+      emitToRole('EXECUTIVE', 'partner_status_updated', {
+        partnerId: partner._id,
+        status
+      });
+    } catch (err) {
+      // ignore
+    }
+
+    return partner;
   }
 }
 

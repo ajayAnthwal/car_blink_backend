@@ -1,6 +1,7 @@
 import { KycDocumentModel, IKycDocument } from './kyc.model';
 import { PartnerModel } from '../../partner.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
+import { emitToRole } from '../../../../sockets';
 
 export class KycService {
   public static async uploadKycDocument(
@@ -18,6 +19,20 @@ export class KycService {
       documentUrl: data.documentUrl,
       status: 'PENDING',
     });
+
+    if (partner.verificationStatus === 'PENDING' || partner.verificationStatus === 'REJECTED') {
+      partner.verificationStatus = 'UNDER_REVIEW';
+      await partner.save();
+      
+      try {
+        emitToRole('EXECUTIVE', 'kyc_update', {
+          partnerId: partner._id,
+          message: 'New KYC document uploaded by partner'
+        });
+      } catch (err) {
+        // ignore socket errors
+      }
+    }
 
     return doc;
   }

@@ -29,4 +29,17 @@ export class ExecutiveController {
       message: 'Call has been initiated. Waiting for connection.'
     }, 'Call initiated successfully');
   });
+
+  public static verifyCustomer = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const result = await executiveService.verifyCustomer(id);
+    return successResponse(res, result, 'Customer verified successfully');
+  });
+
+  public static verifyPartner = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { status = 'APPROVED', reason } = req.body;
+    const result = await executiveService.verifyPartner(id, status, reason);
+    return successResponse(res, result, `Partner ${status.toLowerCase()} successfully`);
+  });
 }

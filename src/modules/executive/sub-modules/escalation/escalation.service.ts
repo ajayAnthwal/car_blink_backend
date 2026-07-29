@@ -92,11 +92,11 @@ export class EscalationService {
       throw new NotFoundError('Escalation not found');
     }
 
-    escalation.assignedExecutiveId = executiveId as any;
+    const updates: any = { assignedExecutiveId: executiveId };
     if (escalation.status === ESCALATION_STATUS.OPEN) {
-      escalation.status = ESCALATION_STATUS.IN_PROGRESS;
+      updates.status = ESCALATION_STATUS.IN_PROGRESS;
     }
-    await escalation.save();
+    await EscalationModel.updateOne({ _id: escalationId }, { $set: updates });
 
     return await EscalationModel.findById(escalationId)
       .populate('bookingId', 'status description')
@@ -124,12 +124,12 @@ export class EscalationService {
       throw new UnauthorizedError('Only the assigned executive can resolve this escalation');
     }
 
-    escalation.status = ESCALATION_STATUS.RESOLVED;
+    const updates: any = { status: ESCALATION_STATUS.RESOLVED };
     if (resolutionNotes !== undefined) {
-      escalation.resolutionNotes = resolutionNotes;
+      updates.resolutionNotes = resolutionNotes;
     }
 
-    await escalation.save();
+    await EscalationModel.updateOne({ _id: escalationId }, { $set: updates });
 
     // Notify affected user (relatedUserId)
     if (escalation.relatedUserId) {
