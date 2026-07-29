@@ -18,6 +18,10 @@ export class StripeProvider implements IPaymentProvider {
   async fetchPaymentStatus(paymentId: string): Promise<string> {
     return 'captured';
   }
+
+  async issueRefund(paymentId: string, amount: number, notes?: any): Promise<string> {
+    return `mock_stripe_refund_${crypto.randomUUID().replace(/-/g, '')}`;
+  }
 }
 
 export const stripeProvider = new StripeProvider();

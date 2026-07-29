@@ -8,6 +8,7 @@ import { ConflictError } from '../../../../common/errors/ConflictError';
 import { ApiError } from '../../../../common/errors/ApiError';
 import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
 import { logger } from '../../../../config/logger.config';
+import { razorpayProvider } from '../../../payment/providers/razorpay.provider';
 
 export class RefundService {
   /**
@@ -142,16 +143,33 @@ export class RefundService {
       );
     }
 
-    refund.status = 'PROCESSED';
-    refund.processedByAccountsId = accountsId as any;
-    await refund.save();
-
-    // Update related Payment status to REFUNDED
+    // Update related Payment status to REFUNDED and issue actual Razorpay Refund
     const payment = await PaymentModel.findById(refund.paymentId);
     if (payment) {
+      if (payment.providerPaymentId) {
+        try {
+          const providerRefundId = await razorpayProvider.issueRefund(
+            payment.providerPaymentId,
+            refund.amount,
+            { reason: refund.reason }
+          );
+          refund.providerRefundId = providerRefundId;
+        } catch (error: any) {
+          throw new ApiError(
+            500,
+            `Gateway refund failed: ${error.message || 'Unknown error'}`,
+            ERROR_CODES.INTERNAL_ERROR
+          );
+        }
+      }
+
       payment.status = PAYMENT_STATUS.REFUNDED;
       await payment.save();
     }
+
+    refund.status = 'PROCESSED';
+    refund.processedByAccountsId = accountsId as any;
+    await refund.save();
 
     // Trigger customer notification (try-catch wrapped)
     try {

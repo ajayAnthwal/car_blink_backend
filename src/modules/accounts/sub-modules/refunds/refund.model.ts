@@ -8,6 +8,7 @@ export interface IRefund extends Document {
   reason: string;
   status: 'REQUESTED' | 'APPROVED' | 'PROCESSED' | 'REJECTED';
   processedByAccountsId?: mongoose.Types.ObjectId;
+  providerRefundId?: string;
   rejectionReason?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +50,9 @@ const RefundSchema = new Schema<IRefund>(
     processedByAccountsId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+    },
+    providerRefundId: {
+      type: String,
     },
     rejectionReason: {
       type: String,

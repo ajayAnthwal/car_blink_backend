@@ -83,6 +83,23 @@ export class RazorpayProvider implements IPaymentProvider {
       throw error;
     }
   }
+
+  async issueRefund(paymentId: string, amount: number, notes?: any): Promise<string> {
+    if (isMockMode) {
+      return `mock_refund_${crypto.randomUUID().replace(/-/g, '')}`;
+    }
+
+    try {
+      const refund = await this.client.payments.refund(paymentId, {
+        amount: Math.round(amount * 100),
+        notes,
+      });
+      return refund.id;
+    } catch (error: any) {
+      logger.error('Razorpay issueRefund error:', error);
+      throw error;
+    }
+  }
 }
 
 export const razorpayProvider = new RazorpayProvider();
