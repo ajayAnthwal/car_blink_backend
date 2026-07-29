@@ -9,6 +9,10 @@ export class RefundController {
     const result = await refundService.getAllRefunds(req.query);
     return successResponse(res, result, 'Refunds retrieved successfully');
   });
+  public static getEligiblePayments = asyncHandler(async (req: IRequest, res: Response) => {
+    const result = await refundService.getEligiblePayments();
+    return successResponse(res, result, 'Eligible payments retrieved successfully');
+  });
 
   public static initiateRefund = asyncHandler(async (req: IRequest, res: Response) => {
     const accountsId = String(req.user?.userId);

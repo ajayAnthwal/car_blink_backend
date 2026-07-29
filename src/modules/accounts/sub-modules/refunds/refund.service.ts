@@ -39,6 +39,19 @@ export class RefundService {
   }
 
   /**
+   * Get eligible payments for refund (Status: SUCCESS)
+   */
+  async getEligiblePayments(): Promise<any[]> {
+    const payments = await PaymentModel.find({ status: PAYMENT_STATUS.SUCCESS })
+      .populate('bookingId', 'bookingStatus')
+      .populate('customerId', 'fullName email phone')
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    return payments;
+  }
+
+  /**
    * Initiate a refund request
    */
   async initiateRefund(
