@@ -166,21 +166,23 @@ export class BookingService {
 
     // Check for successful payment to auto-initiate refund
     const PaymentModel = mongoose.model('Payment');
-    const successfulPayment = await PaymentModel.findOne({
+    const successfulPayments = await PaymentModel.find({
       bookingId: booking._id,
       status: 'SUCCESS'
     });
 
-    if (successfulPayment) {
+    if (successfulPayments && successfulPayments.length > 0) {
       const RefundModel = mongoose.model('Refund');
-      await RefundModel.create({
-        paymentId: successfulPayment._id,
-        bookingId: booking._id,
-        customerId: booking.customerId,
-        amount: successfulPayment.amount,
-        reason: reason || 'Customer cancelled booking',
-        status: 'REQUESTED'
-      });
+      for (const payment of successfulPayments) {
+        await RefundModel.create({
+          paymentId: payment._id,
+          bookingId: booking._id,
+          customerId: booking.customerId,
+          amount: payment.amount,
+          reason: reason || 'Customer cancelled booking',
+          status: 'REQUESTED'
+        });
+      }
     }
 
     return booking;
