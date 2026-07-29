@@ -6,6 +6,6 @@ import { UserManagementController } from './user-management.controller';
 const router = Router();
 
 router.get('/', UserManagementController.getAllUsers);
-router.patch('/:id/status', validate({ body: userStatusSchema }), UserManagementController.toggleUserStatus);
+router.patch('/:id/status', validate({ body: userStatusSchema }), UserManagementController.updateUser);
 
 export default router;

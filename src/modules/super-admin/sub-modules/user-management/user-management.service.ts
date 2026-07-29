@@ -44,17 +44,23 @@ export class UserManagementService {
   }
 
   /**
-   * Toggle any user account active status
+   * Update any user account active status or role
    */
-  async toggleUserStatus(userId: string, isActive: boolean): Promise<IUser> {
+  async updateUser(userId: string, data: { isActive?: boolean; role?: string }): Promise<IUser> {
     const user = await UserModel.findById(userId);
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
-    user.isActive = isActive;
-    await user.save();
+    if (data.isActive !== undefined) {
+      user.isActive = data.isActive;
+    }
+    
+    if (data.role) {
+      user.role = data.role as any;
+    }
 
+    await user.save();
     return user;
   }
 }

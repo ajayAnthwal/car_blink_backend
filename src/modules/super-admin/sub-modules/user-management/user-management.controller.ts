@@ -10,14 +10,14 @@ export class UserManagementController {
     return successResponse(res, result, 'Users retrieved successfully');
   });
 
-  public static toggleUserStatus = asyncHandler(async (req: IRequest, res: Response) => {
+  public static updateUser = asyncHandler(async (req: IRequest, res: Response) => {
     const { id } = req.params;
-    const { isActive } = req.body;
-    const result = await userManagementService.toggleUserStatus(id, isActive);
+    const { isActive, role } = req.body;
+    const result = await userManagementService.updateUser(id, { isActive, role });
     return successResponse(
       res,
       result,
-      `User accounts status updated to ${isActive ? 'active' : 'inactive'} successfully`
+      `User updated successfully`
     );
   });
 }
