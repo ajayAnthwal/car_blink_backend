@@ -4,7 +4,7 @@ export interface IJob extends Document {
   bookingId: mongoose.Types.ObjectId;
   partnerId: mongoose.Types.ObjectId;
   bidId: mongoose.Types.ObjectId;
-  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   startedAt?: Date;
   completedAt?: Date;
   invoiceUrl?: string;
@@ -42,7 +42,7 @@ const JobSchema = new Schema<IJob>(
     },
     status: {
       type: String,
-      enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'],
+      enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
       default: 'NOT_STARTED',
       required: true,
     },

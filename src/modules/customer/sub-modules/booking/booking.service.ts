@@ -141,10 +141,10 @@ export class BookingService {
       throw new UnauthorizedError('You are not authorized to cancel this booking');
     }
 
-    // Only allow cancellation if status is PENDING or QUOTED
+    // Only allow cancellation if not completed or already cancelled
     if (
-      booking.status !== BOOKING_STATUS.PENDING &&
-      booking.status !== BOOKING_STATUS.QUOTED
+      booking.status === BOOKING_STATUS.COMPLETED ||
+      booking.status === BOOKING_STATUS.CANCELLED
     ) {
       throw new ApiError(
         400,
@@ -155,7 +155,35 @@ export class BookingService {
 
     booking.status = BOOKING_STATUS.CANCELLED;
     booking.cancellationReason = reason;
-    return booking.save();
+    await booking.save();
+
+    // Mark job as CANCELLED if it exists
+    const job = await JobModel.findOne({ bookingId: booking._id });
+    if (job) {
+      job.status = 'CANCELLED';
+      await job.save();
+    }
+
+    // Check for successful payment to auto-initiate refund
+    const PaymentModel = mongoose.model('Payment');
+    const successfulPayment = await PaymentModel.findOne({
+      bookingId: booking._id,
+      status: 'SUCCESS'
+    });
+
+    if (successfulPayment) {
+      const RefundModel = mongoose.model('Refund');
+      await RefundModel.create({
+        paymentId: successfulPayment._id,
+        bookingId: booking._id,
+        customerId: booking.customerId,
+        amount: successfulPayment.amount,
+        reason: reason || 'Customer cancelled booking',
+        status: 'REQUESTED'
+      });
+    }
+
+    return booking;
   }
 
   public static async getQuotesForBooking(

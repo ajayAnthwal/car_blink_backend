@@ -1,4 +1,5 @@
 import { RefundModel, IRefund } from './refund.model';
+import mongoose from 'mongoose';
 import { PaymentModel } from '../../../payment/payment.model';
 import { PAYMENT_STATUS } from '../../../../common/constants/status.constant';
 import { notificationService } from '../../../notification/notification.service';
@@ -165,6 +166,19 @@ export class RefundService {
 
       payment.status = PAYMENT_STATUS.REFUNDED;
       await payment.save();
+
+      // Handle Partner Settlement Deduction if a Job exists
+      const JobModel = mongoose.model('Job');
+      const SettlementModel = mongoose.model('Settlement');
+      const job = await JobModel.findOne({ bookingId: refund.bookingId });
+      
+      if (job) {
+        const settlement = await SettlementModel.findOne({ jobId: job._id });
+        if (settlement) {
+          settlement.status = 'REFUNDED';
+          await settlement.save();
+        }
+      }
     }
 
     refund.status = 'PROCESSED';

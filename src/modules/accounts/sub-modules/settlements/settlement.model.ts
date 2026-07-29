@@ -8,7 +8,7 @@ export interface ISettlement extends Document {
   tdsAmount: number;
   otherDeductions: number;
   netPayoutAmount: number;
-  status: 'PENDING' | 'PROCESSED' | 'FAILED';
+  status: 'PENDING' | 'PROCESSED' | 'FAILED' | 'REFUNDED';
   processedByAccountsId?: mongoose.Types.ObjectId;
   processedAt?: Date;
   transactionReference?: string;
@@ -51,7 +51,7 @@ const SettlementSchema = new Schema<ISettlement>(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'PROCESSED', 'FAILED'],
+      enum: ['PENDING', 'PROCESSED', 'FAILED', 'REFUNDED'],
       default: 'PENDING',
       required: true,
     },
