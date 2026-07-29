@@ -388,6 +388,7 @@ export class JobService {
     const warranty = await WarrantyModel.create({
       bookingId: job.bookingId,
       customerId: booking.customerId,
+      partnerId: job.partnerId,
       warrantyPeriodMonths: data.warrantyPeriodMonths,
       warrantyDocumentUrl: data.warrantyDocumentUrl,
       startDate: new Date(),

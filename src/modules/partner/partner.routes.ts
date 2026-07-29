@@ -4,6 +4,7 @@ import { roleMiddleware } from '../../middlewares/role.middleware';
 import inventoryRouter from "./sub-modules/inventory/inventory.routes";
 import staffRouter from "./sub-modules/staff/staff.routes";
 import posRouter from "./sub-modules/pos/pos.routes";
+import warrantyRouter from "./sub-modules/warranty/warranty.routes";
 import { validate } from '../../middlewares/validate.middleware';
 import { ROLES } from '../../common/constants/roles.constant';
 
@@ -56,5 +57,6 @@ router.get('/earnings/settlements', EarningsController.getMySettlements);
 router.use("/inventory", inventoryRouter);
 router.use("/staff", staffRouter);
 router.use("/pos", posRouter);
+router.use("/warranties", warrantyRouter);
 
 export default router;

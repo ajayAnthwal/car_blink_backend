@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IWarranty extends Document {
   bookingId: mongoose.Types.ObjectId;
   customerId: mongoose.Types.ObjectId;
+  partnerId: mongoose.Types.ObjectId;
   warrantyPeriodMonths: number;
   warrantyDocumentUrl?: string;
   startDate: Date;
@@ -23,6 +24,11 @@ const WarrantySchema = new Schema<IWarranty>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Customer ID is required'],
+    },
+    partnerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Partner', // Assuming Partner is the model name for partners
+      required: [true, 'Partner ID is required'],
     },
     warrantyPeriodMonths: {
       type: Number,
