@@ -22,6 +22,9 @@ router.patch(
   BookingController.respondToExtension
 );
 
+// Apply Coupon
+router.post('/:id/coupon', BookingController.applyCoupon);
+
 // Get tracking info
 router.get('/:id/tracking', BookingController.getTracking);
 

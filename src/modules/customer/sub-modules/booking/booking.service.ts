@@ -390,6 +390,66 @@ export class BookingService {
     return job;
   }
 
+  public static async applyCoupon(customerId: string, bookingId: string, couponCode: string): Promise<IBooking> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) throw new NotFoundError('Booking not found');
+    if (booking.customerId.toString() !== customerId) {
+      throw new UnauthorizedError('Not authorized');
+    }
+
+    if (booking.status === BOOKING_STATUS.COMPLETED || booking.status === BOOKING_STATUS.CANCELLED) {
+      throw new ApiError(400, 'Cannot apply coupon to a completed or cancelled booking', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    const { CouponService } = require('../../../super-admin/sub-modules/coupons/coupons.service');
+    const coupon = await CouponService.validate(couponCode);
+    if (!coupon) {
+      throw new ApiError(400, "Invalid or expired coupon code", ERROR_CODES.VALIDATION_ERROR);
+    }
+    if (coupon.currentUses >= coupon.maxUses) {
+      throw new ApiError(400, "Coupon usage limit reached", ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    let baseAmount = 0;
+    if (booking.acceptedBidId) {
+      const bid = await BidModel.findById(booking.acceptedBidId);
+      if (bid) {
+        baseAmount = bid.quotedAmount;
+      }
+    }
+    
+    const job = await JobModel.findOne({ bookingId: booking._id });
+    if (job && job.finalAmount) {
+      baseAmount = job.finalAmount;
+    }
+    
+    let approvedExtensionsCost = 0;
+    if (job && job.jobExtensions && job.jobExtensions.length > 0) {
+      const approvedExts = job.jobExtensions.filter((e: any) => e.status === 'APPROVED');
+      approvedExtensionsCost = approvedExts.reduce((sum: number, ext: any) => sum + ext.cost, 0);
+    }
+    
+    const totalAmount = baseAmount + approvedExtensionsCost;
+    if (totalAmount <= 0) {
+      throw new ApiError(400, 'Total booking amount is zero, cannot apply coupon', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    let discountAmount = 0;
+    if (coupon.discountType === 'PERCENTAGE') {
+      discountAmount = totalAmount * (coupon.discountValue / 100);
+    } else {
+      discountAmount = coupon.discountValue;
+    }
+    
+    if (discountAmount > totalAmount) discountAmount = totalAmount;
+
+    booking.appliedCoupon = couponCode;
+    booking.couponDiscountAmount = discountAmount;
+    await booking.save();
+
+    return booking;
+  }
+
   public static async getTracking(customerId: string, bookingId: string): Promise<any> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) throw new NotFoundError('Booking not found');

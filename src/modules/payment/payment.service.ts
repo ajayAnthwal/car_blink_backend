@@ -78,7 +78,8 @@ export class PaymentService {
     let baseAmount = amount;
     let discountAmount = 0;
 
-    if (couponCode) {
+    // Legacy support: if frontend sends couponCode, apply to installment
+    if (couponCode && !booking.appliedCoupon) {
       const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
       const coupon = await CouponService.validate(couponCode);
       if (!coupon) {
@@ -96,6 +97,9 @@ export class PaymentService {
       
       if (discountAmount > baseAmount) discountAmount = baseAmount;
       amount = baseAmount - discountAmount;
+    } else if (booking.appliedCoupon) {
+       couponCode = booking.appliedCoupon;
+       // We don't recalculate discountAmount here because the frontend already passed the correctly discounted installment amount
     }
 
     const tempPaymentId = new mongoose.Types.ObjectId();
@@ -338,7 +342,8 @@ export class PaymentService {
     let baseAmount = amount;
     let discountAmount = 0;
 
-    if (couponCode) {
+    // Legacy support: if frontend sends couponCode, apply to installment
+    if (couponCode && !booking.appliedCoupon) {
       const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
       const coupon = await CouponService.validate(couponCode);
       if (!coupon) {
@@ -356,6 +361,8 @@ export class PaymentService {
       
       if (discountAmount > baseAmount) discountAmount = baseAmount;
       amount = baseAmount - discountAmount;
+    } else if (booking.appliedCoupon) {
+       couponCode = booking.appliedCoupon;
     }
 
     const tempPaymentId = new mongoose.Types.ObjectId();

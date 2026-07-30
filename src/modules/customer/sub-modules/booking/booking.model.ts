@@ -19,6 +19,8 @@ export interface IBooking extends Document {
     type: string;
     coordinates: number[];
   };
+  appliedCoupon?: string;
+  couponDiscountAmount?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,6 +98,14 @@ const BookingSchema = new Schema<IBooking>(
         type: [Number],
       },
     },
+    appliedCoupon: {
+      type: String,
+      trim: true,
+    },
+    couponDiscountAmount: {
+      type: Number,
+      default: 0,
+    }
   },
   {
     timestamps: true,

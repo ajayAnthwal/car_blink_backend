@@ -61,5 +61,13 @@ export class BookingController {
     const logistics = await BookingService.getTracking(String(customerId), id);
     return successResponse(res, logistics, 'Tracking retrieved successfully');
   });
+
+  public static applyCoupon = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = req.user?.userId;
+    const { id } = req.params;
+    const { couponCode } = req.body;
+    const booking = await BookingService.applyCoupon(String(customerId), id, couponCode);
+    return successResponse(res, booking, 'Coupon applied successfully');
+  });
 }
 export default BookingController;
