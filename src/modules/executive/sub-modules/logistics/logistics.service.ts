@@ -2,6 +2,7 @@ import LogisticsModel from './logistics.model';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
+import { emitToUser } from '../../../../sockets';
 
 export class LogisticsService {
   static async assignDriver(data: any) {
@@ -23,6 +24,13 @@ export class LogisticsService {
   
   static async updateStatus(id: string, status: string) { return await LogisticsModel.findByIdAndUpdate(id, { status }, { new: true }); }
   static async updateLocation(id: string, lat: number, lng: number) {
-    return await LogisticsModel.findByIdAndUpdate(id, { currentLocation: { lat, lng, lastUpdatedAt: new Date() } }, { new: true });
+    const log = await LogisticsModel.findByIdAndUpdate(id, { currentLocation: { lat, lng, lastUpdatedAt: new Date() } }, { new: true }).populate('bookingId');
+    if (log && log.bookingId) {
+       const customerId = (log.bookingId as any).customerId;
+       if (customerId) {
+          emitToUser(customerId.toString(), 'location_update', log);
+       }
+    }
+    return log;
   }
 }
