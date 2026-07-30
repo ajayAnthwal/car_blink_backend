@@ -5,6 +5,9 @@ import { generateOtp, storeOtp, verifyStoredOtp } from './strategies/otp.strateg
 import { ConflictError } from '../../common/errors/ConflictError';
 import { UnauthorizedError } from '../../common/errors/UnauthorizedError';
 import { NotFoundError } from '../../common/errors/NotFoundError';
+import { env } from '../../config/env.config';
+import { emailProvider } from '../notification/providers/email.provider';
+import { smsProvider } from '../notification/providers/sms.provider';
 import { ROLES } from '../../common/constants/roles.constant';
 
 export class AuthService {
@@ -163,6 +166,14 @@ export class AuthService {
     // Generate and store OTP reset token
     const otp = generateOtp();
     storeOtp(identifier, otp);
+
+    const message = `Your password reset code for CarBlink is: ${otp}. This code is valid for 10 minutes.`;
+    
+    if (identifier.includes('@')) {
+      await emailProvider.sendEmail(identifier, "CarBlink Password Reset", message);
+    } else {
+      await smsProvider.sendSms(identifier, message);
+    }
 
     return { message: 'Reset OTP sent successfully' };
   }
