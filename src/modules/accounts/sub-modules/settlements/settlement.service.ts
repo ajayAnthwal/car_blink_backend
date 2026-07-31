@@ -147,6 +147,16 @@ export class SettlementService {
     try {
       const partner = await PartnerModel.findById(job.partnerId);
       if (partner) {
+        const notifService = require('../../../notification/notification.service').notificationService;
+        const notifModel = require('../../../notification/notification.model');
+        await notifService.sendNotification(
+          partner.userId.toString(),
+          notifModel.NOTIFICATION_TYPE.IN_APP,
+          notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Settlement Generated',
+          `A new settlement of INR ${settlement.netPayoutAmount} has been generated for job ${job._id}.`,
+          { settlementId: settlement._id.toString() }
+        );
         emitToUser(partner.userId.toString(), 'settlement_updated', { settlementId: settlement._id.toString() });
       }
     } catch (e) {

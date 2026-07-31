@@ -231,14 +231,41 @@ export class PaymentService {
 
         const job = await JobModel.findOne({ bookingId: payment.bookingId });
         if (job && job.partnerId) {
+          const notifService = require('../notification/notification.service').notificationService;
+          const notifModel = require('../notification/notification.model');
+          await notifService.sendNotification(
+            job.partnerId.toString(),
+            notifModel.NOTIFICATION_TYPE.IN_APP,
+            notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+            "Payment Received",
+            `A payment of INR ${payment.amount} has been processed for booking ${payment.bookingId}.`,
+            payload
+          );
           emitToUser(
             job.partnerId.toString(),
             "payment_status_update",
             payload,
           );
         }
-        emitToRole("SUPER_ADMIN", "payment_status_update", payload);
-        emitToRole("ACCOUNTS", "payment_status_update", payload);
+        const notifService = require('../notification/notification.service').notificationService;
+        const notifModel = require('../notification/notification.model');
+
+        await notifService.sendToRole(
+          'SUPER_ADMIN',
+          notifModel.NOTIFICATION_TYPE.IN_APP,
+          notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Payment Successful',
+          `Payment of INR ${payment.amount} received.`,
+          payload
+        );
+        await notifService.sendToRole(
+          'ACCOUNTS',
+          notifModel.NOTIFICATION_TYPE.IN_APP,
+          notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Payment Successful',
+          `Payment of INR ${payment.amount} received.`,
+          payload
+        );
       } catch (socketErr) {
         logger.warn("Failed to emit payment sockets:", socketErr);
       }
@@ -472,8 +499,25 @@ export class PaymentService {
       if (job && job.partnerId) {
         emitToUser(job.partnerId.toString(), "payment_status_update", payload);
       }
-      emitToRole("SUPER_ADMIN", "payment_status_update", payload);
-      emitToRole("ACCOUNTS", "payment_status_update", payload);
+      const notifService = require('../notification/notification.service').notificationService;
+      const notifModel = require('../notification/notification.model');
+
+      await notifService.sendToRole(
+        'SUPER_ADMIN',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Manual Payment Recorded',
+        `Manual payment of INR ${payload.amount} recorded.`,
+        payload
+      );
+      await notifService.sendToRole(
+        'ACCOUNTS',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Manual Payment Recorded',
+        `Manual payment of INR ${payload.amount} recorded.`,
+        payload
+      );
     } catch (socketErr) {
       logger.warn("Failed to emit offline payment sockets:", socketErr);
     }
@@ -577,8 +621,25 @@ export class PaymentService {
       if (job && job.partnerId) {
         emitToUser(job.partnerId.toString(), "payment_status_update", payload);
       }
-      emitToRole("SUPER_ADMIN", "payment_status_update", payload);
-      emitToRole("ACCOUNTS", "payment_status_update", payload);
+      const notifService = require('../notification/notification.service').notificationService;
+      const notifModel = require('../notification/notification.model');
+
+      await notifService.sendToRole(
+        'SUPER_ADMIN',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Manual Payment Recorded',
+        `Manual payment of INR ${payload.amount} recorded.`,
+        payload
+      );
+      await notifService.sendToRole(
+        'ACCOUNTS',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Manual Payment Recorded',
+        `Manual payment of INR ${payload.amount} recorded.`,
+        payload
+      );
     } catch (socketErr) {
       logger.warn("Failed to emit verify offline payment sockets:", socketErr);
     }

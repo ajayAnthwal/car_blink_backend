@@ -34,29 +34,16 @@ export class TicketService {
     });
 
     // Notify Super Admins
-    const superAdmins = await UserModel.find({ role: 'SUPER_ADMIN', isActive: true }, '_id');
-    const notificationPayload = {
-      title: 'New Support Ticket Created',
-      message: `A customer has created a new support ticket: ${data.subject}`,
-      timestamp: new Date(),
-      ticketId: ticket._id,
-      isRead: false
-    };
-
-    if (superAdmins.length > 0) {
-      const notifications = superAdmins.map((admin: any) => ({
-        userId: admin._id,
-        type: NOTIFICATION_TYPE.IN_APP,
-        category: NOTIFICATION_CATEGORY.SUPPORT_TICKET,
-        title: notificationPayload.title,
-        message: notificationPayload.message,
-        status: NOTIFICATION_STATUS.SENT,
-        isRead: false
-      }));
-      
-      await NotificationModel.insertMany(notifications);
-      emitToRole('SUPER_ADMIN', 'notification:new', notificationPayload);
-    }
+    const notifService = require('../../../notification/notification.service').notificationService;
+    const notifModel = require('../../../notification/notification.model');
+    await notifService.sendToRole(
+      'SUPER_ADMIN',
+      notifModel.NOTIFICATION_TYPE.IN_APP,
+      notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+      'New Support Ticket Created',
+      `A customer has created a new support ticket: ${data.subject}`,
+      { ticketId: ticket._id }
+    );
 
     return ticket;
   }
@@ -124,30 +111,16 @@ export class TicketService {
     const savedTicket = await ticket.save();
 
     // Notify Super Admins
-    const superAdmins = await UserModel.find({ role: 'SUPER_ADMIN', isActive: true }, '_id');
-    const notificationPayload = {
-      title: 'New Helpdesk Reply',
-      message: `A customer has replied to ticket #${ticket._id.toString().slice(-8).toUpperCase()}`,
-      timestamp: new Date(),
-      ticketId: ticket._id,
-      isRead: false
-    };
-
-    if (superAdmins.length > 0) {
-      const notifications = superAdmins.map((admin: any) => ({
-        userId: admin._id,
-        type: NOTIFICATION_TYPE.IN_APP,
-        category: NOTIFICATION_CATEGORY.SUPPORT_TICKET,
-        title: notificationPayload.title,
-        message: notificationPayload.message,
-        status: NOTIFICATION_STATUS.SENT,
-        isRead: false
-      }));
-      
-      await NotificationModel.insertMany(notifications);
-      emitToRole('SUPER_ADMIN', 'notification:new', notificationPayload);
-    }
-
+    const notifService = require('../../../notification/notification.service').notificationService;
+    const notifModel = require('../../../notification/notification.model');
+    await notifService.sendToRole(
+      'SUPER_ADMIN',
+      notifModel.NOTIFICATION_TYPE.IN_APP,
+      notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+      'New Helpdesk Reply',
+      `A customer has replied to ticket #${ticket._id.toString().slice(-8).toUpperCase()}`,
+      { ticketId: ticket._id }
+    );
     return savedTicket;
   }
 }

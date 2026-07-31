@@ -80,6 +80,36 @@ export class NotificationService {
   }
 
   /**
+   * Send notification to all users of a specific role
+   */
+  async sendToRole(
+    role: string,
+    type: NOTIFICATION_TYPE,
+    category: NOTIFICATION_CATEGORY,
+    title: string,
+    message: string,
+    metadata?: Record<string, any>
+  ): Promise<void> {
+    const users = await UserModel.find({ role, isActive: true }, '_id');
+    if (users.length === 0) return;
+
+    const payload = { title, message, metadata, timestamp: new Date(), isRead: false };
+    const notifications = users.map(u => ({
+      userId: u._id,
+      type,
+      category,
+      title,
+      message,
+      metadata,
+      status: NOTIFICATION_STATUS.SENT,
+      isRead: false
+    }));
+
+    await NotificationModel.insertMany(notifications);
+    emitToRole(role, 'notification:new', payload);
+  }
+
+  /**
    * Retrieve user's paginated in-app notifications
    */
   async getMyNotifications(

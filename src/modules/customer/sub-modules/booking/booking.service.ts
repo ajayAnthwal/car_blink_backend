@@ -300,7 +300,14 @@ export class BookingService {
     if (executiveUserId) {
       emitToUser(executiveUserId, 'booking_confirmed', eventPayload);
     }
-    emitToRole('SUPER_ADMIN', 'booking_confirmed', eventPayload);
+    await require('../../../notification/notification.service').notificationService.sendToRole(
+      'SUPER_ADMIN',
+      require('../../../notification/notification.model').NOTIFICATION_TYPE.IN_APP,
+      require('../../../notification/notification.model').NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+      'Booking Confirmed',
+      `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been confirmed.`,
+      eventPayload
+    );
 
     // 6. Auto-create a Job document in NOT_STARTED status
     const job = await JobModel.create({
@@ -400,11 +407,30 @@ export class BookingService {
           { jobId: job._id.toString() }
         );
         emitToUser(partner.userId.toString(), 'job_updated', { jobId: job._id.toString() });
-        emitToRole('SUPER_ADMIN', 'booking_updated', { bookingId: booking._id.toString() });
-        emitToRole('ACCOUNTS', 'booking_updated', { bookingId: booking._id.toString() });
+        const notifService = require('../../../notification/notification.service').notificationService;
+        const notifModel = require('../../../notification/notification.model');
+        const notifPayload = { bookingId: booking._id.toString() };
+        
+        await notifService.sendToRole(
+          'SUPER_ADMIN',
+          notifModel.NOTIFICATION_TYPE.IN_APP,
+          notifModel.NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+          'Booking Updated',
+          `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been updated.`,
+          notifPayload
+        );
+        
+        await notifService.sendToRole(
+          'ACCOUNTS',
+          notifModel.NOTIFICATION_TYPE.IN_APP,
+          notifModel.NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+          'Booking Updated',
+          `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been updated.`,
+          notifPayload
+        );
       }
     } catch (e) {
-      console.warn('Failed to send partner notification', e);
+      console.error('Failed to notify after booking update', e);
     }
 
     return job;
