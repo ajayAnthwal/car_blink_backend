@@ -7,7 +7,7 @@ import { pushProvider } from './providers/push.provider';
 import { NotFoundError } from '../../common/errors/NotFoundError';
 import { UnauthorizedError } from '../../common/errors/UnauthorizedError';
 import { logger } from '../../config/logger.config';
-import { emitToUser } from '../../sockets';
+import { emitToUser, emitToRole } from '../../sockets';
 
 export class NotificationService {
   /**
