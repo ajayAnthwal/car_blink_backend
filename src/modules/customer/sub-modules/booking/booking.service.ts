@@ -73,7 +73,7 @@ export class BookingService {
 
   public static async getMyBookings(
     customerId: string,
-    query: { status?: string; page?: string; limit?: string }
+    query: { status?: string; page?: string; limit?: string; search?: string }
   ): Promise<{ bookings: IBooking[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, parseInt(query.page || '1', 10));
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
@@ -82,6 +82,26 @@ export class BookingService {
     const filter: any = { customerId };
     if (query.status && Object.values(BOOKING_STATUS).includes(query.status as BOOKING_STATUS)) {
       filter.status = query.status;
+    }
+
+    if (query.search) {
+      const searchRegex = new RegExp(query.search, 'i');
+      const matchingServices = await ServiceModel.find({ name: searchRegex }).select('_id');
+      const serviceIds = matchingServices.map(s => s._id);
+
+      const searchConditions: any[] = [
+        { status: searchRegex },
+      ];
+
+      if (serviceIds.length > 0) {
+        searchConditions.push({ serviceId: { $in: serviceIds } });
+      }
+
+      if (mongoose.Types.ObjectId.isValid(query.search)) {
+        searchConditions.push({ _id: query.search });
+      }
+
+      filter.$or = searchConditions;
     }
 
     const [bookings, total] = await Promise.all([
