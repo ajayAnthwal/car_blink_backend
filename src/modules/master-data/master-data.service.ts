@@ -46,7 +46,7 @@ export class MasterDataService {
   }
 
   public static async deleteService(id: string): Promise<IService> {
-    const service = await ServiceModel.findOneAndUpdate({ _id: id, isActive: true }, { isActive: false }, { new: true });
+    const service = await ServiceModel.findByIdAndDelete(id);
     if (!service) {
       throw new NotFoundError('Service category not found');
     }
@@ -77,7 +77,7 @@ export class MasterDataService {
   }
 
   public static async deleteCity(id: string): Promise<ICity> {
-    const city = await CityModel.findOneAndUpdate({ _id: id, isActive: true }, { isActive: false }, { new: true });
+    const city = await CityModel.findByIdAndDelete(id);
     if (!city) {
       throw new NotFoundError('City not found');
     }
