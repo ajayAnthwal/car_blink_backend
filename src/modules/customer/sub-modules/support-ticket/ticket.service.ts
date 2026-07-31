@@ -33,6 +33,31 @@ export class TicketService {
       messages: [],
     });
 
+    // Notify Super Admins
+    const superAdmins = await UserModel.find({ role: 'SUPER_ADMIN', isActive: true }, '_id');
+    const notificationPayload = {
+      title: 'New Support Ticket Created',
+      message: `A customer has created a new support ticket: ${data.subject}`,
+      timestamp: new Date(),
+      ticketId: ticket._id,
+      isRead: false
+    };
+
+    if (superAdmins.length > 0) {
+      const notifications = superAdmins.map((admin: any) => ({
+        userId: admin._id,
+        type: NOTIFICATION_TYPE.IN_APP,
+        category: NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+        title: notificationPayload.title,
+        message: notificationPayload.message,
+        status: NOTIFICATION_STATUS.SENT,
+        isRead: false
+      }));
+      
+      await NotificationModel.insertMany(notifications);
+      emitToRole('SUPER_ADMIN', 'notification:new', notificationPayload);
+    }
+
     return ticket;
   }
 

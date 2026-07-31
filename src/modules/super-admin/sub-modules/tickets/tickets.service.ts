@@ -1,6 +1,7 @@
 import { SupportTicketModel } from '../../../customer/sub-modules/support-ticket/ticket.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { emitToUser } from '../../../../sockets';
+import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATION_STATUS } from '../../../notification/notification.model';
 
 export class SuperAdminTicketsService {
   /**
@@ -91,6 +92,17 @@ export class SuperAdminTicketsService {
         timestamp: new Date(),
         ticketId: ticket._id
       };
+      
+      await NotificationModel.create({
+        userId: ticket.customerId,
+        type: NOTIFICATION_TYPE.IN_APP,
+        category: NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+        title: payload.title,
+        message: payload.message,
+        status: NOTIFICATION_STATUS.SENT,
+        isRead: false
+      });
+
       emitToUser(ticket.customerId.toString(), 'notification:new', payload);
     }
 
