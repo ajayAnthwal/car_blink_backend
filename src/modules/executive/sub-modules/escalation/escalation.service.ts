@@ -16,7 +16,13 @@ export class EscalationService {
     const skip = (page - 1) * limit;
 
     const filter: any = {};
-    if (query.status) filter.status = query.status;
+    if (query.status) {
+      if (query.status.includes(',')) {
+        filter.status = { $in: query.status.split(',') };
+      } else {
+        filter.status = query.status;
+      }
+    }
     if (query.severity) filter.severity = query.severity;
     if (query.assignedExecutiveId) filter.assignedExecutiveId = query.assignedExecutiveId;
     if (query.bookingId) filter.bookingId = query.bookingId;
