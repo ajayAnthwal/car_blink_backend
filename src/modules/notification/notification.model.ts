@@ -4,6 +4,7 @@ export enum NOTIFICATION_TYPE {
   SMS = 'SMS',
   EMAIL = 'EMAIL',
   PUSH = 'PUSH',
+  IN_APP = 'IN_APP',
 }
 
 export enum NOTIFICATION_CATEGORY {

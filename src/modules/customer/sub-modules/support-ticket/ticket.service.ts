@@ -3,6 +3,9 @@ import { SupportTicketModel, ISupportTicket } from './ticket.model';
 import { BookingModel } from '../booking/booking.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { UnauthorizedError } from '../../../../common/errors/UnauthorizedError';
+import { emitToRole } from '../../../../sockets';
+import { UserModel } from '../../../user/user.model';
+import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATION_STATUS } from '../../../notification/notification.model';
 
 export class TicketService {
   public static async createTicket(
@@ -93,7 +96,34 @@ export class TicketService {
       ticket.status = 'OPEN';
     }
 
-    return ticket.save();
+    const savedTicket = await ticket.save();
+
+    // Notify Super Admins
+    const superAdmins = await UserModel.find({ role: 'SUPER_ADMIN', isActive: true }, '_id');
+    const notificationPayload = {
+      title: 'New Helpdesk Reply',
+      message: `A customer has replied to ticket #${ticket._id.toString().slice(-8).toUpperCase()}`,
+      timestamp: new Date(),
+      ticketId: ticket._id,
+      isRead: false
+    };
+
+    if (superAdmins.length > 0) {
+      const notifications = superAdmins.map((admin: any) => ({
+        userId: admin._id,
+        type: NOTIFICATION_TYPE.IN_APP,
+        category: NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+        title: notificationPayload.title,
+        message: notificationPayload.message,
+        status: NOTIFICATION_STATUS.SENT,
+        isRead: false
+      }));
+      
+      await NotificationModel.insertMany(notifications);
+      emitToRole('SUPER_ADMIN', 'notification:new', notificationPayload);
+    }
+
+    return savedTicket;
   }
 }
 export default TicketService;
