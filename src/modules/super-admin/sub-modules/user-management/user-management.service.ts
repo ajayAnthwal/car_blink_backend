@@ -63,6 +63,27 @@ export class UserManagementService {
     await user.save();
     return user;
   }
+  
+  /**
+   * Update user stats (Savings and Rewards) manually
+   */
+  async updateUserStats(userId: string, data: { totalSavings?: number; rewardPoints?: number }): Promise<IUser> {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (data.totalSavings !== undefined) {
+      user.totalSavings = data.totalSavings;
+    }
+    
+    if (data.rewardPoints !== undefined) {
+      user.rewardPoints = data.rewardPoints;
+    }
+
+    await user.save();
+    return user;
+  }
 }
 
 export const userManagementService = new UserManagementService();

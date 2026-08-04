@@ -16,6 +16,7 @@ export interface IPayment extends Document {
   couponCode?: string;
   baseAmount?: number;
   discountAmount?: number;
+  pointsApplied?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -84,6 +85,10 @@ const PaymentSchema = new Schema<IPayment>(
     discountAmount: {
       type: Number,
       min: 0,
+      default: 0,
+    },
+    pointsApplied: {
+      type: Number,
       default: 0,
     },
   },

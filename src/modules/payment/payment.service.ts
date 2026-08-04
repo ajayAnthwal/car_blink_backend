@@ -28,6 +28,7 @@ export class PaymentService {
     amount: number,
     paymentType: PAYMENT_TYPE,
     couponCode?: string,
+    useRewardPoints?: boolean,
   ): Promise<{
     orderId: string;
     amount: number;
@@ -100,6 +101,20 @@ export class PaymentService {
     } else if (booking.appliedCoupon) {
        couponCode = booking.appliedCoupon;
        // We don't recalculate discountAmount here because the frontend already passed the correctly discounted installment amount
+    }
+
+    let pointsApplied = 0;
+    if (useRewardPoints) {
+      const UserModel = mongoose.model("User");
+      const user = await UserModel.findById(customerId);
+      if (user && user.rewardPoints > 0) {
+        // 1 point = 1 INR
+        pointsApplied = Math.min(user.rewardPoints, amount);
+        amount -= pointsApplied;
+        // Temporarily deduct. In a robust system we'd lock it.
+        user.rewardPoints -= pointsApplied;
+        await user.save();
+      }
     }
 
     const tempPaymentId = new mongoose.Types.ObjectId();

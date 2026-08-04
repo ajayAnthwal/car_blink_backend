@@ -10,6 +10,7 @@ export const initiatePaymentSchema = z.object({
     errorMap: () => ({ message: 'Invalid paymentType' }),
   }),
   couponCode: z.string().optional(),
+  useRewardPoints: z.boolean().optional(),
 });
 
 export const verifyPaymentSchema = z.object({

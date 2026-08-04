@@ -14,6 +14,8 @@ export interface IUser extends Document {
   customRoleId?: Schema.Types.ObjectId;
   profileImage?: string;
   lastLoginAt?: Date;
+  totalSavings?: number;
+  rewardPoints?: number;
   deviceTokens?: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +36,8 @@ const userSchema = new Schema<IUser>(
     customRoleId: { type: Schema.Types.ObjectId, ref: 'CustomRole' },
     lastLoginAt: { type: Date },
     deviceTokens: { type: [String], default: [] },
+    totalSavings: { type: Number, default: 0 },
+    rewardPoints: { type: Number, default: 0 },
   },
   {
     timestamps: true,

@@ -196,9 +196,25 @@ export class JobService {
     await job.save();
 
     // Sync status with Booking
-    await BookingModel.findByIdAndUpdate(job.bookingId, {
+    const updatedBooking = await BookingModel.findByIdAndUpdate(job.bookingId, {
       $set: { status: BOOKING_STATUS.COMPLETED },
-    });
+    }, { new: true });
+
+    // Automate Savings and Rewards
+    if (updatedBooking && updatedBooking.customerId) {
+      const UserModel = mongoose.model("User");
+      
+      // Calculate 10% Savings (market rate vs CarBlink rate) and 2% Reward Points
+      const savingsToAdd = calculatedFinalAmount * 0.10;
+      const pointsToAdd = Math.floor(calculatedFinalAmount * 0.02);
+
+      await UserModel.findByIdAndUpdate(updatedBooking.customerId, {
+        $inc: {
+          totalSavings: savingsToAdd,
+          rewardPoints: pointsToAdd
+        }
+      });
+    }
 
     // Notify customer that service is completed
     try {

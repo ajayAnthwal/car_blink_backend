@@ -20,5 +20,16 @@ export class UserManagementController {
       `User updated successfully`
     );
   });
+
+  public static updateUserStats = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { totalSavings, rewardPoints } = req.body;
+    const result = await userManagementService.updateUserStats(id, { totalSavings, rewardPoints });
+    return successResponse(
+      res,
+      result,
+      `User stats updated successfully`
+    );
+  });
 }
 export default UserManagementController;

@@ -7,9 +7,9 @@ import { IRequest } from '../../common/interfaces/IRequest';
 export class PaymentController {
   public static initiate = asyncHandler(async (req: IRequest, res: Response) => {
     const customerId = String(req.user?.userId);
-    const { bookingId, amount, paymentType, couponCode } = req.body;
+    const { bookingId, amount, paymentType, couponCode, useRewardPoints } = req.body;
 
-    const result = await paymentService.initiatePayment(customerId, bookingId, amount, paymentType, couponCode);
+    const result = await paymentService.initiatePayment(customerId, bookingId, amount, paymentType, couponCode, useRewardPoints);
     return successResponse(res, result, 'Payment initiated successfully', 201);
   });
 
