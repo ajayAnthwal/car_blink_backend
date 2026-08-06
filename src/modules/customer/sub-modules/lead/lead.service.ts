@@ -4,7 +4,29 @@ import { NotFoundError } from '../../../../common/errors/NotFoundError';
 
 export class LeadService {
   public static async createLead(data: Partial<ILead>): Promise<ILead> {
-    return await LeadModel.create(data);
+    const lead = await LeadModel.create(data);
+    
+    // Notify Admin and Executive
+    try {
+      const { notificationService } = require('../../../../modules/notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../../modules/notification/notification.model');
+      const { emitToRole } = require('../../../../sockets');
+      
+      const payload = { leadId: lead._id.toString(), source: lead.source };
+      emitToRole('SUPER_ADMIN', 'new_lead', payload);
+      emitToRole('EXECUTIVE', 'new_lead', payload);
+
+      const title = 'New Lead Received';
+      const msg = `A new ${lead.source?.replace('_', ' ')} has been submitted by ${lead.name}.`;
+
+      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+    } catch (err: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send lead creation notification:', err);
+    }
+    
+    return lead;
   }
 
   public static async getLeads(query: any): Promise<IPaginatedResult<ILead>> {

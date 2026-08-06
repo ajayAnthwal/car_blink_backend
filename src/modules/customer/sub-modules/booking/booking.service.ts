@@ -68,6 +68,25 @@ export class BookingService {
 
     const booking = await BookingModel.create(bookingData);
 
+    // Notify Admin and Executive about new booking/lead
+    try {
+      const { notificationService } = require('../../../../modules/notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../../modules/notification/notification.model');
+      
+      const payload = { bookingId: booking._id.toString() };
+      emitToRole('SUPER_ADMIN', 'new_lead', payload);
+      emitToRole('EXECUTIVE', 'new_lead', payload);
+
+      const title = 'New Service Booking';
+      const msg = `A new booking has been created for vehicle ID ${data.vehicleId}.`;
+
+      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+    } catch (err: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send booking creation notification:', err);
+    }
+
     return booking;
   }
 
