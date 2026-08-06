@@ -106,6 +106,24 @@ export class ExecutiveService {
     if (query.verificationStatus) {
       partnerFilter.verificationStatus = query.verificationStatus;
     }
+    
+    if (query.status) {
+      partnerFilter.status = query.status;
+    }
+
+    // Geo-spatial filtering
+    if (query.lat && query.lng && query.radius) {
+      const radiusInMeters = parseFloat(query.radius) * 1000;
+      partnerFilter.location = {
+        $nearSphere: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [parseFloat(query.lng), parseFloat(query.lat)]
+          },
+          $maxDistance: radiusInMeters
+        }
+      };
+    }
 
     if (query.search) {
       const searchRegex = new RegExp(query.search, 'i');
