@@ -106,23 +106,37 @@ export class BidService {
       status: 'PENDING',
     });
 
-    // Notify Executive of the new quote
+    // Notify Executive, Admin and Customer of the new quote
     try {
       const { notificationService } = require('../../../notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      const { emitToRole, emitToUser } = require('../../../../sockets');
       
-      // If we have an assigned executive, notify them. Otherwise, notify a default executive or role.
-      // For now, we'll assume the booking has an assignedExecutiveId if it was manually assigned.
+      const payload = { bookingId: booking._id.toString(), bidId: bid._id.toString() };
+
+      // Live socket events
+      emitToRole('SUPER_ADMIN', 'quote_received', payload);
+      emitToRole('EXECUTIVE', 'quote_received', payload);
+      if (booking.customerId) {
+        emitToUser(booking.customerId.toString(), 'quote_received', payload);
+      }
+      
+      const title = 'New Partner Bid Received';
+      const msg = `${partner.businessName} has submitted a bid of INR ${data.quotedAmount}.`;
+
+      // In-app Notifications
       if (booking.assignedExecutiveId) {
         await notificationService.sendNotification(
           booking.assignedExecutiveId.toString(),
           NOTIFICATION_TYPE.SYSTEM,
           NOTIFICATION_CATEGORY.BID_RECEIVED,
-          'New Partner Bid Received',
-          `${partner.businessName} has submitted a bid of INR ${data.quotedAmount}.`,
-          { bookingId: booking._id.toString(), bidId: bid._id.toString() }
+          title, msg, payload
         );
       }
+      // Broadcast to all executives and super admins as fallback/cc
+      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.BID_RECEIVED, title, msg, payload);
+      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.BID_RECEIVED, title, msg, payload);
+      
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');
       logger.warn('Failed to send bid received notification:', notifErr);
