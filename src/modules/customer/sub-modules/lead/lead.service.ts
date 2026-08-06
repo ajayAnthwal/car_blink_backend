@@ -12,6 +12,16 @@ export class LeadService {
     const filter: any = {};
     if (query.source) filter.source = query.source;
     if (query.status) filter.status = query.status;
+    if (query.search) {
+      const searchRegex = new RegExp(query.search, 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { phone: searchRegex },
+        { email: searchRegex },
+        { vehicleBrand: searchRegex },
+        { vehicleModel: searchRegex }
+      ];
+    }
 
     const [data, total] = await Promise.all([
       LeadModel.find(filter)
