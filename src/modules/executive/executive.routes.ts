@@ -4,6 +4,7 @@ import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/role.middleware';
 import { ROLES } from '../../common/constants/roles.constant';
 import { validate } from '../../middlewares/validate.middleware';
+import ticketsRouter from '../super-admin/sub-modules/tickets/tickets.routes';
 
 import { AssignmentController } from './sub-modules/lead-assignment/assignment.controller';
 import { FollowUpController } from './sub-modules/follow-up/followup.controller';
@@ -47,5 +48,6 @@ router.patch('/partner-status/:id/verify', ExecutiveController.verifyPartner);
 router.post('/call', ExecutiveController.clickToCall);
 
 router.use("/logistics", logisticsRouter);
+router.use("/tickets", ticketsRouter);
 
 export default router;

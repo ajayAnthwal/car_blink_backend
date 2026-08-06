@@ -33,11 +33,19 @@ export class TicketService {
       messages: [],
     });
 
-    // Notify Super Admins
+    // Notify Super Admins and Executives
     const notifService = require('../../../notification/notification.service').notificationService;
     const notifModel = require('../../../notification/notification.model');
     await notifService.sendToRole(
       'SUPER_ADMIN',
+      notifModel.NOTIFICATION_TYPE.IN_APP,
+      notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+      'New Support Ticket Created',
+      `A customer has created a new support ticket: ${data.subject}`,
+      { ticketId: ticket._id }
+    );
+    await notifService.sendToRole(
+      'EXECUTIVE',
       notifModel.NOTIFICATION_TYPE.IN_APP,
       notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
       'New Support Ticket Created',
@@ -110,11 +118,19 @@ export class TicketService {
 
     const savedTicket = await ticket.save();
 
-    // Notify Super Admins
+    // Notify Super Admins and Executives
     const notifService = require('../../../notification/notification.service').notificationService;
     const notifModel = require('../../../notification/notification.model');
     await notifService.sendToRole(
       'SUPER_ADMIN',
+      notifModel.NOTIFICATION_TYPE.IN_APP,
+      notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+      'New Helpdesk Reply',
+      `A customer has replied to ticket #${ticket._id.toString().slice(-8).toUpperCase()}`,
+      { ticketId: ticket._id }
+    );
+    await notifService.sendToRole(
+      'EXECUTIVE',
       notifModel.NOTIFICATION_TYPE.IN_APP,
       notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
       'New Helpdesk Reply',

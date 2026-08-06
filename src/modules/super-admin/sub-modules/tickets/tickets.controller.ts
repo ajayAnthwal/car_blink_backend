@@ -24,8 +24,9 @@ export class SuperAdminTicketsController {
 
   public static addReply = asyncHandler(async (req: IRequest, res: Response) => {
     const { message } = req.body;
-    const adminId = req.user?.userId as string;
-    const ticket = await superAdminTicketsService.addReply(req.params.id, adminId, message);
+    const senderId = req.user?.userId as string;
+    const senderRole = req.user?.role as string;
+    const ticket = await superAdminTicketsService.addReply(req.params.id, senderId, senderRole, message);
     return successResponse(res, ticket, 'Reply added successfully');
   });
 }

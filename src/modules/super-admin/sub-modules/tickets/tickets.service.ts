@@ -65,15 +65,15 @@ export class SuperAdminTicketsService {
   }
 
   /**
-   * Add a reply from admin
+   * Add a reply from admin/executive
    */
-  async addReply(ticketId: string, adminId: string, message: string) {
+  async addReply(ticketId: string, senderId: string, senderRole: string, message: string) {
     const ticket = await SupportTicketModel.findById(ticketId);
     if (!ticket) throw new NotFoundError('Ticket not found');
 
     ticket.messages.push({
-      senderId: adminId as any,
-      senderRole: 'SUPER_ADMIN',
+      senderId: senderId as any,
+      senderRole: senderRole as any,
       message,
       createdAt: new Date(),
     });
@@ -88,7 +88,7 @@ export class SuperAdminTicketsService {
     if (ticket.customerId) {
       const payload = {
         title: `Reply on Ticket #${ticket._id.toString().slice(-8).toUpperCase()}`,
-        message: 'Super Admin has replied to your support ticket.',
+        message: 'Support Team has replied to your support ticket.',
         timestamp: new Date(),
         ticketId: ticket._id
       };
