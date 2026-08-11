@@ -2,9 +2,10 @@ import { z } from 'zod';
 
 export const emailSchema = z
   .string()
-  .min(1, 'Email is required')
   .email('Invalid email address')
-  .toLowerCase();
+  .toLowerCase()
+  .optional()
+  .or(z.literal(''));
 
 export const phoneSchema = z
   .string()
@@ -21,7 +22,13 @@ export const passwordSchema = z
   .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
 export const updateProfileSchema = z.object({
   fullName: z.string().min(1, 'Full name cannot be empty').trim().optional(),
+  email: emailSchema,
   profileImage: z.string().min(1).optional(),
+  location: z.object({
+    type: z.literal('Point'),
+    coordinates: z.array(z.number()),
+  }).optional(),
+  address: z.string().optional()
 });
 
 export const changePasswordSchema = z

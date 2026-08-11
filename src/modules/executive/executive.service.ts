@@ -111,6 +111,10 @@ export class ExecutiveService {
       partnerFilter.status = query.status;
     }
 
+    if (query.serviceId && mongoose.Types.ObjectId.isValid(query.serviceId)) {
+      partnerFilter.servicesOffered = new mongoose.Types.ObjectId(query.serviceId);
+    }
+
     // Geo-spatial filtering
     if (query.lat && query.lng && query.radius) {
       const radiusInMeters = parseFloat(query.radius) * 1000;

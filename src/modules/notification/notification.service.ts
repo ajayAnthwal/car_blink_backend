@@ -35,9 +35,14 @@ export class NotificationService {
         success = result.success;
         providerMessageId = result.providerMessageId;
       } else if (type === NOTIFICATION_TYPE.EMAIL) {
-        const result = await emailProvider.sendEmail(user.email, title, message);
-        success = result.success;
-        providerMessageId = result.providerMessageId;
+        if (!user.email) {
+          logger.warn(`No email registered for user ${userId}. Email notification skipped.`);
+          success = false;
+        } else {
+          const result = await emailProvider.sendEmail(user.email, title, message);
+          success = result.success;
+          providerMessageId = result.providerMessageId;
+        }
       } else if (type === NOTIFICATION_TYPE.PUSH) {
         const tokens = user.deviceTokens || [];
         if (tokens.length === 0) {

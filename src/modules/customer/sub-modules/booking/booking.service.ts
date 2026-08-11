@@ -124,13 +124,15 @@ export class BookingService {
     }
 
     const [bookings, total] = await Promise.all([
-      BookingModel.find(filter)
-        .populate('vehicleId')
-        .populate('serviceId')
-        .populate('cityId')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
+        BookingModel.find(filter)
+          .populate('vehicleId')
+          .populate('serviceId')
+          .populate('cityId')
+          .populate('assignedPartnerId', 'businessName phone email')
+          .populate('assignedExecutiveId', 'fullName email phone')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
       BookingModel.countDocuments(filter),
     ]);
 

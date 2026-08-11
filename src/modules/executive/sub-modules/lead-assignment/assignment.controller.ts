@@ -38,6 +38,20 @@ export class AssignmentController {
       bidIds,
       notes
     );
-    return successResponse(res, booking, 'Quotes forwarded to customer successfully');
+    return successResponse(res, booking, 'Quote(s) forwarded to customer successfully');
+  });
+
+  public static updateLead = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { followUpDate, remarks } = req.body;
+    const booking = await assignmentService.updateLead(id, { followUpDate, remarks });
+    return successResponse(res, booking, 'Lead updated successfully');
+  });
+
+  public static convertWebsiteLeadToBooking = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { serviceId, cityId, vehicleBrand, vehicleModel } = req.body;
+    const booking = await assignmentService.convertWebsiteLeadToBooking(id, serviceId, cityId, vehicleBrand, vehicleModel);
+    return successResponse(res, booking, 'Website lead converted to booking successfully');
   });
 }

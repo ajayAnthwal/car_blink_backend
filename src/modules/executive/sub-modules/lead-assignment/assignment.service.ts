@@ -258,6 +258,97 @@ export class AssignmentService {
 
     return booking;
   }
+
+  /**
+   * Update lead follow-up date and remarks
+   */
+  async updateLead(leadId: string, updateData: { followUpDate?: string; remarks?: string }): Promise<any> {
+    const BookingModel = mongoose.model('Booking');
+    const booking = await BookingModel.findById(leadId);
+    if (!booking) {
+      throw new NotFoundError('Lead not found');
+    }
+
+    if (updateData.followUpDate) {
+    }
+    if (updateData.remarks !== undefined) {
+      booking.remarks = updateData.remarks;
+    }
+
+    await booking.save();
+    return booking;
+  }
+
+  /**
+   * Convert Website Lead to a Booking
+   */
+  async convertWebsiteLeadToBooking(
+    leadId: string, 
+    serviceId: string, 
+    cityId: string, 
+    vehicleBrand: string, 
+    vehicleModel: string
+  ): Promise<any> {
+    const LeadModel = mongoose.model('Lead');
+    const UserModel = mongoose.model('User');
+    const GarageModel = mongoose.model('Garage');
+
+    const lead = await LeadModel.findById(leadId);
+    if (!lead) {
+      throw new NotFoundError('Website Lead not found');
+    }
+
+    if (lead.status === 'CONVERTED') {
+      throw new BadRequestError('Lead is already converted');
+    }
+
+    // 1. Find or create user
+    let user = await UserModel.findOne({ phone: lead.phone });
+    if (!user) {
+      user = await UserModel.create({
+        fullName: lead.name || 'New Customer',
+        phone: lead.phone,
+        email: lead.email,
+        isVerified: true,
+        role: 'CUSTOMER'
+      });
+    }
+
+    // 2. Find or create a generic garage vehicle for this user
+    let vehicle = await GarageModel.findOne({ 
+      customerId: user._id, 
+      brand: vehicleBrand || lead.vehicleBrand || 'Generic Brand',
+      model: vehicleModel || lead.vehicleModel || 'Generic Model'
+    });
+    
+    if (!vehicle) {
+      vehicle = await GarageModel.create({
+        customerId: user._id,
+        brand: vehicleBrand || lead.vehicleBrand || 'Generic Brand',
+        model: vehicleModel || lead.vehicleModel || 'Generic Model',
+        registrationNumber: 'NEW',
+        fuelType: 'PETROL',
+        year: new Date().getFullYear()
+      });
+    }
+
+    // 3. Create Booking
+    const booking = await BookingModel.create({
+      customerId: user._id,
+      vehicleId: vehicle._id,
+      serviceId: serviceId,
+      cityId: cityId,
+      description: lead.message || 'Created from Website Lead',
+      status: BOOKING_STATUS.PENDING
+    });
+
+    // 4. Update Lead Status
+    lead.status = 'CONVERTED';
+    lead.customerId = user._id;
+    await lead.save();
+
+    return booking;
+  }
 }
 
 export const assignmentService = new AssignmentService();

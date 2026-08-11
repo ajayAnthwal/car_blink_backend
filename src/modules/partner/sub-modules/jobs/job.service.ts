@@ -136,7 +136,7 @@ export class JobService {
   public static async completeJob(
     userId: string,
     jobId: string,
-    data?: { finalAmount?: number },
+    data?: { finalAmount?: number; invoiceUrl?: string },
   ): Promise<IJob> {
     const partner = await PartnerModel.findOne({ userId });
     if (!partner) {
@@ -158,6 +158,14 @@ export class JobService {
       throw new ApiError(
         400,
         `Cannot complete job in ${job.status} status`,
+        ERROR_CODES.VALIDATION_ERROR,
+      );
+    }
+
+    if (!data?.invoiceUrl && !job.invoiceUrl) {
+      throw new ApiError(
+        400,
+        "Invoice document is mandatory to complete the job. Please upload an invoice.",
         ERROR_CODES.VALIDATION_ERROR,
       );
     }
@@ -193,6 +201,9 @@ export class JobService {
     job.status = "COMPLETED";
     job.completedAt = new Date();
     job.finalAmount = calculatedFinalAmount;
+    if (data?.invoiceUrl) {
+      job.invoiceUrl = data.invoiceUrl;
+    }
     await job.save();
 
     // Sync status with Booking
