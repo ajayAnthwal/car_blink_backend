@@ -108,12 +108,26 @@ export class BookingService {
       const matchingServices = await ServiceModel.find({ name: searchRegex }).select('_id');
       const serviceIds = matchingServices.map(s => s._id);
 
+      const matchingVehicles = await GarageModel.find({
+        customerId,
+        $or: [
+          { brand: searchRegex },
+          { model: searchRegex },
+          { registrationNumber: searchRegex }
+        ]
+      }).select('_id');
+      const vehicleIds = matchingVehicles.map(v => v._id);
+
       const searchConditions: any[] = [
         { status: searchRegex },
       ];
 
       if (serviceIds.length > 0) {
         searchConditions.push({ serviceId: { $in: serviceIds } });
+      }
+
+      if (vehicleIds.length > 0) {
+        searchConditions.push({ vehicleId: { $in: vehicleIds } });
       }
 
       if (mongoose.Types.ObjectId.isValid(query.search)) {
