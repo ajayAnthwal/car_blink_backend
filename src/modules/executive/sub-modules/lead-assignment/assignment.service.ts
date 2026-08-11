@@ -26,9 +26,42 @@ export class AssignmentService {
         filter.status = query.status;
       }
     }
-    console.log("DEBUG FILTER:", filter);
+    
     if (query.cityId) filter.cityId = query.cityId;
     if (query.serviceId) filter.serviceId = query.serviceId;
+
+    if (query.search) {
+      const searchRegex = new RegExp(query.search, 'i');
+      
+      const UserModel = mongoose.model('User');
+      const GarageModel = mongoose.model('Garage');
+
+      const [users, vehicles] = await Promise.all([
+        UserModel.find({
+          $or: [
+            { fullName: searchRegex },
+            { phone: searchRegex },
+            { email: searchRegex }
+          ]
+        }).select('_id').lean(),
+        GarageModel.find({
+          $or: [
+            { registrationNumber: searchRegex },
+            { brand: searchRegex },
+            { model: searchRegex }
+          ]
+        }).select('_id').lean()
+      ]);
+
+      const userIds = users.map(u => u._id);
+      const vehicleIds = vehicles.map(v => v._id);
+
+      filter.$or = [
+        { customerId: { $in: userIds } },
+        { vehicleId: { $in: vehicleIds } },
+        { remarks: searchRegex } // Also search by booking remarks
+      ];
+    }
 
     const [bookings, total] = await Promise.all([
       BookingModel.find(filter)

@@ -21,6 +21,7 @@ export interface IUser extends Document {
     type: string;
     coordinates: number[];
   };
+  cityId?: Schema.Types.ObjectId;
   address?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -47,6 +48,7 @@ const userSchema = new Schema<IUser>(
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], index: '2dsphere' }
     },
+    cityId: { type: Schema.Types.ObjectId, ref: 'City' },
     address: { type: String }
   },
   {
