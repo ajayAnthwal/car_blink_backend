@@ -128,7 +128,6 @@ export class BookingService {
           .populate('vehicleId')
           .populate('serviceId')
           .populate('cityId')
-          .populate('assignedPartnerId', 'businessName phone email')
           .populate('assignedExecutiveId', 'fullName email phone')
           .sort({ createdAt: -1 })
           .skip(skip)
