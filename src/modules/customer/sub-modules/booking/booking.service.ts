@@ -72,7 +72,7 @@ export class BookingService {
     try {
       const { notificationService } = require('../../../../modules/notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../../modules/notification/notification.model');
-      
+
       const payload = { bookingId: booking._id.toString() };
       emitToRole('SUPER_ADMIN', 'new_lead', payload);
       emitToRole('EXECUTIVE', 'new_lead', payload);
@@ -138,14 +138,15 @@ export class BookingService {
     }
 
     const [bookings, total] = await Promise.all([
-        BookingModel.find(filter)
-          .populate('vehicleId')
-          .populate('serviceId')
-          .populate('cityId')
-          .populate('assignedExecutiveId', 'fullName email phone')
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit),
+      BookingModel.find(filter)
+        .populate('vehicleId')
+        .populate('serviceId')
+        .populate('cityId')
+        .populate('acceptedBidId')
+        .populate('assignedExecutiveId', 'fullName email phone')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
       BookingModel.countDocuments(filter),
     ]);
 
@@ -169,7 +170,7 @@ export class BookingService {
 
     // Fetch associated job details (which includes photos and extensions)
     const jobDetails = await JobModel.findOne({ bookingId }).lean();
-    
+
     // Fetch payments
     const PaymentModel = mongoose.model('Payment');
     const payments = await PaymentModel.find({ bookingId }).lean();
@@ -444,7 +445,7 @@ export class BookingService {
         const notifService = require('../../../notification/notification.service').notificationService;
         const notifModel = require('../../../notification/notification.model');
         const notifPayload = { bookingId: booking._id.toString() };
-        
+
         await notifService.sendToRole(
           'SUPER_ADMIN',
           notifModel.NOTIFICATION_TYPE.IN_APP,
@@ -453,7 +454,7 @@ export class BookingService {
           `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been updated.`,
           notifPayload
         );
-        
+
         await notifService.sendToRole(
           'ACCOUNTS',
           notifModel.NOTIFICATION_TYPE.IN_APP,
@@ -497,18 +498,18 @@ export class BookingService {
         baseAmount = bid.quotedAmount;
       }
     }
-    
+
     const job = await JobModel.findOne({ bookingId: booking._id });
     if (job && job.finalAmount) {
       baseAmount = job.finalAmount;
     }
-    
+
     let approvedExtensionsCost = 0;
     if (job && job.jobExtensions && job.jobExtensions.length > 0) {
       const approvedExts = job.jobExtensions.filter((e: any) => e.status === 'APPROVED');
       approvedExtensionsCost = approvedExts.reduce((sum: number, ext: any) => sum + ext.cost, 0);
     }
-    
+
     const totalAmount = baseAmount + approvedExtensionsCost;
     if (totalAmount <= 0) {
       throw new ApiError(400, 'Total booking amount is zero, cannot apply coupon', ERROR_CODES.VALIDATION_ERROR);
@@ -520,7 +521,7 @@ export class BookingService {
     } else {
       discountAmount = coupon.discountValue;
     }
-    
+
     if (discountAmount > totalAmount) discountAmount = totalAmount;
 
     booking.appliedCoupon = couponCode;
@@ -542,7 +543,7 @@ export class BookingService {
     if (!logistics) {
       throw new NotFoundError('No active logistics tracking found for this booking');
     }
-    
+
     return logistics;
   }
 }
