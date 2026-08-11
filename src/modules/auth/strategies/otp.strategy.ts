@@ -6,7 +6,7 @@ import { notificationService } from '../../notification/notification.service';
 import { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } from '../../notification/notification.model';
 
 // In-memory store: key is identifier (email/phone), value is object with otp and expiry timestamp
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
 
 export const generateOtp = (): string => {
   return makeOtp();
@@ -15,7 +15,7 @@ export const generateOtp = (): string => {
 export const storeOtp = async (identifier: string, otp: string): Promise<void> => {
   const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
   const expiresAt = Date.now() + expiryDurationMs;
-  otpStore.set(identifier, { otp, expiresAt });
+  otpStore.set(identifier, { otp, expiresAt, attempts: 0 });
 
   logger.info(`[OTP] Generated OTP for ${identifier}: ${otp}`);
 
@@ -67,6 +67,13 @@ export const verifyStoredOtp = (identifier: string, otp: string): boolean => {
   // Check expiration
   if (Date.now() > record.expiresAt) {
     otpStore.delete(identifier);
+    return false;
+  }
+
+  // Increment attempts
+  record.attempts += 1;
+  if (record.attempts > 3) {
+    otpStore.delete(identifier); // Lock out by deleting
     return false;
   }
 

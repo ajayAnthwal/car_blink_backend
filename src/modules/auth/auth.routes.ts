@@ -15,8 +15,8 @@ import {
 const router = Router();
 
 router.post('/register', validate({ body: registerSchema }), AuthController.register);
-router.post('/verify-otp', validate({ body: verifyOtpSchema }), AuthController.verifyOtp);
-router.post('/login', validate({ body: loginSchema }), AuthController.login);
+router.post('/verify-otp', rateLimiter, validate({ body: verifyOtpSchema }), AuthController.verifyOtp);
+router.post('/login', rateLimiter, validate({ body: loginSchema }), AuthController.login);
 router.post('/refresh-token', validate({ body: refreshTokenSchema }), AuthController.refreshToken);
 router.post('/logout', authMiddleware as any, AuthController.logout);
 router.post('/forgot-password', rateLimiter, validate({ body: forgotPasswordSchema }), AuthController.forgotPassword);

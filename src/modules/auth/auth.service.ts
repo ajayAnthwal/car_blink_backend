@@ -1,4 +1,5 @@
 import { UserModel, IUser } from '../user/user.model';
+import { TokenBlacklistModel } from './token-blacklist.model';
 import { RegisterInput, LoginInput, AuthTokens, JwtPayload } from './auth.types';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from './strategies/jwt.strategy';
 import { generateOtp, storeOtp, verifyStoredOtp } from './strategies/otp.strategy';
@@ -148,9 +149,13 @@ export class AuthService {
     return { accessToken: newAccessToken };
   }
 
-  public static async logoutUser(userId: string): Promise<{ success: boolean }> {
-    // TODO: blacklist tokens or clear session if using Redis
-    // Currently, it acts as a stateless logout returning a clean success response.
+  public static async logoutUser(token: string): Promise<{ success: boolean }> {
+    if (token) {
+      await TokenBlacklistModel.create({
+        token,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000) // TTL same as token expiry (15 mins)
+      }).catch(() => {}); // Ignore duplicate errors if already blacklisted
+    }
     return { success: true };
   }
 

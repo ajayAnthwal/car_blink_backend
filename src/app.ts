@@ -1,5 +1,6 @@
 import express, { Application } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { corsOptions } from './config/cors.config';
 import { loggerMiddleware } from './middlewares/logger.middleware';
 import { errorMiddleware } from './middlewares/error.middleware';
@@ -13,6 +14,7 @@ const app: Application = express();
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Serve static uploads folder
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
