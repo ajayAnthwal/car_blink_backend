@@ -58,13 +58,27 @@ export class TicketService {
 
   public static async getMyTickets(
     customerId: string,
-    query: { page?: string; limit?: string }
+    query: { page?: string; limit?: string; search?: string }
   ): Promise<{ tickets: ISupportTicket[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, parseInt(query.page || '1', 10));
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
     const skip = (page - 1) * limit;
 
-    const filter = { customerId };
+    const filter: any = { customerId };
+    if (query.search) {
+      const searchRegex = new RegExp(query.search, 'i');
+      const searchConditions: any[] = [
+        { subject: searchRegex },
+        { status: searchRegex }
+      ];
+      
+      if (mongoose.Types.ObjectId.isValid(query.search)) {
+        searchConditions.push({ _id: query.search });
+      }
+      
+      filter.$or = searchConditions;
+    }
+    
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(filter)
         .sort({ createdAt: -1 })
