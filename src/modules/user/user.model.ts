@@ -23,6 +23,7 @@ export interface IUser extends Document {
   };
   cityId?: Schema.Types.ObjectId;
   address?: string;
+  referralCode?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -49,7 +50,8 @@ const userSchema = new Schema<IUser>(
       coordinates: { type: [Number], index: '2dsphere' }
     },
     cityId: { type: Schema.Types.ObjectId, ref: 'City' },
-    address: { type: String }
+    address: { type: String },
+    referralCode: { type: String, unique: true, sparse: true }
   },
   {
     timestamps: true,

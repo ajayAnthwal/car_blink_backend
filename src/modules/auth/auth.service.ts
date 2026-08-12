@@ -211,6 +211,14 @@ export class AuthService {
     if (!user) {
       throw new NotFoundError('User not found');
     }
+    
+    // Auto-generate referral code if it doesn't exist
+    if (!user.referralCode) {
+      const code = user.fullName.substring(0, 3).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+      user.referralCode = code.replace(/[^A-Z0-9]/g, '');
+      await user.save();
+    }
+    
     const userObj = user.toObject();
     delete userObj.password;
     return userObj;
