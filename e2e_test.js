@@ -10,7 +10,7 @@ async function runTests() {
 
   const ServiceModel = mongoose.connection.collection('services');
   const CityModel = mongoose.connection.collection('cities');
-  
+
   const service = await ServiceModel.findOne({});
   const city = await CityModel.findOne({});
 
@@ -73,7 +73,7 @@ async function runTests() {
   });
   data = await res.json();
   if (!data.success) { console.error('Partner Register failed:', data); process.exit(1); }
-  
+
   console.log('\n6. Logging in Partner...');
   res = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

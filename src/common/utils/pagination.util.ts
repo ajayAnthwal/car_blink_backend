@@ -8,9 +8,9 @@ export interface IPaginatedResult<T> {
   };
 }
 
-export const getPaginationOptions = (query: { page?: number; limit?: number }) => {
+export const getPaginationOptions = (query: { page?: number; limit?: number }, maxLimit = 100) => {
   const page = Math.max(1, Number(query.page) || 1);
-  const limit = Math.max(1, Math.min(100, Number(query.limit) || 10));
+  const limit = Math.max(1, Math.min(maxLimit, Number(query.limit) || 10));
   const skip = (page - 1) * limit;
 
   return { page, limit, skip };

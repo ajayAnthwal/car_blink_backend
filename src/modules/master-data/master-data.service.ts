@@ -55,7 +55,7 @@ export class MasterDataService {
 
   // Cities
   public static async getAllCities(query: { page?: number; limit?: number }): Promise<IPaginatedResult<ICity>> {
-    const { page, limit, skip } = getPaginationOptions(query);
+    const { page, limit, skip } = getPaginationOptions(query, 5000);
     const filter = { isActive: true };
     const [data, total] = await Promise.all([
       CityModel.find(filter).skip(skip).limit(limit).sort({ name: 1 }),

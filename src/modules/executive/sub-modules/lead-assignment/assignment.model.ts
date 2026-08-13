@@ -45,6 +45,6 @@ const AssignmentSchema = new Schema<IAssignment>(
 );
 
 AssignmentSchema.index({ assignedExecutiveId: 1 });
-AssignmentSchema.index({ assignedPartnerId: 1 });
+AssignmentSchema.index({ assignedPartnerIds: 1 });
 
 export const AssignmentModel = mongoose.model<IAssignment>('Assignment', AssignmentSchema);

@@ -4,7 +4,7 @@ export interface IPartner extends Document {
   userId: mongoose.Types.ObjectId;
   businessName: string;
   businessAddress: string;
-  cityId: mongoose.Types.ObjectId;
+  cityId?: mongoose.Types.ObjectId;
   servicesOffered: mongoose.Types.ObjectId[];
   gstNumber?: string;
   isVerified: boolean;
@@ -16,6 +16,11 @@ export interface IPartner extends Document {
   blockedDates: Date[];
   outstandingDues: number;
   walletBalance: number;
+  bankDetails?: {
+    accountNumber: string;
+    ifscCode: string;
+    accountHolderName: string;
+  };
   location?: {
     type: string;
     coordinates: number[];
@@ -45,7 +50,6 @@ const PartnerSchema = new Schema<IPartner>(
     cityId: {
       type: Schema.Types.ObjectId,
       ref: "City",
-      required: [true, "City ID is required"],
     },
     servicesOffered: [
       {
@@ -96,6 +100,11 @@ const PartnerSchema = new Schema<IPartner>(
     walletBalance: {
       type: Number,
       default: 0,
+    },
+    bankDetails: {
+      accountNumber: { type: String },
+      ifscCode: { type: String },
+      accountHolderName: { type: String },
     },
     location: {
       type: {

@@ -22,6 +22,10 @@ export interface IBooking extends Document {
   appliedCoupon?: string;
   couponDiscountAmount?: number;
   followUpDate?: Date;
+  serviceMode?: 'DOORSTEP' | 'GARAGE_VISIT';
+  paymentMode?: 'CASH' | 'ONLINE';
+  address?: string;
+  landmark?: string;
   remarks?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -110,6 +114,24 @@ const BookingSchema = new Schema<IBooking>(
     },
     followUpDate: {
       type: Date,
+    },
+    serviceMode: {
+      type: String,
+      enum: ['DOORSTEP', 'GARAGE_VISIT'],
+      default: 'GARAGE_VISIT',
+    },
+    paymentMode: {
+      type: String,
+      enum: ['CASH', 'ONLINE'],
+      default: 'ONLINE',
+    },
+    address: {
+      type: String,
+      trim: true,
+    },
+    landmark: {
+      type: String,
+      trim: true,
     },
     remarks: {
       type: String,

@@ -3,6 +3,7 @@ import { successResponse } from '../common/utils/apiResponse.util';
 import masterDataRouter from '../modules/master-data/master-data.routes';
 import authRouter from '../modules/auth/auth.routes';
 import uploadRouter from '../modules/upload/upload.routes';
+import walletRoutes from '../modules/wallet/wallet.routes';
 import userRouter from '../modules/user/user.routes';
 import customerRouter from '../modules/customer/customer.routes';
 import partnerRouter from '../modules/partner/partner.routes';
@@ -24,6 +25,7 @@ router.get('/health', (req, res) => {
 router.use('/', masterDataRouter);
 router.use('/auth', authRouter);
 router.use('/upload', uploadRouter);
+router.use('/wallet', walletRoutes);
 router.use('/users', userRouter);
 router.use('/customer', customerRouter);
 import leadRouter from '../modules/customer/sub-modules/lead/lead.routes';

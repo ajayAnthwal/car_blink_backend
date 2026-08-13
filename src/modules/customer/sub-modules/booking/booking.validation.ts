@@ -13,6 +13,10 @@ export const createBookingSchema = z.object({
     .optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  serviceMode: z.enum(['DOORSTEP', 'GARAGE_VISIT']).optional(),
+  paymentMode: z.enum(['CASH', 'ONLINE']).optional(),
+  address: z.string().trim().optional(),
+  landmark: z.string().trim().optional(),
 });
 
 export const cancelBookingSchema = z.object({

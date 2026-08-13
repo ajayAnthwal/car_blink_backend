@@ -127,13 +127,13 @@ export class AssignmentService {
 
     const assignment = await AssignmentModel.findOne({ bookingId })
       .populate('assignedExecutiveId', 'fullName email')
-      .populate('assignedPartnerId', 'businessName isVerified')
+      .populate('assignedPartnerIds', 'businessName isVerified')
       .lean();
 
     const bids = await BidModel.find({ bookingId })
       .populate({
         path: 'partnerId',
-        select: 'businessName isVerified rating',
+        select: 'businessName isVerified rating userId',
         populate: {
           path: 'userId',
           select: 'fullName email phone',

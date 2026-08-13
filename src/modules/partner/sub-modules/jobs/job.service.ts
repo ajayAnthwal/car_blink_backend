@@ -211,6 +211,18 @@ export class JobService {
       $set: { status: BOOKING_STATUS.COMPLETED },
     }, { new: true });
 
+    // Process Wallet Commission
+    if (updatedBooking) {
+      const paymentMode = updatedBooking.paymentMode || 'ONLINE'; // default to ONLINE if not set
+      const { WalletService } = require('../../../wallet/wallet.service');
+      await WalletService.processBookingCommission(
+        job.partnerId.toString(),
+        job.bookingId.toString(),
+        calculatedFinalAmount,
+        paymentMode
+      );
+    }
+
     // Automate Savings and Rewards
     if (updatedBooking && updatedBooking.customerId) {
       const UserModel = mongoose.model("User");
