@@ -9,5 +9,6 @@ export const generateSettlementSchema = z.object({
 });
 
 export const processSettlementSchema = z.object({
-  transactionReference: z.string().min(1, 'Transaction reference is required'),
+  transactionReference: z.string().optional(),
+  pin: z.string().min(4, 'Security PIN is required'),
 });

@@ -9,3 +9,7 @@ export const initiateRefundSchema = z.object({
 export const rejectRefundSchema = z.object({
   rejectionReason: z.string().min(1, 'Rejection reason is required'),
 });
+
+export const processRefundSchema = z.object({
+  pin: z.string().min(4, 'Security PIN is required'),
+});

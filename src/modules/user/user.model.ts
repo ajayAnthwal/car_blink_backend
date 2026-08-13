@@ -7,6 +7,7 @@ export interface IUser extends Document {
   email?: string;
   phone: string;
   password?: string;
+  securityPin?: string;
   role: ROLES;
   isPhoneVerified: boolean;
   isEmailVerified: boolean;
@@ -27,6 +28,7 @@ export interface IUser extends Document {
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
+  compareSecurityPin(candidatePin: string): Promise<boolean>;
 }
 
 const userSchema = new Schema<IUser>(
@@ -35,6 +37,7 @@ const userSchema = new Schema<IUser>(
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     phone: { type: String, required: true, unique: true, trim: true },
     password: { type: String, required: true, select: false },
+    securityPin: { type: String, select: false },
     role: { type: String, enum: Object.values(ROLES), required: true },
     isPhoneVerified: { type: Boolean, default: false },
     isEmailVerified: { type: Boolean, default: false },
@@ -73,9 +76,32 @@ userSchema.pre<IUser>('save', async function (next) {
   }
 });
 
+// Pre-save hook to hash security pin
+userSchema.pre<IUser>('save', async function (next) {
+  if (!this.isModified('securityPin')) {
+    return next();
+  }
+
+  try {
+    if (this.securityPin) {
+      const salt = await bcrypt.genSalt(10);
+      this.securityPin = await bcrypt.hash(this.securityPin, salt);
+    }
+    next();
+  } catch (error: any) {
+    next(error);
+  }
+});
+
 // Instance method to compare password
 userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
   return await bcrypt.compare(candidatePassword, this.password || '');
+};
+
+// Instance method to compare security pin
+userSchema.methods.compareSecurityPin = async function (candidatePin: string): Promise<boolean> {
+  if (!this.securityPin) return false;
+  return await bcrypt.compare(candidatePin, this.securityPin);
 };
 
 export const UserModel = model<IUser>('User', userSchema);

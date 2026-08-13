@@ -13,6 +13,18 @@ import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
 import { logger } from '../../../../config/logger.config';
 import { BOOKING_STATUS, PAYMENT_STATUS } from '../../../../common/constants/status.constant';
 import { emitToUser } from '../../../../sockets';
+import Razorpay from 'razorpay';
+
+const getRazorpayInstance = () => {
+  if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    logger.warn("Razorpay keys not found in environment, falling back to mock payout");
+    return null;
+  }
+  return new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+};
 
 export class SettlementService {
   /**
@@ -202,12 +214,12 @@ export class SettlementService {
   }
 
   /**
-   * Process a payout settlement (PENDING -> PROCESSED)
+   * Process a payout settlement (PENDING -> PROCESSED) via RazorpayX
    */
   async processSettlement(
     accountsId: string,
     settlementId: string,
-    transactionReference: string
+    transactionReference?: string
   ): Promise<ISettlement> {
     const settlement = await SettlementModel.findById(settlementId);
     if (!settlement) {
@@ -222,22 +234,75 @@ export class SettlementService {
       );
     }
 
+    const partner = await PartnerModel.findById(settlement.partnerId);
+    if (!partner) {
+      throw new NotFoundError('Partner record not found');
+    }
+
+    let finalTransactionRef = transactionReference || `TXN_${Date.now()}`;
+
+    const rzp = getRazorpayInstance();
+    if (rzp) {
+      // Real RazorpayX Payout Flow
+      if (!partner.bankDetails || !partner.bankDetails.accountNumber || !partner.bankDetails.ifscCode) {
+        throw new ApiError(400, "Partner bank details are missing. Cannot process automated payout.", ERROR_CODES.VALIDATION_ERROR);
+      }
+
+      try {
+        // 1. Create Contact
+        const contact = await (rzp as any).contacts.create({
+          name: partner.bankDetails.accountHolderName || partner.businessName,
+          reference_id: partner._id.toString(),
+          type: "vendor"
+        });
+
+        // 2. Create Fund Account
+        const fundAccount = await (rzp as any).fundAccount.create({
+          contact_id: contact.id,
+          account_type: "bank_account",
+          bank_account: {
+            name: partner.bankDetails.accountHolderName || partner.businessName,
+            ifsc: partner.bankDetails.ifscCode,
+            account_number: partner.bankDetails.accountNumber
+          }
+        });
+
+        // 3. Request Payout
+        const payout = await (rzp as any).payouts.create({
+          account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER || process.env.RAZORPAY_KEY_ID,
+          fund_account_id: fundAccount.id,
+          amount: Math.round(settlement.netPayoutAmount * 100), // in paise
+          currency: "INR",
+          mode: "IMPS",
+          purpose: "payout",
+          reference_id: settlement._id.toString()
+        });
+
+        finalTransactionRef = payout.id;
+      } catch (err: any) {
+        logger.error("RazorpayX Payout Error:", err);
+        throw new ApiError(500, `Automated Payout failed: ${err.description || err.message || 'Unknown error'}`);
+      }
+    } else {
+      // Mock Mode
+      finalTransactionRef = `MOCK_PAYOUT_${Math.floor(Math.random() * 100000)}`;
+    }
+
     settlement.status = 'PROCESSED';
     settlement.processedAt = new Date();
-    settlement.transactionReference = transactionReference;
+    settlement.transactionReference = finalTransactionRef;
     settlement.processedByAccountsId = accountsId as any;
     await settlement.save();
 
     // Notify Partner (try-catch wrapped)
     try {
-      const partner = await PartnerModel.findById(settlement.partnerId);
       if (partner) {
         await notificationService.sendNotification(
           partner.userId.toString(),
           NOTIFICATION_TYPE.SMS,
           NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
           'Settlement Processed',
-          `Your payout settlement of INR ${settlement.netPayoutAmount} has been processed. Ref: ${transactionReference}`,
+          `Your payout settlement of INR ${settlement.netPayoutAmount} has been processed. Ref: ${finalTransactionRef}`,
           { settlementId: settlement._id.toString(), jobId: settlement.jobId.toString() }
         );
         emitToUser(partner.userId.toString(), 'settlement_updated', { settlementId: settlement._id.toString() });

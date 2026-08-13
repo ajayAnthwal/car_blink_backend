@@ -3,6 +3,8 @@ import { settlementService } from './settlement.service';
 import { successResponse } from '../../../../common/utils/apiResponse.util';
 import { asyncHandler } from '../../../../common/utils/asyncHandler.util';
 import { IRequest } from '../../../../common/interfaces/IRequest';
+import { AccountsService } from '../../accounts.service';
+import { ActivityLogService } from '../activity-logs/activity-log.service';
 
 export class SettlementController {
   public static getEligibleJobsForSettlement = asyncHandler(async (req: IRequest, res: Response) => {
@@ -25,8 +27,25 @@ export class SettlementController {
   public static processSettlement = asyncHandler(async (req: IRequest, res: Response) => {
     const accountsId = String(req.user?.userId);
     const { id } = req.params;
-    const { transactionReference } = req.body;
+    const { transactionReference, pin } = req.body;
+    
+    // 1. Verify Security PIN
+    await AccountsService.verifySecurityPin(accountsId, pin);
+
+    // 2. Process Settlement
     const result = await settlementService.processSettlement(accountsId, id, transactionReference);
+    
+    // 3. Log Activity
+    const amount = result?.netPayoutAmount || 0;
+    const partnerName = result?.partnerId?.businessName || 'Partner';
+    const ref = result?.transactionReference || 'Auto-Payout';
+    await ActivityLogService.logActivity(
+      accountsId,
+      'PROCESSED_PAYOUT',
+      amount,
+      `Processed settlement payout of ₹${amount} for ${partnerName} (Ref: ${ref})`
+    );
+
     return successResponse(res, result, 'Settlement processed successfully');
   });
 

@@ -1,6 +1,8 @@
 import { PartnerModel, IPartner } from './partner.model';
 import { ConflictError } from '../../common/errors/ConflictError';
 import { NotFoundError } from '../../common/errors/NotFoundError';
+import { ApiError } from '../../common/errors/ApiError';
+import { SettlementModel } from '../accounts/sub-modules/settlements/settlement.model';
 
 export class PartnerService {
   public static async createPartnerProfile(
@@ -55,6 +57,20 @@ export class PartnerService {
     delete data.verificationStatus;
     delete data.rating;
     delete data.totalReviews;
+
+    // Fraud Prevention: Freeze bank details if a settlement is pending
+    if (data.bankDetails) {
+      const existingPartner = await PartnerModel.findOne({ userId });
+      if (existingPartner) {
+        const pendingSettlement = await SettlementModel.findOne({ 
+          partnerId: existingPartner._id, 
+          status: 'PENDING' 
+        });
+        if (pendingSettlement) {
+          throw new ApiError(400, 'Cannot update bank details while a payout settlement is pending. This is a security measure.');
+        }
+      }
+    }
 
     if (data.latitude !== undefined && data.longitude !== undefined) {
       data.location = {
