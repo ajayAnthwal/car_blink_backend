@@ -6,6 +6,7 @@ import { AssignmentModel } from './assignment.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { BadRequestError } from '../../../../common/errors/BadRequestError';
 import { ASSIGNMENT_TYPE, BOOKING_STATUS } from '../../../../common/constants/status.constant';
+import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATION_STATUS } from '../../../notification/notification.model';
 
 export class AssignmentService {
   /**
@@ -231,8 +232,22 @@ export class AssignmentService {
     try {
       const { emitToRole } = require('../../../../sockets');
       emitToRole('PARTNER', 'new_lead', { bookingId }); // Since we do not have specific user socket tracking readily available in emitToUser, we broadcast to PARTNER role.
+      
+      // Create DB notifications for specific partners
+      if (partnerIds && partnerIds.length > 0) {
+        const notificationsToInsert = partnerIds.map(pid => ({
+          userId: pid,
+          title: 'New Lead Available',
+          message: 'A new lead has been assigned to you. Please check your dashboard.',
+          type: NOTIFICATION_TYPE.IN_APP,
+          category: NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+          status: NOTIFICATION_STATUS.SENT,
+          isRead: false
+        }));
+        await NotificationModel.insertMany(notificationsToInsert);
+      }
     } catch (err) {
-      console.error('Failed to emit new_lead event', err);
+      console.error('Failed to emit new_lead event or create notification', err);
     }
 
     return assignment;
