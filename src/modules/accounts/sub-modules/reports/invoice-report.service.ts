@@ -11,7 +11,13 @@ export class InvoiceReportService {
     toDate: string,
     filters?: { cityId?: string; serviceId?: string }
   ): Promise<{
-    totalJobs: number;
+    summary?: {
+      totalJobs: number;
+      totalRevenue: number;
+      byCity: Record<string, { count: number; revenue: number }>;
+      byService: Record<string, { count: number; revenue: number }>;
+      byCityAndService: Record<string, { city: string; service: string; count: number; revenue: number }>;
+    };
     itemized: any[];
   }> {
     const start = new Date(fromDate);
@@ -53,6 +59,11 @@ export class InvoiceReportService {
       );
     }
 
+    let totalRevenue = 0;
+    const byCity: Record<string, { count: number; revenue: number }> = {};
+    const byService: Record<string, { count: number; revenue: number }> = {};
+    const byCityAndService: Record<string, { city: string; service: string; count: number; revenue: number }> = {};
+
     const itemized: any[] = [];
     for (const job of filteredJobs) {
       const booking = job.bookingId as any;
@@ -64,22 +75,48 @@ export class InvoiceReportService {
       })
         .sort({ createdAt: -1 })
         .lean();
+        
+      const finalAmt = job.finalAmount || 0;
+      const cityName = booking.cityId?.name || 'Unknown';
+      const serviceName = booking.serviceId?.name || 'Unknown';
+      const comboKey = `${cityName}___${serviceName}`;
+
+      // Aggregations
+      totalRevenue += finalAmt;
+      
+      if (!byCity[cityName]) byCity[cityName] = { count: 0, revenue: 0 };
+      byCity[cityName].count += 1;
+      byCity[cityName].revenue += finalAmt;
+      
+      if (!byService[serviceName]) byService[serviceName] = { count: 0, revenue: 0 };
+      byService[serviceName].count += 1;
+      byService[serviceName].revenue += finalAmt;
+
+      if (!byCityAndService[comboKey]) byCityAndService[comboKey] = { city: cityName, service: serviceName, count: 0, revenue: 0 };
+      byCityAndService[comboKey].count += 1;
+      byCityAndService[comboKey].revenue += finalAmt;
 
       itemized.push({
         jobId: job._id,
         bookingId: booking._id,
         completionDate: job.completedAt,
-        finalAmount: job.finalAmount,
+        finalAmount: finalAmt,
         paymentStatus: payment ? payment.status : 'PENDING',
-        serviceName: booking.serviceId?.name || 'Unknown',
-        cityName: booking.cityId?.name || 'Unknown',
+        serviceName,
+        cityName,
         partnerBusinessName: (job.partnerId as any)?.businessName || 'Unknown',
         customerName: booking.customerId?.fullName || 'Unknown',
       });
     }
 
     return {
-      totalJobs: itemized.length,
+      summary: {
+        totalJobs: itemized.length,
+        totalRevenue,
+        byCity,
+        byService,
+        byCityAndService
+      },
       itemized,
     };
   }

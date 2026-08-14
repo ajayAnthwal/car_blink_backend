@@ -11,23 +11,6 @@ export class RefundController {
     const result = await refundService.getAllRefunds(req.query);
     return successResponse(res, result, 'Refunds retrieved successfully');
   });
-  public static getEligiblePayments = asyncHandler(async (req: IRequest, res: Response) => {
-    const result = await refundService.getEligiblePayments();
-    return successResponse(res, result, 'Eligible payments retrieved successfully');
-  });
-
-  public static initiateRefund = asyncHandler(async (req: IRequest, res: Response) => {
-    const accountsId = String(req.user?.userId);
-    const result = await refundService.initiateRefund(accountsId, req.body);
-    return successResponse(res, result, 'Refund initiated successfully', 201);
-  });
-
-  public static approveRefund = asyncHandler(async (req: IRequest, res: Response) => {
-    const accountsId = String(req.user?.userId);
-    const { id } = req.params;
-    const result = await refundService.approveRefund(accountsId, id);
-    return successResponse(res, result, 'Refund approved successfully');
-  });
 
   public static processRefund = asyncHandler(async (req: IRequest, res: Response) => {
     const accountsId = String(req.user?.userId);

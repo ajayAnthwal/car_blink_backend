@@ -7,6 +7,7 @@ const router = Router();
 
 router.get('/eligible-jobs', SettlementController.getEligibleJobsForSettlement);
 router.post('/generate', validate({ body: generateSettlementSchema }), SettlementController.generateSettlement);
+router.get('/analytics', SettlementController.getPlatformRevenueStats);
 router.get('/', SettlementController.getAllSettlements);
 router.patch('/:id/process', validate({ body: processSettlementSchema }), SettlementController.processSettlement);
 router.get('/partner/:partnerId', SettlementController.getPartnerSettlementHistory);

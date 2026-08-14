@@ -23,7 +23,7 @@ export const passwordSchema = z
 export const updateProfileSchema = z.object({
   fullName: z.string().min(1, 'Full name cannot be empty').trim().optional(),
   email: emailSchema,
-  profileImage: z.string().min(1).optional(),
+  profileImage: z.string().optional().or(z.literal('')),
   location: z.object({
     type: z.literal('Point'),
     coordinates: z.array(z.number()),

@@ -2,8 +2,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IRefund extends Document {
   paymentId: mongoose.Types.ObjectId;
-  bookingId: mongoose.Types.ObjectId;
-  customerId: mongoose.Types.ObjectId;
+  bookingId?: mongoose.Types.ObjectId;
+  customerId?: mongoose.Types.ObjectId;
   amount: number;
   reason: string;
   status: 'REQUESTED' | 'APPROVED' | 'PROCESSED' | 'REJECTED';
@@ -24,12 +24,10 @@ const RefundSchema = new Schema<IRefund>(
     bookingId: {
       type: Schema.Types.ObjectId,
       ref: 'Booking',
-      required: [true, 'Booking ID is required'],
     },
     customerId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Customer ID is required'],
     },
     amount: {
       type: Number,

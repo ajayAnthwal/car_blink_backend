@@ -37,7 +37,7 @@ export class SettlementController {
     
     // 3. Log Activity
     const amount = result?.netPayoutAmount || 0;
-    const partnerName = result?.partnerId?.businessName || 'Partner';
+    const partnerName = (result?.partnerId as any)?.businessName || 'Partner';
     const ref = result?.transactionReference || 'Auto-Payout';
     await ActivityLogService.logActivity(
       accountsId,
@@ -53,6 +53,11 @@ export class SettlementController {
     const { partnerId } = req.params;
     const result = await settlementService.getPartnerSettlementHistory(partnerId, req.query);
     return successResponse(res, result, 'Partner settlement history retrieved successfully');
+  });
+
+  public static getPlatformRevenueStats = asyncHandler(async (req: IRequest, res: Response) => {
+    const result = await settlementService.getPlatformRevenueStats();
+    return successResponse(res, result, 'Platform revenue stats retrieved successfully');
   });
 
   public static uploadReconciliationCsv = asyncHandler(async (req: IRequest, res: Response) => {

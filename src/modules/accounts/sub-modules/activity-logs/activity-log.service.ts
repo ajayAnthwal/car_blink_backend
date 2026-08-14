@@ -3,7 +3,7 @@ import { UserModel } from '../../../user/user.model';
 import { ROLES } from '../../../../common/constants/roles.constant';
 import { ApiError } from '../../../../common/errors/ApiError';
 import { notificationService } from '../../../notification/notification.service';
-import { NOTIFICATION_TYPES } from '../../../../common/constants/notification.constant';
+import { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } from '../../../notification/notification.model';
 
 export class ActivityLogService {
   /**
@@ -28,7 +28,8 @@ export class ActivityLogService {
         
         await notificationService.sendNotification(
           String(superAdmin._id),
-          NOTIFICATION_TYPES.SYSTEM,
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
           `High-Value Transaction Alert 🚨`,
           `User ${executorName} processed a high-value ${action} of ₹${amount}. Details: ${details}`
         );

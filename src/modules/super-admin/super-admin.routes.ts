@@ -24,6 +24,7 @@ import settingsRouter from './sub-modules/settings/settings.routes';
 import notificationsRouter from './sub-modules/notifications/notifications.routes';
 import zonesRouter from './sub-modules/zones/zones.routes';
 import taxReportsRouter from './sub-modules/tax-reports/tax-reports.routes';
+import adminRefundsRouter from './sub-modules/refunds/admin-refund.routes';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ router.use('/settings', settingsRouter);
 router.use('/notifications', notificationsRouter);
 router.use('/zones', zonesRouter);
 router.use('/tax-reports', taxReportsRouter);
+router.use('/refunds', adminRefundsRouter);
 
 router.use("/coupons", couponsRouter);
 router.use("/vendors", vendorRouter);

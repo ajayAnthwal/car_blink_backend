@@ -1,6 +1,6 @@
-import { UserModel } from '../../user/user.model';
-import { ApiError } from '../../../common/errors/ApiError';
-import { ERROR_CODES } from '../../../common/constants/error-codes.constant';
+import { UserModel } from '../user/user.model';
+import { ApiError } from '../../common/errors/ApiError';
+import { ERROR_CODES } from '../../common/constants/error-codes.constant';
 
 export class AccountsService {
   /**

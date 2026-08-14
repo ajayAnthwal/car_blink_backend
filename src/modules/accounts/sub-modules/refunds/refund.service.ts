@@ -187,14 +187,16 @@ export class RefundService {
 
     // Trigger customer notification (try-catch wrapped)
     try {
-      await notificationService.sendNotification(
-        refund.customerId.toString(),
-        NOTIFICATION_TYPE.SMS,
-        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
-        'Refund Processed',
-        `Your refund of INR ${refund.amount} has been successfully processed.`,
-        { refundId: refund._id.toString(), paymentId: refund.paymentId.toString() }
-      );
+      if (refund.customerId) {
+        await notificationService.sendNotification(
+          refund.customerId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Refund Processed',
+          `Your refund of INR ${refund.amount} has been successfully processed.`,
+          { refundId: refund._id.toString(), paymentId: refund.paymentId.toString() }
+        );
+      }
     } catch (notifErr: any) {
       logger.warn('Failed to send refund processed SMS notification:', notifErr);
     }
