@@ -40,13 +40,11 @@ export class SuperAdminStaffService {
       throw new Error('User with this email or phone already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
     const newStaff = await UserModel.create({
       fullName,
       email,
       phone,
-      password: hashedPassword,
+      password: password, // Mongoose pre-save hook handles hashing
       role: ROLES.ADMIN,
       customRoleId,
       isEmailVerified: true,
