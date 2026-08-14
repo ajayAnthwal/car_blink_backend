@@ -1,4 +1,4 @@
-import { PaymentModel } from '../../../payment/payment.model';
+import { JobModel } from '../../../partner/sub-modules/jobs/job.model';
 import { RefundModel } from '../../../accounts/sub-modules/refunds/refund.model';
 import { SettlementModel } from '../../../accounts/sub-modules/settlements/settlement.model';
 import { PAYMENT_STATUS } from '../../../../common/constants/status.constant';
@@ -15,26 +15,51 @@ export class FinanceSummaryService {
     totalRefunds: number;
     totalPayouts: number;
     netPlatformRevenue: number;
+    growthRate: number;
   }> {
-    const start = new Date(fromDate);
-    const end = new Date(toDate);
-    end.setHours(23, 59, 59, 999);
+    const start = fromDate ? new Date(fromDate) : new Date('2020-01-01');
+    const end = toDate ? new Date(toDate) : new Date();
+    if (toDate) end.setHours(23, 59, 59, 999);
 
-    // 1. Calculate total revenue (SUCCESS payments)
-    const revenueRes = await PaymentModel.aggregate([
+    // 1. Calculate total revenue (COMPLETED jobs)
+    const revenueRes = await JobModel.aggregate([
       {
         $match: {
-          status: PAYMENT_STATUS.SUCCESS,
+          status: 'COMPLETED',
           createdAt: { $gte: start, $lte: end },
         },
       },
       {
         $group: {
           _id: null,
-          total: { $sum: '$amount' },
+          total: { $sum: '$finalAmount' },
         },
       },
     ]);
+
+    // 1.5 Calculate monthly growth rate
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    const thisMonthRev = await JobModel.aggregate([
+      { $match: { status: 'COMPLETED', createdAt: { $gte: thirtyDaysAgo, $lte: new Date() } } },
+      { $group: { _id: null, total: { $sum: '$finalAmount' } } },
+    ]);
+    const lastMonthRev = await JobModel.aggregate([
+      { $match: { status: 'COMPLETED', createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } } },
+      { $group: { _id: null, total: { $sum: '$finalAmount' } } },
+    ]);
+
+    const tmRevenue = thisMonthRev.length > 0 ? thisMonthRev[0].total : 0;
+    const lmRevenue = lastMonthRev.length > 0 ? lastMonthRev[0].total : 0;
+    let growthRate = 0;
+    if (lmRevenue === 0) {
+      growthRate = tmRevenue > 0 ? 100 : 0;
+    } else {
+      growthRate = ((tmRevenue - lmRevenue) / lmRevenue) * 100;
+    }
 
     // 2. Calculate total refunds (PROCESSED refunds)
     const refundsRes = await RefundModel.aggregate([
@@ -80,6 +105,7 @@ export class FinanceSummaryService {
       totalRefunds: Number(totalRefunds.toFixed(2)),
       totalPayouts: Number(totalPayouts.toFixed(2)),
       netPlatformRevenue: Number(netPlatformRevenue.toFixed(2)),
+      growthRate: Number(growthRate.toFixed(2)),
     };
   }
 }

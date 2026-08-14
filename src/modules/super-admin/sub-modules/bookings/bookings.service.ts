@@ -17,6 +17,12 @@ export class SuperAdminBookingsService {
       filter.status = status;
     }
 
+    if (search) {
+      if (Types.ObjectId.isValid(search)) {
+        filter._id = search;
+      }
+    }
+
     if (fromDate && toDate) {
       filter.createdAt = {
         $gte: new Date(fromDate),

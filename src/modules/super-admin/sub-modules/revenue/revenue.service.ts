@@ -1,4 +1,5 @@
 import { PaymentModel } from '../../../payment/payment.model';
+import { JobModel } from '../../../partner/sub-modules/jobs/job.model';
 import { PAYMENT_STATUS } from '../../../../common/constants/status.constant';
 
 export function resolveDateRange(
@@ -23,6 +24,9 @@ export function resolveDateRange(
     case 'year':
       start.setDate(end.getDate() - 365);
       break;
+    case 'all':
+      start = new Date('2020-01-01');
+      break;
     case 'custom':
       if (fromDate) start = new Date(fromDate);
       if (toDate) {
@@ -44,7 +48,7 @@ export class RevenueService {
    * Aggregate SUCCESS payments within a date range to generate financial summaries
    */
   async getRevenueSummary(
-    period: 'today' | 'week' | 'month' | 'year' | 'custom',
+    period: 'today' | 'week' | 'month' | 'year' | 'custom' | 'all',
     fromDate?: string,
     toDate?: string
   ): Promise<{
@@ -54,19 +58,19 @@ export class RevenueService {
   }> {
     const { start, end } = resolveDateRange(period, fromDate, toDate);
 
-    const stats = await PaymentModel.aggregate([
+    const stats = await JobModel.aggregate([
       {
         $match: {
-          status: PAYMENT_STATUS.SUCCESS,
+          status: 'COMPLETED',
           createdAt: { $gte: start, $lte: end },
         },
       },
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: '$amount' },
+          totalRevenue: { $sum: '$finalAmount' },
           totalTransactions: { $sum: 1 },
-          averageTransactionValue: { $avg: '$amount' },
+          averageTransactionValue: { $avg: '$finalAmount' },
         },
       },
     ]);
@@ -90,8 +94,8 @@ export class RevenueService {
    * Get revenue time-series aggregation trend by day, week, or month
    */
   async getRevenueTrend(
-    period: 'today' | 'week' | 'month' | 'year' | 'custom',
-    groupBy: 'day' | 'week' | 'month',
+    period: 'today' | 'week' | 'month' | 'year' | 'custom' | 'all',
+    groupBy: 'day' | 'week' | 'month' | 'year',
     fromDate?: string,
     toDate?: string
   ): Promise<{ date: string; amount: number }[]> {
@@ -102,19 +106,21 @@ export class RevenueService {
       groupFormat = '%Y-W%U';
     } else if (groupBy === 'month') {
       groupFormat = '%Y-%m';
+    } else if (groupBy === 'year') {
+      groupFormat = '%Y';
     }
 
-    const trend = await PaymentModel.aggregate([
+    const trend = await JobModel.aggregate([
       {
         $match: {
-          status: PAYMENT_STATUS.SUCCESS,
+          status: 'COMPLETED',
           createdAt: { $gte: start, $lte: end },
         },
       },
       {
         $group: {
           _id: { $dateToString: { format: groupFormat, date: '$createdAt' } },
-          amount: { $sum: '$amount' },
+          amount: { $sum: '$finalAmount' },
         },
       },
       { $sort: { _id: 1 } },
