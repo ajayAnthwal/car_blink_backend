@@ -353,10 +353,14 @@ export class AssignmentService {
     // 1. Find or create user
     let user = await UserModel.findOne({ phone: lead.phone });
     if (!user) {
+      // Generate a random password for system-created users
+      const randomPassword = Math.random().toString(36).slice(-8) + 'Aa1@';
+
       user = await UserModel.create({
         fullName: lead.name || 'New Customer',
         phone: lead.phone,
         email: lead.email,
+        password: randomPassword,
         isVerified: true,
         role: 'CUSTOMER'
       });
