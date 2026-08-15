@@ -124,6 +124,12 @@ export class JobService {
           bookingId: booking._id.toString(),
           status: BOOKING_STATUS.IN_PROGRESS,
         });
+
+        // Emit to partner so their dashboard updates in real-time (no page refresh needed)
+        emitToUser(userId, "job_started", {
+          jobId: job._id.toString(),
+          bookingId: booking._id.toString(),
+        });
       }
     } catch (notifErr: any) {
       const { logger } = require("../../../../config/logger.config");
@@ -284,6 +290,12 @@ export class JobService {
         emitToUser(booking.customerId.toString(), "booking_status_update", {
           bookingId: booking._id.toString(),
           status: BOOKING_STATUS.COMPLETED,
+        });
+
+        // Emit to partner so their dashboard updates in real-time (no page refresh needed)
+        emitToUser(userId, "job_completed", {
+          jobId: job._id.toString(),
+          bookingId: booking._id.toString(),
         });
       }
     } catch (notifErr: any) {

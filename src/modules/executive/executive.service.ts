@@ -115,16 +115,20 @@ export class ExecutiveService {
       partnerFilter.servicesOffered = new mongoose.Types.ObjectId(query.serviceId);
     }
 
-    // Geo-spatial filtering
-    if (query.lat && query.lng && query.radius) {
-      const radiusInMeters = parseFloat(query.radius) * 1000;
+    // Geo-spatial filtering:
+    // NOTE: $nearSphere cannot be used with .skip() (pagination) in MongoDB.
+    // We use $geoWithin + $centerSphere which supports pagination correctly.
+    // Radius is in km → convert to radians (divide by Earth radius 6378.1 km)
+    const hasGeoFilter = query.lat && query.lng && query.radius;
+    if (hasGeoFilter) {
+      const radiusKm = parseFloat(query.radius);
+      const radiusRadians = radiusKm / 6378.1;
       partnerFilter.location = {
-        $nearSphere: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [parseFloat(query.lng), parseFloat(query.lat)]
-          },
-          $maxDistance: radiusInMeters
+        $geoWithin: {
+          $centerSphere: [
+            [parseFloat(query.lng), parseFloat(query.lat)],
+            radiusRadians
+          ]
         }
       };
     }
@@ -151,15 +155,38 @@ export class ExecutiveService {
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
     const skip = (page - 1) * limit;
 
-    const [partners, total] = await Promise.all([
-      PartnerModel.find(partnerFilter)
-        .populate('userId', 'fullName email phone')
-        .populate('cityId', 'name state')
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      PartnerModel.countDocuments(partnerFilter),
-    ]);
+    // Graceful fallback: if geo filter causes an error (partner has no location set),
+    // retry without geo filter (city-level results)
+    let partners: any[] = [];
+    let total = 0;
+    try {
+      [partners, total] = await Promise.all([
+        PartnerModel.find(partnerFilter)
+          .populate('userId', 'fullName email phone')
+          .populate('cityId', 'name state')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        PartnerModel.countDocuments(partnerFilter),
+      ]);
+    } catch (geoError: any) {
+      // Geo query failed — fallback to city-only filter without location constraint
+      const { logger } = require('../../config/logger.config');
+      logger.warn('Geo filter failed, falling back to city filter:', geoError?.message);
+      const fallbackFilter = { ...partnerFilter };
+      delete fallbackFilter.location;
+      [partners, total] = await Promise.all([
+        PartnerModel.find(fallbackFilter)
+          .populate('userId', 'fullName email phone')
+          .populate('cityId', 'name state')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        PartnerModel.countDocuments(fallbackFilter),
+      ]);
+    }
 
     const partnerIds = partners.map((p) => p._id);
 
