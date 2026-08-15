@@ -56,6 +56,10 @@ export class BookingService {
       cityId: data.cityId,
       description: data.description,
       preferredDate: data.preferredDate ? new Date(data.preferredDate) : undefined,
+      serviceMode: (data as any).serviceMode || 'GARAGE_VISIT',
+      paymentMode: (data as any).paymentMode || 'ONLINE',
+      address: (data as any).address,
+      landmark: (data as any).landmark,
       status: BOOKING_STATUS.PENDING,
     };
 
@@ -545,6 +549,112 @@ export class BookingService {
     }
 
     return logistics;
+  }
+
+  /**
+   * Executive triggers Satisfaction Form template to Customer
+   */
+  public static async sendSatisfactionTemplate(bookingId: string): Promise<IBooking> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    booking.satisfactionStatus = 'PENDING_CUSTOMER';
+    booking.satisfactionSentAt = new Date();
+    await booking.save();
+
+    // Trigger Socket event to Customer + In-App Notification
+    try {
+      const { emitToUser } = require('../../../../sockets');
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+
+      const payload = {
+        bookingId: booking._id.toString(),
+        title: 'Service Satisfaction Feedback Request',
+        message: 'Please take a moment to confirm if you are satisfied with your car service experience.'
+      };
+
+      emitToUser(booking.customerId.toString(), 'satisfaction_request', payload);
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.JOB_STATUS,
+        payload.title,
+        payload.message,
+        payload
+      );
+    } catch (err: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send satisfaction request:', err);
+    }
+
+    return booking;
+  }
+
+  /**
+   * Customer submits response for Satisfaction Form
+   */
+  public static async respondSatisfactionTemplate(
+    customerId: string,
+    bookingId: string,
+    data: { isSatisfied: boolean; rating?: number; feedback?: string }
+  ): Promise<IBooking> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (booking.customerId.toString() !== customerId) {
+      throw new UnauthorizedError('You are not authorized to review this booking');
+    }
+
+    booking.satisfactionStatus = data.isSatisfied ? 'SATISFIED' : 'DISSATISFIED';
+    if (data.rating) booking.satisfactionRating = data.rating;
+    if (data.feedback) booking.satisfactionFeedback = data.feedback;
+    booking.satisfactionRespondedAt = new Date();
+    await booking.save();
+
+    // Notify Executive & Super Admin with real-time socket alert
+    try {
+      const { emitToRole } = require('../../../../sockets');
+      const { UserModel } = require('../../../user/user.model');
+      const customer = await UserModel.findById(customerId);
+      const customerName = customer ? customer.fullName || 'Customer' : 'Customer';
+
+      const payload = {
+        bookingId: booking._id.toString(),
+        customerId,
+        customerName,
+        isSatisfied: data.isSatisfied,
+        rating: data.rating || 5,
+        feedback: data.feedback || '',
+        title: data.isSatisfied ? '💚 Customer Confirmed Satisfaction!' : '🔴 Customer Reported Dissatisfaction!',
+        message: `${customerName} responded to service satisfaction form for Booking #${booking._id.toString().slice(-6)}.`
+      };
+
+      emitToRole('EXECUTIVE', 'satisfaction_response', payload);
+      emitToRole('SUPER_ADMIN', 'satisfaction_response', payload);
+
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+
+      await notificationService.sendToRole(
+        'EXECUTIVE',
+        NOTIFICATION_TYPE.SYSTEM,
+        NOTIFICATION_CATEGORY.JOB_STATUS,
+        payload.title,
+        payload.message,
+        payload
+      );
+    } catch (err: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to dispatch satisfaction response notification:', err);
+    }
+
+    return booking;
   }
 }
 export default BookingService;

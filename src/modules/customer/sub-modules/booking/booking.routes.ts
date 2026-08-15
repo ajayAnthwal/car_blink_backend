@@ -28,4 +28,8 @@ router.post('/:id/coupon', BookingController.applyCoupon);
 // Get tracking info
 router.get('/:id/tracking', BookingController.getTracking);
 
+// Satisfaction Template Routes
+router.post('/:id/satisfaction/send', BookingController.sendSatisfactionTemplate);
+router.post('/:id/satisfaction/respond', BookingController.respondSatisfactionTemplate);
+
 export default router;

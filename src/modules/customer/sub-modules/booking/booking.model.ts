@@ -27,6 +27,11 @@ export interface IBooking extends Document {
   address?: string;
   landmark?: string;
   remarks?: string;
+  satisfactionStatus?: 'NOT_SENT' | 'PENDING_CUSTOMER' | 'SATISFIED' | 'DISSATISFIED';
+  satisfactionRating?: number;
+  satisfactionFeedback?: string;
+  satisfactionSentAt?: Date;
+  satisfactionRespondedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -136,6 +141,26 @@ const BookingSchema = new Schema<IBooking>(
     remarks: {
       type: String,
       trim: true,
+    },
+    satisfactionStatus: {
+      type: String,
+      enum: ['NOT_SENT', 'PENDING_CUSTOMER', 'SATISFIED', 'DISSATISFIED'],
+      default: 'NOT_SENT',
+    },
+    satisfactionRating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    satisfactionFeedback: {
+      type: String,
+      trim: true,
+    },
+    satisfactionSentAt: {
+      type: Date,
+    },
+    satisfactionRespondedAt: {
+      type: Date,
     }
   },
   {

@@ -69,5 +69,18 @@ export class BookingController {
     const booking = await BookingService.applyCoupon(String(customerId), id, couponCode);
     return successResponse(res, booking, 'Coupon applied successfully');
   });
+
+  public static sendSatisfactionTemplate = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const booking = await BookingService.sendSatisfactionTemplate(id);
+    return successResponse(res, booking, 'Satisfaction template sent to customer');
+  });
+
+  public static respondSatisfactionTemplate = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = req.user?.userId;
+    const { id } = req.params;
+    const booking = await BookingService.respondSatisfactionTemplate(String(customerId), id, req.body);
+    return successResponse(res, booking, 'Satisfaction feedback submitted successfully');
+  });
 }
 export default BookingController;

@@ -23,6 +23,7 @@ export interface IUser extends Document {
     coordinates: number[];
   };
   cityId?: Schema.Types.ObjectId;
+  state?: string;
   address?: string;
   referralCode?: string;
   createdAt: Date;
@@ -53,6 +54,7 @@ const userSchema = new Schema<IUser>(
       coordinates: { type: [Number], index: '2dsphere' }
     },
     cityId: { type: Schema.Types.ObjectId, ref: 'City' },
+    state: { type: String, trim: true },
     address: { type: String },
     referralCode: { type: String, unique: true, sparse: true }
   },

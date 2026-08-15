@@ -15,7 +15,7 @@ export class UserService {
 
   public static async updateUserProfile(
     userId: string,
-    data: { fullName?: string; profileImage?: string }
+    data: Record<string, any>
   ): Promise<Partial<IUser>> {
     const user = await UserModel.findOneAndUpdate(
       { _id: userId, isActive: true },

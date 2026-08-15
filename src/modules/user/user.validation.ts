@@ -28,7 +28,9 @@ export const updateProfileSchema = z.object({
     type: z.literal('Point'),
     coordinates: z.array(z.number()),
   }).optional(),
-  address: z.string().optional()
+  address: z.string().optional(),
+  state: z.string().optional(),
+  cityId: z.string().optional()
 });
 
 export const changePasswordSchema = z
