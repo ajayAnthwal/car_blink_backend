@@ -112,7 +112,7 @@ export class BidService {
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
       const { emitToRole, emitToUser } = require('../../../../sockets');
       
-      const partnerName = partner.businessName || partner.contactPerson || 'Partner';
+      const partnerName = partner.businessName || 'Partner';
       const payload = { 
         bookingId: booking._id.toString(), 
         bidId: bid._id.toString(),
