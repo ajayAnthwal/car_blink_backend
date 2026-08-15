@@ -38,6 +38,8 @@ router.use('/payment', paymentRouter);
 router.use('/notifications', notificationRouter);
 router.use('/reviews', reviewRouter);
 router.use('/accounts', accountsRouter);
+router.use('/super-admin', superAdminRouter);
+router.use('/sockets', socketsRouter);
 import invoiceRouter from '../modules/executive/sub-modules/invoices/invoice.routes';
 router.use('/', invoiceRouter);
 
