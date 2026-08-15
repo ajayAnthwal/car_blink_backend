@@ -351,19 +351,35 @@ export class AssignmentService {
     }
 
     // 1. Find or create user
-    let user = await UserModel.findOne({ phone: lead.phone });
+    const cleanEmail = lead.email && typeof lead.email === 'string' && lead.email.trim() ? lead.email.trim().toLowerCase() : undefined;
+    const cleanPhone = lead.phone ? lead.phone.trim() : '';
+
+    let user: any = null;
+    if (cleanPhone) {
+      user = await UserModel.findOne({ phone: cleanPhone });
+    }
+    if (!user && cleanEmail) {
+      user = await UserModel.findOne({ email: cleanEmail });
+    }
+
     if (!user) {
       // Generate a random password for system-created users
       const randomPassword = Math.random().toString(36).slice(-8) + 'Aa1@';
 
-      user = await UserModel.create({
+      const userData: any = {
         fullName: lead.name || 'New Customer',
-        phone: lead.phone,
-        email: lead.email,
+        phone: cleanPhone || `GUEST-${Date.now()}`,
         password: randomPassword,
         isVerified: true,
+        isPhoneVerified: true,
         role: 'CUSTOMER'
-      });
+      };
+
+      if (cleanEmail) {
+        userData.email = cleanEmail;
+      }
+
+      user = await UserModel.create(userData);
     }
 
     // 2. Find or create a generic garage vehicle for this user

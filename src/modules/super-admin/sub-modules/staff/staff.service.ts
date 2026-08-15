@@ -34,23 +34,34 @@ export class SuperAdminStaffService {
 
   async createStaff(data: any) {
     const { fullName, email, phone, password, customRoleId } = data;
+    const cleanEmail = email && typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : undefined;
+    const cleanPhone = phone ? phone.trim() : '';
 
-    const existingUser = await UserModel.findOne({ $or: [{ email }, { phone }] });
+    const conditions: any[] = [{ phone: cleanPhone }];
+    if (cleanEmail) {
+      conditions.push({ email: cleanEmail });
+    }
+
+    const existingUser = await UserModel.findOne({ $or: conditions });
     if (existingUser) {
       throw new Error('User with this email or phone already exists');
     }
 
-    const newStaff = await UserModel.create({
+    const staffData: any = {
       fullName,
-      email,
-      phone,
+      phone: cleanPhone,
       password: password, // Mongoose pre-save hook handles hashing
       role: ROLES.ADMIN,
       customRoleId,
       isEmailVerified: true,
       isPhoneVerified: true,
       isActive: true,
-    });
+    };
+    if (cleanEmail) {
+      staffData.email = cleanEmail;
+    }
+
+    const newStaff = await UserModel.create(staffData);
 
     return newStaff;
   }

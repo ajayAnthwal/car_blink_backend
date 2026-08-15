@@ -13,16 +13,24 @@ import { ROLES } from '../../common/constants/roles.constant';
 
 export class AuthService {
   public static async registerUser(data: RegisterInput): Promise<{ user: Partial<IUser>; message: string }> {
+    const cleanEmail = data.email && typeof data.email === 'string' && data.email.trim() ? data.email.trim().toLowerCase() : undefined;
+    const cleanPhone = data.phone ? data.phone.trim() : '';
+
     // 1. Check uniqueness of email/phone
+    const queryConditions: any[] = [{ phone: cleanPhone }];
+    if (cleanEmail) {
+      queryConditions.push({ email: cleanEmail });
+    }
+
     const existingUser = await UserModel.findOne({
-      $or: [{ email: data.email }, { phone: data.phone }],
+      $or: queryConditions,
     });
 
     if (existingUser) {
-      if (existingUser.email === data.email) {
+      if (cleanEmail && existingUser.email === cleanEmail) {
         throw new ConflictError('Email is already registered');
       }
-      if (existingUser.phone === data.phone) {
+      if (existingUser.phone === cleanPhone) {
         throw new ConflictError('Phone number is already registered');
       }
     }
@@ -32,14 +40,19 @@ export class AuthService {
       throw new UnauthorizedError('Unauthorized role registration');
     }
 
-    // 2. Create the user
-    const newUser = await UserModel.create({
+    const userData: any = {
       fullName: data.fullName,
-      email: data.email,
-      phone: data.phone,
+      phone: cleanPhone,
       password: data.password,
       role: data.role,
-    });
+    };
+
+    if (cleanEmail) {
+      userData.email = cleanEmail;
+    }
+
+    // 2. Create the user
+    const newUser = await UserModel.create(userData);
 
     // 3. Generate & "send" (log) OTP for phone verification
     const otp = generateOtp();
