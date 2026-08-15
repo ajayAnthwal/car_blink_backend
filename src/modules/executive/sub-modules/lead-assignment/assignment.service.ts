@@ -66,7 +66,7 @@ export class AssignmentService {
 
     const [bookings, total] = await Promise.all([
       BookingModel.find(filter)
-        .populate('customerId', 'fullName email phone')
+        .populate('customerId', 'fullName email phone location')
         .populate('vehicleId', 'brand model registrationNumber fuelType')
         .populate('serviceId', 'name description basePrice')
         .populate('cityId', 'name state')
