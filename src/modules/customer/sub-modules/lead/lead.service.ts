@@ -32,8 +32,8 @@ export class LeadService {
   public static async getLeads(query: any): Promise<IPaginatedResult<ILead>> {
     const { page, limit, skip } = getPaginationOptions(query);
     const filter: any = {};
-    if (query.source) filter.source = query.source;
-    if (query.status) filter.status = query.status;
+    if (query.source && query.source !== 'all') filter.source = query.source;
+    if (query.status && query.status !== 'all') filter.status = query.status;
     if (query.search) {
       const searchRegex = new RegExp(query.search, 'i');
       filter.$or = [
