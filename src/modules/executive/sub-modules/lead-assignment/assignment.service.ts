@@ -375,9 +375,8 @@ export class AssignmentService {
         role: 'CUSTOMER'
       };
 
-      if (cleanEmail) {
-        userData.email = cleanEmail;
-      }
+      const fallbackEmail = `${cleanPhone || lead._id.toString()}@guest.carblink.com`;
+      userData.email = cleanEmail || fallbackEmail;
 
       user = await UserModel.create(userData);
     }
