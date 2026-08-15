@@ -112,17 +112,28 @@ export class BidService {
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
       const { emitToRole, emitToUser } = require('../../../../sockets');
       
-      const payload = { bookingId: booking._id.toString(), bidId: bid._id.toString() };
+      const partnerName = partner.businessName || partner.contactPerson || 'Partner';
+      const payload = { 
+        bookingId: booking._id.toString(), 
+        bidId: bid._id.toString(),
+        partnerName,
+        businessName: partner.businessName,
+        amount: data.quotedAmount,
+        title: 'New Partner Bid Placed',
+        message: `${partnerName} placed a bid of ₹${data.quotedAmount}`
+      };
 
       // Live socket events
       emitToRole('SUPER_ADMIN', 'quote_received', payload);
       emitToRole('EXECUTIVE', 'quote_received', payload);
+      emitToRole('SUPER_ADMIN', 'new_bid', payload);
+      emitToRole('EXECUTIVE', 'new_bid', payload);
       if (booking.customerId) {
         emitToUser(booking.customerId.toString(), 'quote_received', payload);
       }
       
       const title = 'New Partner Bid Received';
-      const msg = `${partner.businessName} has submitted a bid of INR ${data.quotedAmount}.`;
+      const msg = `${partnerName} has submitted a bid of INR ${data.quotedAmount}.`;
 
       // In-app Notifications
       if (booking.assignedExecutiveId) {
