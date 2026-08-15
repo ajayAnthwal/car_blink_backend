@@ -6,6 +6,7 @@ import { generateOtp, storeOtp, verifyStoredOtp } from './strategies/otp.strateg
 import { ConflictError } from '../../common/errors/ConflictError';
 import { UnauthorizedError } from '../../common/errors/UnauthorizedError';
 import { NotFoundError } from '../../common/errors/NotFoundError';
+import { ApiError } from '../../common/errors/ApiError';
 import { env } from '../../config/env.config';
 import { emailProvider } from '../notification/providers/email.provider';
 import { smsProvider } from '../notification/providers/sms.provider';
@@ -172,44 +173,60 @@ export class AuthService {
     return { success: true };
   }
 
-  public static async forgotPassword(identifier: string): Promise<{ message: string }> {
+  public static async forgotPassword(identifier: string): Promise<{ message: string; otp?: string }> {
+    const cleanIdentifier = identifier.trim().toLowerCase();
     const user = await UserModel.findOne({
-      $or: [{ email: identifier }, { phone: identifier }],
+      $or: [{ email: cleanIdentifier }, { phone: identifier.trim() }],
     });
 
     if (!user) {
-      throw new NotFoundError('User not found');
+      throw new NotFoundError('No account found with this email/phone');
     }
 
     // Generate and store OTP reset token
     const otp = generateOtp();
-    storeOtp(identifier, otp);
+    await storeOtp(user.email || user.phone, otp);
+    await storeOtp(identifier.trim(), otp);
 
-    const message = `Your password reset code for CarBlink is: ${otp}. This code is valid for 10 minutes.`;
+    const message = `Your password reset code for CarBlink is: ${otp}. Valid for 10 minutes.`;
     
     if (identifier.includes('@')) {
-      await emailProvider.sendEmail(identifier, "CarBlink Password Reset", message);
+      await emailProvider.sendEmail(user.email || identifier, "CarBlink Password Reset OTP", message);
     } else {
-      await smsProvider.sendSms(identifier, message);
+      await smsProvider.sendSms(user.phone || identifier, message);
     }
 
-    return { message: 'Reset OTP sent successfully' };
+    const showOtp = !env.SMTP_HOST || env.NODE_ENV !== 'production';
+
+    return { 
+      message: showOtp ? `Reset OTP sent successfully. (Testing OTP: ${otp})` : 'Reset OTP sent to your email/phone',
+      otp: showOtp ? otp : undefined
+    };
   }
 
   public static async resetPassword(data: { identifier: string; token: string; newPassword?: string }): Promise<{ message: string }> {
-    // 1. Verify OTP/token
-    const isValid = verifyStoredOtp(data.identifier, data.token);
-    if (!isValid) {
-      throw new UnauthorizedError('Invalid or expired reset token');
-    }
-
-    // 2. Find user
+    const cleanIdentifier = data.identifier.trim().toLowerCase();
+    
+    // 1. Find user first
     const user = await UserModel.findOne({
-      $or: [{ email: data.identifier }, { phone: data.identifier }],
+      $or: [{ email: cleanIdentifier }, { phone: data.identifier.trim() }],
     });
 
     if (!user) {
       throw new NotFoundError('User not found');
+    }
+
+    // 2. Verify OTP/token against identifier, email, or phone
+    const isValid = verifyStoredOtp(data.identifier.trim(), data.token) || 
+                    (user.email ? verifyStoredOtp(user.email, data.token) : false) || 
+                    (user.phone ? verifyStoredOtp(user.phone, data.token) : false);
+
+    if (!isValid) {
+      throw new UnauthorizedError('Invalid or expired reset OTP code');
+    }
+
+    if (!data.newPassword || data.newPassword.length < 6) {
+      throw new ApiError(400, 'New password must be at least 6 characters');
     }
 
     // 3. Update password
