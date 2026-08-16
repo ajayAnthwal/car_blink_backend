@@ -44,9 +44,9 @@ export class UserManagementService {
   }
 
   /**
-   * Update any user account active status or role
+   * Update any user account active status, role, password, or profile details
    */
-  async updateUser(userId: string, data: { isActive?: boolean; role?: string }): Promise<IUser> {
+  async updateUser(userId: string, data: { isActive?: boolean; role?: string; password?: string; fullName?: string; email?: string; phone?: string }): Promise<IUser> {
     const user = await UserModel.findById(userId);
     if (!user) {
       throw new NotFoundError('User not found');
@@ -58,6 +58,22 @@ export class UserManagementService {
     
     if (data.role) {
       user.role = data.role as any;
+    }
+
+    if (data.fullName) {
+      user.fullName = data.fullName.trim();
+    }
+
+    if (data.email) {
+      user.email = data.email.trim().toLowerCase();
+    }
+
+    if (data.phone) {
+      user.phone = data.phone.trim();
+    }
+
+    if (data.password && data.password.trim().length >= 6) {
+      user.password = data.password.trim();
     }
 
     await user.save();

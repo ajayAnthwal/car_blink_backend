@@ -12,8 +12,8 @@ export class UserManagementController {
 
   public static updateUser = asyncHandler(async (req: IRequest, res: Response) => {
     const { id } = req.params;
-    const { isActive, role } = req.body;
-    const result = await userManagementService.updateUser(id, { isActive, role });
+    const { isActive, role, password, fullName, email, phone } = req.body;
+    const result = await userManagementService.updateUser(id, { isActive, role, password, fullName, email, phone });
     return successResponse(
       res,
       result,
