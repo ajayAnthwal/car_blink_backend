@@ -11,7 +11,10 @@ import path from 'path';
 const app: Application = express();
 
 // Standard Middlewares
-app.use(cors(corsOptions));
+app.use(cors({
+    origin: '*'
+}));
+// app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
