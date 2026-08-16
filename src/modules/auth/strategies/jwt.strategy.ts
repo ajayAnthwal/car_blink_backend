@@ -4,11 +4,11 @@ import { JwtPayload } from '../auth.types';
 import { UnauthorizedError } from '../../../common/errors/UnauthorizedError';
 
 export const generateAccessToken = (payload: JwtPayload): string => {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '15m' });
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '7d' });
 };
 
 export const generateRefreshToken = (payload: JwtPayload): string => {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: '30d' });
 };
 
 export const verifyAccessToken = (token: string): JwtPayload => {
