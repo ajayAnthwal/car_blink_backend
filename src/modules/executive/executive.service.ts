@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { UserModel } from '../user/user.model';
 import { BookingModel } from '../customer/sub-modules/booking/booking.model';
 import { PartnerModel } from '../partner/partner.model';
+import { CityModel } from '../master-data/models/city.model';
 import { BidModel } from '../partner/sub-modules/bidding/bid.model';
 import { JobModel } from '../partner/sub-modules/jobs/job.model';
 import { KycDocumentModel } from '../partner/sub-modules/kyc/kyc.model';
@@ -101,8 +102,24 @@ export class ExecutiveService {
   async getPartnerStatusOverview(query: any = {}): Promise<any> {
     const partnerFilter: any = {};
     if (query.cityId && mongoose.Types.ObjectId.isValid(query.cityId)) {
-      partnerFilter.cityId = new mongoose.Types.ObjectId(query.cityId);
+      try {
+        const cityDoc = await CityModel.findById(query.cityId);
+        const cityName = cityDoc?.name || '';
+        if (cityName) {
+          const cityRegex = new RegExp(cityName, 'i');
+          partnerFilter.$or = [
+            { cityId: new mongoose.Types.ObjectId(query.cityId) },
+            { businessAddress: cityRegex },
+            { businessName: cityRegex }
+          ];
+        } else {
+          partnerFilter.cityId = new mongoose.Types.ObjectId(query.cityId);
+        }
+      } catch (_e) {
+        partnerFilter.cityId = new mongoose.Types.ObjectId(query.cityId);
+      }
     }
+
     if (query.verificationStatus) {
       partnerFilter.verificationStatus = query.verificationStatus;
     }
@@ -116,9 +133,6 @@ export class ExecutiveService {
     }
 
     // Geo-spatial filtering:
-    // NOTE: $nearSphere cannot be used with .skip() (pagination) in MongoDB.
-    // We use $geoWithin + $centerSphere which supports pagination correctly.
-    // Radius is in km → convert to radians (divide by Earth radius 6378.1 km)
     const hasGeoFilter = query.lat && query.lng && query.radius;
     if (hasGeoFilter) {
       const radiusKm = parseFloat(query.radius);
@@ -134,21 +148,39 @@ export class ExecutiveService {
     }
 
     if (query.search) {
-      const searchRegex = new RegExp(query.search, 'i');
+      const rawSearch = String(query.search).trim();
+      const searchTerms = rawSearch.split(/[\s|,]+/).filter(term => term.length > 2);
+      const searchRegexes = (searchTerms.length > 0 ? searchTerms : [rawSearch]).map(term => new RegExp(term, 'i'));
+      
       const matchingUsers = await UserModel.find({
         role: ROLES.PARTNER,
-        $or: [
-          { fullName: searchRegex },
-          { email: searchRegex },
-          { phone: searchRegex },
-        ],
+        $or: searchRegexes.flatMap(regex => [
+          { fullName: regex },
+          { email: regex },
+          { phone: regex },
+        ]),
       }).select('_id');
       const userIds = matchingUsers.map((u) => u._id);
 
-      partnerFilter.$or = [
-        { businessName: searchRegex },
-        { userId: { $in: userIds } },
+      const orConditions: any[] = [
+        ...searchRegexes.flatMap(regex => [
+          { businessName: regex },
+          { businessAddress: regex },
+        ]),
       ];
+      if (userIds.length > 0) {
+        orConditions.push({ userId: { $in: userIds } });
+      }
+
+      if (partnerFilter.$or) {
+        partnerFilter.$and = [
+          { $or: partnerFilter.$or },
+          { $or: orConditions }
+        ];
+        delete partnerFilter.$or;
+      } else {
+        partnerFilter.$or = orConditions;
+      }
     }
 
     const page = Math.max(1, parseInt(query.page || '1', 10));

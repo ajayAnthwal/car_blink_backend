@@ -4,6 +4,31 @@ import { NotFoundError } from '../../common/errors/NotFoundError';
 import { ApiError } from '../../common/errors/ApiError';
 import { SettlementModel } from '../accounts/sub-modules/settlements/settlement.model';
 
+const DEFAULT_LOCATION_COORDINATES_MAP: Record<string, [number, number]> = {
+  "rispna": [78.0556, 30.2931],
+  "isbt": [78.0322, 30.3165],
+  "clock tower": [78.0422, 30.3256],
+  "rajpur": [78.0612, 30.3421],
+  "ballupur": [78.0089, 30.3341],
+  "subhash nagar": [77.9944, 30.2711],
+  "prem nagar": [77.9622, 30.3321],
+  "patel nagar": [78.0211, 30.3089],
+  "dehradun": [78.0322, 30.3165],
+  "bhuddi": [77.9800, 30.2600],
+  "agar": [76.0167, 23.7167],
+};
+
+function autoResolvePartnerLocation(addressStr: string): [number, number] | null {
+  if (!addressStr) return null;
+  const lower = addressStr.toLowerCase();
+  for (const [key, coords] of Object.entries(DEFAULT_LOCATION_COORDINATES_MAP)) {
+    if (lower.includes(key)) {
+      return coords;
+    }
+  }
+  return null;
+}
+
 export class PartnerService {
   public static async createPartnerProfile(
     userId: string,
@@ -17,10 +42,18 @@ export class PartnerService {
     if (data.latitude !== undefined && data.longitude !== undefined) {
       data.location = {
         type: 'Point',
-        coordinates: [data.longitude, data.latitude]
+        coordinates: [Number(data.longitude), Number(data.latitude)]
       };
       delete data.latitude;
       delete data.longitude;
+    } else if (!data.location && data.businessAddress) {
+      const autoCoords = autoResolvePartnerLocation(data.businessAddress);
+      if (autoCoords) {
+        data.location = {
+          type: 'Point',
+          coordinates: autoCoords
+        };
+      }
     }
 
     const partner = await PartnerModel.create({
@@ -75,10 +108,18 @@ export class PartnerService {
     if (data.latitude !== undefined && data.longitude !== undefined) {
       data.location = {
         type: 'Point',
-        coordinates: [data.longitude, data.latitude]
+        coordinates: [Number(data.longitude), Number(data.latitude)]
       };
       delete data.latitude;
       delete data.longitude;
+    } else if (!data.location && data.businessAddress) {
+      const autoCoords = autoResolvePartnerLocation(data.businessAddress);
+      if (autoCoords) {
+        data.location = {
+          type: 'Point',
+          coordinates: autoCoords
+        };
+      }
     }
 
     const partner = await PartnerModel.findOneAndUpdate(
