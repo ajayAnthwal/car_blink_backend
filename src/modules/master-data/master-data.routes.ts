@@ -16,6 +16,8 @@ import {
 
 const router = Router();
 
+import { BannerAdController } from '../executive/sub-modules/ads/banner-ad.controller';
+
 // Public Read Routes
 router.get('/services', validate({ query: paginationQuerySchema }), MasterDataController.getServices);
 router.get('/services/:slug', MasterDataController.getServiceBySlug);
@@ -23,6 +25,8 @@ router.get('/cities', validate({ query: paginationQuerySchema }), MasterDataCont
 router.get('/vehicle-brands', MasterDataController.getVehicleBrands);
 router.get('/vehicle-models', MasterDataController.getVehicleModels);
 router.get('/plans', MasterDataController.getPlans);
+router.get('/ads', BannerAdController.getActiveAds);
+router.get('/master-data/ads', BannerAdController.getActiveAds);
 
 // Protected Write Routes (SUPER_ADMIN only)
 router.post(

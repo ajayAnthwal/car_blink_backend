@@ -13,11 +13,13 @@ import { EscalationController } from './sub-modules/escalation/escalation.contro
 import { createEscalationSchema, updateEscalationSchema } from './sub-modules/escalation/escalation.validation';
 import { ExecutiveController } from './executive.controller';
 
+import bannerAdRouter from './sub-modules/ads/banner-ad.routes';
+
 const router = Router();
 
-// Apply authentication and role check for EXECUTIVE
+// Apply authentication and role check for EXECUTIVE, SUPER_ADMIN, ADMIN
 router.use(authMiddleware as any);
-router.use(roleMiddleware([ROLES.EXECUTIVE]) as any);
+router.use(roleMiddleware([ROLES.EXECUTIVE, ROLES.SUPER_ADMIN, ROLES.ADMIN]) as any);
 
 // SUB-MODULE 1: Lead Assignment
 router.get('/leads', AssignmentController.getAllLeads);
@@ -55,5 +57,6 @@ router.post('/call', ExecutiveController.clickToCall);
 
 router.use("/logistics", logisticsRouter);
 router.use("/tickets", ticketsRouter);
+router.use("/ads", bannerAdRouter);
 
 export default router;

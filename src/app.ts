@@ -10,10 +10,10 @@ import path from 'path';
 
 const app: Application = express();
 
-// Standard Middlewares
+// Standard Middlewares (with 50MB body limit for image uploads/base64)
 app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // Serve static uploads folder
