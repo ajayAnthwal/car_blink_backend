@@ -46,19 +46,45 @@ export class JobService {
       JobModel.countDocuments(filter),
     ]);
 
-    // Fetch payments for these jobs
-    const bookingIds = jobs.map((j) => j.bookingId?._id || j.bookingId);
+    // Fetch payments & invoices for these jobs
+    const bookingIds = jobs.map((j) => (j.bookingId?._id || j.bookingId)?.toString()).filter(Boolean);
+    const jobIds = jobs.map((j) => j._id.toString()).filter(Boolean);
+
     const PaymentModel = mongoose.model("Payment");
-    const payments = await PaymentModel.find({
-      bookingId: { $in: bookingIds },
-    }).lean();
+    const { InvoiceModel } = require("./invoice.model");
+
+    const [payments, invoices] = await Promise.all([
+      PaymentModel.find({ bookingId: { $in: bookingIds } }).lean(),
+      InvoiceModel.find({
+        $or: [
+          { jobId: { $in: jobIds } },
+          { bookingId: { $in: bookingIds } }
+        ]
+      }).lean()
+    ]);
+
+    const invoicesMap = new Map();
+    invoices.forEach((inv: any) => {
+      if (inv.jobId) invoicesMap.set(inv.jobId.toString(), inv);
+      if (inv.bookingId) invoicesMap.set(inv.bookingId.toString(), inv);
+    });
 
     const jobsWithPayments = jobs.map((job) => {
-      const bIdStr = (job.bookingId?._id || job.bookingId).toString();
+      const bIdStr = (job.bookingId?._id || job.bookingId)?.toString();
+      const jIdStr = job._id.toString();
       const jobPayments = payments.filter(
         (p: any) => p.bookingId.toString() === bIdStr,
       );
-      return { ...job, payments: jobPayments };
+      const inv = invoicesMap.get(jIdStr) || invoicesMap.get(bIdStr) || null;
+      const invUrl = job.invoiceUrl || inv?.pdfUrl || (inv ? 'ITEMIZED_INVOICE_SUBMITTED' : null);
+
+      return {
+        ...job,
+        payments: jobPayments,
+        invoice: inv,
+        invoiceUrl: invUrl,
+        hasInvoice: Boolean(invUrl)
+      };
     });
 
     return { jobs: jobsWithPayments as any, total, page, limit };
@@ -168,10 +194,19 @@ export class JobService {
       );
     }
 
-    if (!data?.invoiceUrl && !job.invoiceUrl) {
+    const { InvoiceModel } = require('./invoice.model');
+    const existingInvoice = await InvoiceModel.findOne({
+      $or: [
+        { jobId: job._id.toString() },
+        { jobId: job._id },
+        { bookingId: (job.bookingId?._id || job.bookingId)?.toString() }
+      ]
+    });
+
+    if (!data?.invoiceUrl && !job.invoiceUrl && !existingInvoice) {
       throw new ApiError(
         400,
-        "Invoice document is mandatory to complete the job. Please upload an invoice.",
+        "Invoice document or itemized bill is mandatory to complete the job. Please submit an itemized invoice or upload a document.",
         ERROR_CODES.VALIDATION_ERROR,
       );
     }

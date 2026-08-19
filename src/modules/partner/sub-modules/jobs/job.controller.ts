@@ -66,7 +66,12 @@ export class JobController {
   public static assignStaff = asyncHandler(async (req: IRequest, res: Response) => {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { staffId } = req.body;
+    const staffId = req.body?.staffId || req.body?.mechanicId || (typeof req.body === 'string' ? req.body : null);
+
+    if (!staffId) {
+      return res.status(400).json({ success: false, message: 'staffId or mechanicId is required' });
+    }
+
     const job = await JobService.assignStaff(String(userId), id, staffId);
     return successResponse(res, job, 'Staff assigned successfully');
   });
