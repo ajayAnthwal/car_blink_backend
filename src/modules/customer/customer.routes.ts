@@ -10,6 +10,7 @@ import rsaRouter from "./sub-modules/rsa/rsa.routes";
 import subscriptionRouter from "./sub-modules/subscription/subscription.routes";
 import referralRouter from "./sub-modules/referral/referral.routes";
 import ticketRouter from './sub-modules/support-ticket/ticket.routes';
+import customerInvoiceRouter from './sub-modules/invoices/customer-invoice.routes';
 import { CustomerController } from './customer.controller';
 
 const router = Router();
@@ -22,6 +23,7 @@ router.get('/stats', CustomerController.getCustomerStats);
 
 router.use('/garage', garageRouter);
 router.use('/bookings', bookingRouter);
+router.use('/invoices', customerInvoiceRouter);
 router.use('/warranties', warrantyRouter);
 router.use('/support-tickets', ticketRouter);
 

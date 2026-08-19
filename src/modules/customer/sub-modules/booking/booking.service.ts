@@ -97,7 +97,7 @@ export class BookingService {
   public static async getMyBookings(
     customerId: string,
     query: { status?: string; page?: string; limit?: string; search?: string }
-  ): Promise<{ bookings: IBooking[]; total: number; page: number; limit: number }> {
+  ): Promise<{ bookings: any[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, parseInt(query.page || '1', 10));
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
     const skip = (page - 1) * limit;
@@ -141,7 +141,7 @@ export class BookingService {
       filter.$or = searchConditions;
     }
 
-    const [bookings, total] = await Promise.all([
+    const [bookingsRaw, total] = await Promise.all([
       BookingModel.find(filter)
         .populate('vehicleId')
         .populate('serviceId')
@@ -150,9 +150,42 @@ export class BookingService {
         .populate('assignedExecutiveId', 'fullName email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       BookingModel.countDocuments(filter),
     ]);
+
+    const bookingIds = bookingsRaw.map(b => b._id);
+    const bookingIdStrs = bookingsRaw.map(b => String(b._id));
+    const objectIds = bookingIdStrs.map(id => new mongoose.Types.ObjectId(id));
+
+    const jobs = await JobModel.find({
+      $or: [
+        { bookingId: { $in: objectIds } },
+        { bookingId: { $in: bookingIdStrs } }
+      ]
+    }).lean();
+
+    const jobsMap = new Map();
+    jobs.forEach(j => {
+      if (j.bookingId) {
+        const key = String((j.bookingId as any)._id || j.bookingId);
+        jobsMap.set(key, j);
+      }
+    });
+
+    const bookings = bookingsRaw.map(b => {
+      const bKey = String(b._id);
+      const jDetails = jobsMap.get(bKey) || null;
+      return {
+        ...b,
+        jobDetails: jDetails,
+        jobExtensions: jDetails?.jobExtensions || [],
+        additionalParts: jDetails?.jobExtensions || []
+      };
+    });
+
+    console.log(`[BACKEND getMyBookings] customerId: ${customerId}, found ${bookingsRaw.length} bookings, ${jobs.length} matching jobs.`);
 
     return { bookings, total, page, limit };
   }
