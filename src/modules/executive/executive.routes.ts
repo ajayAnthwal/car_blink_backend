@@ -26,6 +26,10 @@ router.patch('/leads/:id', AssignmentController.updateLead);
 router.patch('/leads/:id/assign-partner', AssignmentController.assignPartnerToLead);
 router.post('/leads/:id/convert', AssignmentController.convertWebsiteLeadToBooking);
 router.post('/leads/:id/forward-quote', AssignmentController.forwardQuoteToCustomer);
+router.post('/leads/:id/satisfaction/send', (req, res, next) => {
+  const { BookingController } = require('../customer/sub-modules/booking/booking.controller');
+  return BookingController.sendSatisfactionTemplate(req, res, next);
+});
 
 // SUB-MODULE 2: Follow-Up Calls
 router.post('/follow-ups', validate({ body: createFollowUpSchema }), FollowUpController.logFollowUpCall);

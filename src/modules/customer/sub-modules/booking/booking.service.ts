@@ -593,6 +593,14 @@ export class BookingService {
       throw new NotFoundError('Booking not found');
     }
 
+    if (booking.status !== BOOKING_STATUS.COMPLETED) {
+      throw new ApiError(
+        400,
+        'Satisfaction feedback form can only be sent after the service job is completed.',
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
     booking.satisfactionStatus = 'PENDING_CUSTOMER';
     booking.satisfactionSentAt = new Date();
     await booking.save();

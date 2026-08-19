@@ -12,11 +12,15 @@ import referralRouter from "./sub-modules/referral/referral.routes";
 import ticketRouter from './sub-modules/support-ticket/ticket.routes';
 import customerInvoiceRouter from './sub-modules/invoices/customer-invoice.routes';
 import { CustomerController } from './customer.controller';
+import { BookingController } from './sub-modules/booking/booking.controller';
 
 const router = Router();
 
-// Apply authentication and role check for CUSTOMER
 router.use(authMiddleware as any);
+
+// Routes accessible by EXECUTIVE & SUPER_ADMIN as well
+router.post('/bookings/:id/satisfaction/send', roleMiddleware([ROLES.CUSTOMER, ROLES.EXECUTIVE, ROLES.SUPER_ADMIN]) as any, BookingController.sendSatisfactionTemplate);
+
 router.use(roleMiddleware([ROLES.CUSTOMER]) as any);
 
 router.get('/stats', CustomerController.getCustomerStats);
