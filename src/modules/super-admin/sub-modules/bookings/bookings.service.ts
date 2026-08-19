@@ -1,7 +1,13 @@
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
+import { UserModel } from '../../../user/user.model';
+import { PartnerModel } from '../../../partner/partner.model';
+import { ServiceModel } from '../../../master-data/models/service.model';
+import { GarageModel } from '../../../customer/sub-modules/garage/garage.model';
+import { CityModel } from '../../../master-data/models/city.model';
+import { BidModel } from '../../../partner/sub-modules/bidding/bid.model';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 
 export class SuperAdminBookingsService {
   /**
@@ -62,27 +68,76 @@ export class SuperAdminBookingsService {
    * Get booking details
    */
   async getBookingDetails(bookingId: string) {
-    const booking = await BookingModel.findById(bookingId)
-      .populate('customerId', 'fullName email phone')
-      .populate('vehicleId', 'make model year registrationNumber')
-      .populate('serviceId', 'name basePrice category')
-      .populate('cityId', 'name state')
-      .populate('assignedExecutiveId', 'fullName phone email')
-      .populate({
-        path: 'acceptedBidId',
-        populate: {
-          path: 'partnerId',
-          select: 'businessName userId contactNumber',
-          populate: { path: 'userId', select: 'fullName email' }
-        }
+    // Ensure all Mongoose schemas are registered before populate queries
+    if (!UserModel || !PartnerModel || !ServiceModel || !GarageModel || !CityModel || !BidModel) {
+      console.log('Models loaded');
+    }
+
+    const isObjectId = mongoose.Types.ObjectId.isValid(bookingId);
+    let booking: any = null;
+
+    if (isObjectId) {
+      booking = await BookingModel.findOne({
+        $or: [{ _id: bookingId }, { leadId: bookingId }]
       })
-      .lean();
+        .populate('customerId', 'fullName email phone')
+        .populate('vehicleId', 'make model year registrationNumber')
+        .populate('serviceId', 'name basePrice category')
+        .populate('cityId', 'name state')
+        .populate('assignedExecutiveId', 'fullName phone email')
+        .populate({
+          path: 'acceptedBidId',
+          populate: {
+            path: 'partnerId',
+            select: 'businessName userId contactNumber',
+            populate: { path: 'userId', select: 'fullName email' }
+          }
+        })
+        .lean();
+    }
+
+    if (!booking && isObjectId) {
+      const LeadModel = mongoose.model('Lead');
+      const lead: any = await LeadModel.findById(bookingId).lean().catch(() => null);
+      if (lead && lead.bookingId) {
+        booking = await BookingModel.findById(lead.bookingId)
+          .populate('customerId', 'fullName email phone')
+          .populate('vehicleId', 'make model year registrationNumber')
+          .populate('serviceId', 'name basePrice category')
+          .populate('cityId', 'name state')
+          .populate('assignedExecutiveId', 'fullName phone email')
+          .populate({
+            path: 'acceptedBidId',
+            populate: {
+              path: 'partnerId',
+              select: 'businessName userId contactNumber',
+              populate: { path: 'userId', select: 'fullName email' }
+            }
+          })
+          .lean();
+      }
+    }
 
     if (!booking) {
       throw new NotFoundError('Booking not found');
     }
 
-    return booking;
+    const { InvoiceModel } = require('../../../partner/sub-modules/jobs/invoice.model');
+    const { JobModel } = require('../../../partner/sub-modules/jobs/job.model');
+    const { PaymentModel } = require('../../../payment/payment.model');
+
+    const [invoice, job, payment] = await Promise.all([
+      InvoiceModel.findOne({ $or: [{ bookingId: booking._id }, { jobId: booking.jobId }] }).lean().catch(() => null),
+      JobModel.findOne({ bookingId: booking._id }).lean().catch(() => null),
+      PaymentModel.findOne({ bookingId: booking._id }).lean().catch(() => null)
+    ]);
+
+    return {
+      ...booking,
+      invoice,
+      job,
+      payment
+    };
   }
 
   /**

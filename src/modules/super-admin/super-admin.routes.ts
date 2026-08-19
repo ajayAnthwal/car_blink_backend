@@ -28,9 +28,9 @@ import adminRefundsRouter from './sub-modules/refunds/admin-refund.routes';
 
 const router = Router();
 
-// Secure all super-admin endpoints to SUPER_ADMIN role only
+// Secure all super-admin endpoints to SUPER_ADMIN & ADMIN roles
 router.use(authMiddleware as any);
-router.use(roleMiddleware([ROLES.SUPER_ADMIN]) as any);
+router.use(roleMiddleware([ROLES.SUPER_ADMIN, ROLES.ADMIN]) as any);
 
 router.use('/revenue', revenueRouter);
 router.use('/leads-today', leadsTodayRouter);
