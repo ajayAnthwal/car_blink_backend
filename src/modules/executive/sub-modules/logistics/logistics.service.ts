@@ -6,12 +6,37 @@ import { emitToUser } from '../../../../sockets';
 
 export class LogisticsService {
   static async assignDriver(data: any) {
-    const booking = await BookingModel.findById(data.bookingId);
+    let booking = await BookingModel.findById(data.bookingId);
     if (!booking) {
-      throw new NotFoundError('Booking not found');
+      booking = await BookingModel.findOne({ leadId: data.bookingId });
+    }
+    if (!booking) {
+      const { LeadModel } = require('../../../customer/sub-modules/lead/lead.model');
+      const lead = await LeadModel.findById(data.bookingId);
+      if (lead) {
+        booking = await BookingModel.findOne({ leadId: lead._id });
+        if (!booking) {
+          booking = await BookingModel.create({
+            leadId: lead._id,
+            customerId: lead.customerId,
+            partnerId: lead.assignedPartnerId,
+            serviceId: lead.serviceId,
+            vehicleId: lead.vehicleId,
+            status: BOOKING_STATUS.IN_PROGRESS,
+            totalAmount: lead.budget || 0,
+          });
+        }
+      }
     }
 
-    const log = await LogisticsModel.create(data);
+    if (!booking) {
+      throw new NotFoundError('Booking or Lead record not found');
+    }
+
+    const log = await LogisticsModel.create({
+      ...data,
+      bookingId: booking._id,
+    });
 
     // Update booking status to IN_PROGRESS as logistics phase has begun
     if (booking.status === BOOKING_STATUS.PENDING || booking.status === BOOKING_STATUS.ACCEPTED || booking.status === BOOKING_STATUS.QUOTED) {
