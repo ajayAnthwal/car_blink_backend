@@ -65,8 +65,19 @@ export class ExecutiveInvoiceService {
     const discount = Number(data.discount || 0);
     const grandTotal = data.grandTotal !== undefined ? Number(data.grandTotal) : Math.max(0, subtotal + taxAmount - discount);
 
-    // Upsert invoice for this job
-    let invoice = await InvoiceModel.findOne({ jobId: job._id });
+    // Upsert invoice for this job with safety check
+    let invoice = await InvoiceModel.findOne({
+      $or: [{ jobId: job._id }, { bookingId: job.bookingId }]
+    });
+
+    if (invoice && (invoice.status === 'FORWARDED_TO_CUSTOMER' || invoice.status === 'PAID')) {
+      throw new ApiError(
+        400,
+        'Invoice has already been approved and forwarded to the customer or paid. It cannot be modified directly.',
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
     if (invoice) {
       invoice.invoiceType = data.invoiceType || 'ITEMIZED';
       invoice.pdfUrl = data.pdfUrl || invoice.pdfUrl;
