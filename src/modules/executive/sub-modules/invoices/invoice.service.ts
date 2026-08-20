@@ -299,6 +299,21 @@ export class ExecutiveInvoiceService {
           payload.message,
           payload
         );
+
+        // WhatsApp Invoice & Additional Charges Alert to Customer
+        try {
+          const { UserModel } = require('../../../user/user.model');
+          const customerUser = await UserModel.findById(invoice.customerId);
+          if (customerUser && customerUser.phone) {
+            const { whatsappProvider } = require('../../../notification/providers/whatsapp.provider');
+            await whatsappProvider.sendWhatsAppText(
+              customerUser.phone,
+              `🧾 *[CARBLINK INVOICE & CHARGES READY]*\nHi ${customerUser.fullName || 'Customer'}! Your verified service invoice of *₹${invoice.grandTotal}* is ready for review and payment.\nReview Invoice & Pay: https://dashboard.carblink.in/login`
+            );
+          }
+        } catch (waErr) {
+          console.warn('[InvoiceService] WhatsApp invoice notification warning:', waErr);
+        }
       }
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');

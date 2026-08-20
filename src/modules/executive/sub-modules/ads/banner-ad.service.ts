@@ -46,9 +46,16 @@ export class BannerAdService {
     if (placement) {
       filter.placement = placement;
     }
-    return BannerAdModel.find(filter)
+    let ads = await BannerAdModel.find(filter)
       .sort({ priorityOrder: -1, createdAt: -1 })
       .lean();
+
+    if ((!ads || ads.length === 0) && placement) {
+      ads = await BannerAdModel.find({ isActive: true })
+        .sort({ priorityOrder: -1, createdAt: -1 })
+        .lean();
+    }
+    return ads;
   }
 
   async updateAd(id: string, data: Partial<IBannerAd>) {

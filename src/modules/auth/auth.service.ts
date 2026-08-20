@@ -78,13 +78,31 @@ export class AuthService {
       throw new UnauthorizedError('Invalid or expired OTP');
     }
 
-    // 2. Find user
-    const user = await UserModel.findOne({
+    // 2. Find user or auto-create customer account for guest OTP login
+    let user = await UserModel.findOne({
       $or: [{ email: identifier }, { phone: identifier }],
     });
 
     if (!user) {
-      throw new NotFoundError('User not found');
+      const isPhone = !identifier.includes('@');
+      user = await UserModel.create({
+        fullName: isPhone ? `Customer ${identifier.slice(-4)}` : identifier.split('@')[0],
+        phone: identifier.trim(),
+        email: isPhone ? undefined : identifier.trim().toLowerCase(),
+        password: 'CarBlink@123',
+        role: ROLES.CUSTOMER,
+        isPhoneVerified: isPhone,
+        isEmailVerified: !isPhone,
+      });
+
+      // Auto-bind any past guest leads to this newly created customer account
+      try {
+        const { LeadModel } = require('../customer/sub-modules/lead/lead.model');
+        await LeadModel.updateMany(
+          { phone: identifier.trim(), customerId: { $exists: false } },
+          { customerId: user._id }
+        );
+      } catch (bindErr) {}
     }
 
     // 3. Mark verified
@@ -175,12 +193,29 @@ export class AuthService {
 
   public static async forgotPassword(identifier: string): Promise<{ message: string; otp?: string }> {
     const cleanIdentifier = identifier.trim().toLowerCase();
-    const user = await UserModel.findOne({
+    let user = await UserModel.findOne({
       $or: [{ email: cleanIdentifier }, { phone: identifier.trim() }],
     });
 
     if (!user) {
-      throw new NotFoundError('No account found with this email/phone');
+      const isPhone = !identifier.includes('@');
+      user = await UserModel.create({
+        fullName: isPhone ? `Customer ${identifier.slice(-4)}` : identifier.split('@')[0],
+        phone: identifier.trim(),
+        email: isPhone ? undefined : cleanIdentifier,
+        password: 'CarBlink@123',
+        role: ROLES.CUSTOMER,
+        isPhoneVerified: false,
+        isEmailVerified: false,
+      });
+
+      try {
+        const { LeadModel } = require('../customer/sub-modules/lead/lead.model');
+        await LeadModel.updateMany(
+          { phone: identifier.trim(), customerId: { $exists: false } },
+          { customerId: user._id }
+        );
+      } catch (bindErr) {}
     }
 
     // Generate and store OTP reset token

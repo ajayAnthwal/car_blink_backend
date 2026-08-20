@@ -212,6 +212,25 @@ export class PaymentService {
           },
         );
 
+        // Accounts & Admin Team WhatsApp Alert
+        await notificationService.sendToRole(
+          'ACCOUNTS',
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'New Payment Received Alert',
+          `Payment of ₹${payAmount} (${payment.paymentType || 'ONLINE'}) received for Booking #${payment.bookingId}.`,
+          { bookingId: payment.bookingId.toString(), amount: payAmount }
+        );
+
+        await notificationService.sendToRole(
+          'SUPER_ADMIN',
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'New Payment Received Alert',
+          `Payment of ₹${payAmount} (${payment.paymentType || 'ONLINE'}) received for Booking #${payment.bookingId}.`,
+          { bookingId: payment.bookingId.toString(), amount: payAmount }
+        );
+
         // EMAIL
         await notificationService.sendNotification(
           payment.customerId.toString(),

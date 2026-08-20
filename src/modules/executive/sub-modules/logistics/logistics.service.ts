@@ -44,6 +44,23 @@ export class LogisticsService {
       await booking.save();
     }
 
+    // Send WhatsApp Driver Assignment Alert to Customer
+    try {
+      const populatedBooking = await BookingModel.findById(booking._id).populate('customerId');
+      const customer: any = populatedBooking?.customerId;
+      if (customer && customer.phone) {
+        const { whatsappProvider } = require('../../../../notification/providers/whatsapp.provider');
+        await whatsappProvider.sendWhatsAppTemplate(
+          customer.phone,
+          'carblink_driver_assigned',
+          [customer.fullName || 'Customer', data.driverName || 'Ramesh', data.driverPhone || 'Contact Executive'],
+          [customer.fullName || 'Customer']
+        );
+      }
+    } catch (waErr) {
+      console.warn('[LogisticsService] Interakt WhatsApp driver alert warning:', waErr);
+    }
+
     return log;
   }
   

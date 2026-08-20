@@ -185,7 +185,7 @@ export class RefundService {
     refund.processedByAccountsId = accountsId as any;
     await refund.save();
 
-    // Trigger customer notification (try-catch wrapped)
+    // Trigger customer & accounts notification (try-catch wrapped)
     try {
       if (refund.customerId) {
         await notificationService.sendNotification(
@@ -197,6 +197,15 @@ export class RefundService {
           { refundId: refund._id.toString(), paymentId: refund.paymentId.toString() }
         );
       }
+
+      await notificationService.sendToRole(
+        'ACCOUNTS',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Refund Processed Alert',
+        `Refund of ₹${refund.amount} processed for Booking #${refund.bookingId}. Reason: ${refund.reason}`,
+        { refundId: refund._id.toString() }
+      );
     } catch (notifErr: any) {
       logger.warn('Failed to send refund processed SMS notification:', notifErr);
     }

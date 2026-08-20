@@ -62,6 +62,26 @@ export class NotificationService {
       success = false;
     }
 
+    // Direct WhatsApp Notification Dispatch to user's registered phone
+    if (user.phone) {
+      try {
+        const { whatsappProvider } = require('./providers/whatsapp.provider');
+        let portalUrl = 'https://dashboard.carblink.in/login';
+        if (user.role === 'PARTNER') portalUrl = 'https://dashboard.carblink.in/partner/leads';
+        if (user.role === 'EXECUTIVE') portalUrl = 'https://dashboard.carblink.in/executive/leads';
+        if (user.role === 'CUSTOMER') portalUrl = 'https://dashboard.carblink.in/customer/dashboard';
+        if (user.role === 'ACCOUNTS') portalUrl = 'https://dashboard.carblink.in/accounts/dashboard';
+        if (user.role === 'SUPER_ADMIN') portalUrl = 'https://dashboard.carblink.in/admin/dashboard';
+
+        await whatsappProvider.sendWhatsAppText(
+          user.phone,
+          `🔔 *[CARBLINK ${user.role} NOTIFICATION]*\n*${title}*\n${message}\nOpen Portal: ${portalUrl}`
+        );
+      } catch (waErr: any) {
+        logger.warn(`[NotificationService] WhatsApp alert warning for ${user.phone}:`, waErr?.message || waErr);
+      }
+    }
+
     // Save notification record to the database
     const notification = await NotificationModel.create({
       userId,
@@ -95,7 +115,7 @@ export class NotificationService {
     message: string,
     metadata?: Record<string, any>
   ): Promise<void> {
-    const users = await UserModel.find({ role, isActive: true }, '_id');
+    const users = await UserModel.find({ role, isActive: true }, '_id phone fullName');
     if (users.length === 0) return;
 
     const payload = { title, message, metadata, timestamp: new Date(), isRead: false };
@@ -112,6 +132,46 @@ export class NotificationService {
 
     await NotificationModel.insertMany(notifications);
     emitToRole(role, 'notification:new', payload);
+
+    // Multi-Role WhatsApp Alert Broadcast (Admin, Executive, Accounts, Partner)
+    try {
+      const { whatsappProvider } = require('./providers/whatsapp.provider');
+      const { env } = require('../../config/env.config');
+      const adminWhatsAppPhone = env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_WHATSAPP_NUMBER;
+
+      // 1. Send WhatsApp alert to central configured Admin/Management phone
+      if (adminWhatsAppPhone && ['SUPER_ADMIN', 'EXECUTIVE', 'ACCOUNTS'].includes(role)) {
+        await whatsappProvider.sendWhatsAppText(adminWhatsAppPhone, `🚨 *[${role} ALERT]*\n*${title}*\n${message}`);
+      }
+
+      // 2. Direct WhatsApp alert to individual registered Executives, Partners, Accounts & Admins
+      for (const targetUser of users) {
+        if (targetUser.phone) {
+          let roleTag = role;
+          let dashboardLink = 'https://dashboard.carblink.in/login';
+          if (role === 'EXECUTIVE') {
+            roleTag = 'EXECUTIVE TEAM';
+            dashboardLink = 'https://dashboard.carblink.in/executive/leads';
+          } else if (role === 'PARTNER') {
+            roleTag = 'PARTNER WORKSHOP';
+            dashboardLink = 'https://dashboard.carblink.in/partner/leads';
+          } else if (role === 'ACCOUNTS') {
+            roleTag = 'FINANCE & ACCOUNTS';
+            dashboardLink = 'https://dashboard.carblink.in/accounts/dashboard';
+          } else if (role === 'SUPER_ADMIN') {
+            roleTag = 'SUPER ADMIN';
+            dashboardLink = 'https://dashboard.carblink.in/admin/dashboard';
+          }
+
+          await whatsappProvider.sendWhatsAppText(
+            targetUser.phone,
+            `🔔 *[${roleTag} NOTIFICATION]*\n*${title}*\n${message}\nOpen Dashboard: ${dashboardLink}`
+          );
+        }
+      }
+    } catch (waErr) {
+      logger.warn('[NotificationService] Multi-role WhatsApp broadcast warning:', waErr);
+    }
   }
 
   /**
