@@ -377,7 +377,15 @@ export class BookingService {
       require('../../../notification/notification.model').NOTIFICATION_TYPE.IN_APP,
       require('../../../notification/notification.model').NOTIFICATION_CATEGORY.BOOKING_UPDATE,
       'Booking Confirmed',
-      `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been confirmed.`,
+      `Booking #${booking._id.toString().slice(-8).toUpperCase()} has been confirmed.`,
+      eventPayload
+    );
+    await require('../../../notification/notification.service').notificationService.sendToRole(
+      'EXECUTIVE',
+      require('../../../notification/notification.model').NOTIFICATION_TYPE.IN_APP,
+      require('../../../notification/notification.model').NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+      'Customer Accepted Quote ✓',
+      `Customer has accepted quote for booking #${booking._id.toString().slice(-8).toUpperCase()}. Job is confirmed!`,
       eventPayload
     );
 

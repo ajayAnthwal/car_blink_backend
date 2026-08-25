@@ -247,10 +247,28 @@ export class JobService {
     }
     await job.save();
 
-    // Sync status with Booking
+    // Sync status and uploaded photos with Booking
     const updatedBooking = await BookingModel.findByIdAndUpdate(job.bookingId, {
-      $set: { status: BOOKING_STATUS.COMPLETED },
+      $set: { 
+        status: BOOKING_STATUS.COMPLETED,
+        ...(job.beforePhotos?.length ? { beforePhotos: job.beforePhotos } : {}),
+        ...(job.afterPhotos?.length ? { afterPhotos: job.afterPhotos } : {})
+      },
     }, { new: true });
+
+    // Notify Executive Team about job completion & uploaded artifacts
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      await notificationService.sendToRole(
+        'EXECUTIVE',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+        'Partner Completed Job ✓',
+        `Partner has completed job/booking #${job.bookingId.toString().slice(-8).toUpperCase()} and uploaded completion photos & invoice.`,
+        { jobId: job._id.toString(), bookingId: job.bookingId.toString() }
+      );
+    } catch (e) {}
 
     // Process Wallet Commission
     if (updatedBooking) {
@@ -402,6 +420,28 @@ export class JobService {
     );
 
     if (!updatedJob) throw new NotFoundError("Job not found after update");
+
+    // Also sync photos onto Booking document so Executive/Admin lead queries immediately reflect uploaded photos
+    if (updatedJob.bookingId) {
+      await BookingModel.findByIdAndUpdate(updatedJob.bookingId, {
+        $push: { [updateField]: { $each: photos } }
+      });
+    }
+
+    // Notify Executives
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      await notificationService.sendToRole(
+        'EXECUTIVE',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+        'Partner Uploaded Vehicle Photos 📷',
+        `Partner uploaded ${photos.length} ${type.toLowerCase()} service photo(s) for job/booking #${(updatedJob.bookingId || jobId).toString().slice(-8).toUpperCase()}.`,
+        { jobId: updatedJob._id.toString(), bookingId: (updatedJob.bookingId || '').toString() }
+      );
+    } catch (e) {}
+
     return updatedJob as any;
   }
 
