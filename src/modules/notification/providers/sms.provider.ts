@@ -10,10 +10,13 @@ export interface ISmsProvider {
 
 const hasTwilio = Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER);
 const hasMsg91 = Boolean(env.MSG91_AUTH_KEY);
-const isMockMode = !hasTwilio && !hasMsg91;
+const hasVispl = Boolean(env.VISPL_API_KEY || (env.VISPL_USERNAME && env.VISPL_PASSWORD));
+const isMockMode = !hasTwilio && !hasMsg91 && !hasVispl;
 
 if (isMockMode) {
-  logger.warn('Neither MSG91 nor Twilio credentials configured — running in MOCK SMS mode');
+  logger.warn('Neither VISPL, MSG91 nor Twilio credentials configured — running in MOCK SMS mode');
+} else if (hasVispl) {
+  logger.info('VISPL SMS Provider initialized (pggui.vispl.in)');
 } else if (hasMsg91) {
   logger.info('MSG91 SMS Provider initialized');
 } else if (hasTwilio) {
@@ -30,9 +33,50 @@ export class SmsProvider implements ISmsProvider {
   }
 
   async sendSms(toPhone: string, message: string): Promise<{ success: boolean; providerMessageId?: string }> {
-    // Standardize Indian phone number format (e.g. +91XXXXXXXXXX or 91XXXXXXXXXX)
+    // Standardize Indian phone number format (e.g. 10 digits or 91XXXXXXXXXX)
     const cleanPhone = toPhone.replace(/[^0-9]/g, '');
+    const tenDigitPhone = cleanPhone.slice(-10);
     const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+    // 0. VISPL (pggui.vispl.in) SMS Integration
+    if (hasVispl) {
+      try {
+        const baseUrl = env.VISPL_API_URL || 'https://pggui.vispl.in/api/v2/SendSMS';
+        
+        // VISPL HTTP Parameters payload
+        const visplParams: Record<string, any> = {
+          ...(env.VISPL_API_KEY ? { ApiKey: env.VISPL_API_KEY, apikey: env.VISPL_API_KEY } : {}),
+          ...(env.VISPL_USERNAME ? { username: env.VISPL_USERNAME, user: env.VISPL_USERNAME } : {}),
+          ...(env.VISPL_PASSWORD ? { password: env.VISPL_PASSWORD, pass: env.VISPL_PASSWORD } : {}),
+          SenderId: env.VISPL_SENDER_ID || 'CARBLK',
+          sender: env.VISPL_SENDER_ID || 'CARBLK',
+          MobileNumbers: tenDigitPhone,
+          mobiles: formattedPhone,
+          to: tenDigitPhone,
+          Message: message,
+          msg: message,
+          text: message,
+          ...(env.VISPL_ENTITY_ID ? { EntityId: env.VISPL_ENTITY_ID, entityid: env.VISPL_ENTITY_ID } : {}),
+          ...(env.VISPL_TEMPLATE_ID ? { TemplateId: env.VISPL_TEMPLATE_ID, templateid: env.VISPL_TEMPLATE_ID } : {}),
+        };
+
+        logger.info(`Sending SMS via VISPL (pggui.vispl.in) to ${tenDigitPhone}`);
+
+        // Try HTTP POST first, then GET fallback
+        const response = await axios.get(baseUrl, { params: visplParams, timeout: 8000 }).catch(async () => {
+          return await axios.post(baseUrl, visplParams, { timeout: 8000 });
+        });
+
+        logger.info('VISPL SMS response:', response?.data);
+
+        return {
+          success: true,
+          providerMessageId: response.data?.request_id || response.data?.msgid || response.data?.status || 'vispl_sms_sent',
+        };
+      } catch (err: any) {
+        logger.error('VISPL SMS send error:', err?.response?.data || err.message);
+      }
+    }
 
     // 1. MSG91 Integration
     if (hasMsg91) {
