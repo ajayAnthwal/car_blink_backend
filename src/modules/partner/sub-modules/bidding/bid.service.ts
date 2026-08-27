@@ -112,13 +112,18 @@ export class BidService {
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
       const { emitToRole, emitToUser } = require('../../../../sockets');
       
-      const partnerName = partner.businessName || 'Partner';
+      const partnerName = partner.businessName || 'Partner Garage';
       const payload = { 
         bookingId: booking._id.toString(), 
         bidId: bid._id.toString(),
         partnerName,
-        businessName: partner.businessName,
+        businessName: partner.businessName || partnerName,
         amount: data.quotedAmount,
+        quotedAmount: data.quotedAmount,
+        estimatedDuration: data.estimatedDuration || '1-2 hours',
+        notes: data.notes || '',
+        businessAddress: partner.businessAddress || '',
+        phone: (partner as any).phone || (partner.userId as any)?.phone || '',
         title: 'New Partner Bid Placed',
         message: `${partnerName} placed a bid of ₹${data.quotedAmount}`
       };

@@ -102,7 +102,19 @@ export class BookingService {
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
     const skip = (page - 1) * limit;
 
-    const filter: any = { customerId };
+    const { UserModel } = require('../../../user/user.model');
+    const user = await UserModel.findById(customerId);
+    const userPhone = user?.phone ? user.phone.trim() : null;
+
+    if (userPhone) {
+      try {
+        await BookingModel.updateMany({ customerId: { $exists: false }, phone: userPhone }, { customerId });
+      } catch (err) {
+        // silent sync
+      }
+    }
+
+    const filter: any = userPhone ? { $or: [{ customerId }, { phone: userPhone }] } : { customerId };
     if (query.status && Object.values(BOOKING_STATUS).includes(query.status as BOOKING_STATUS)) {
       filter.status = query.status;
     }

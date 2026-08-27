@@ -13,7 +13,7 @@ import { smsProvider } from '../notification/providers/sms.provider';
 import { ROLES } from '../../common/constants/roles.constant';
 
 export class AuthService {
-  public static async registerUser(data: RegisterInput): Promise<{ user: Partial<IUser>; message: string }> {
+  public static async registerUser(data: RegisterInput): Promise<{ user: Partial<IUser>; tokens?: AuthTokens; message: string }> {
     const cleanEmail = data.email && typeof data.email === 'string' && data.email.trim() ? data.email.trim().toLowerCase() : undefined;
     const cleanPhone = data.phone ? data.phone.trim() : '';
 
@@ -55,16 +55,33 @@ export class AuthService {
     // 2. Create the user
     const newUser = await UserModel.create(userData);
 
-    // 3. Generate & "send" (log) OTP for phone verification
-    const otp = generateOtp();
-    storeOtp(data.phone, otp);
+    // 3. Auto-link any past guest bookings or leads created with this phone/email to the new user ID
+    try {
+      const { BookingModel } = require('../customer/sub-modules/booking/booking.model');
+      const { LeadModel } = require('../customer/sub-modules/lead/lead.model');
+      
+      const matchPhoneQuery = { phone: cleanPhone };
+      await BookingModel.updateMany({ customerId: { $exists: false }, ...matchPhoneQuery }, { customerId: newUser._id });
+      await LeadModel.updateMany({ customerId: { $exists: false }, ...matchPhoneQuery }, { customerId: newUser._id });
+    } catch (linkErr) {
+      console.warn('[AuthService] Guest booking linking warning:', linkErr);
+    }
+
+    // 4. Generate Tokens for Instant Auto-Login after Registration
+    const payload: JwtPayload = {
+      userId: newUser._id.toString(),
+      role: newUser.role,
+    };
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
 
     const userObj = newUser.toObject();
     delete userObj.password;
 
     return {
       user: userObj,
-      message: 'Registration successful. OTP sent for verification.',
+      tokens: { accessToken, refreshToken },
+      message: 'Registration successful.',
     };
   }
 

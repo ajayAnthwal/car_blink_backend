@@ -27,6 +27,7 @@ router.use('/auth', authRouter);
 router.use('/upload', uploadRouter);
 router.use('/wallet', walletRoutes);
 router.use('/users', userRouter);
+router.use('/user', userRouter);
 router.use('/customer', customerRouter);
 import leadRouter from '../modules/customer/sub-modules/lead/lead.routes';
 import blogRouter from '../modules/cms/blog.routes';

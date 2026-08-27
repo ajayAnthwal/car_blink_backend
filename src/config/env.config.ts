@@ -31,6 +31,7 @@ const envSchema = z.object({
   VISPL_SENDER_ID: z.string().optional(),
   VISPL_ENTITY_ID: z.string().optional(),
   VISPL_TEMPLATE_ID: z.string().optional(),
+  VISPL_INTERNAL_TEMPLATE_ID: z.string().optional(),
   VISPL_API_URL: z.string().optional(),
   INTERAKT_API_KEY: z.string().optional(),
   ADMIN_WHATSAPP_NUMBER: z.string().optional(),

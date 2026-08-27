@@ -82,17 +82,39 @@ export class LeadService {
   public static async getLeads(query: any): Promise<IPaginatedResult<ILead>> {
     const { page, limit, skip } = getPaginationOptions(query);
     const filter: any = {};
+    if (query.customerId) {
+      const { UserModel } = require('../../../../modules/user/user.model');
+      const user = await UserModel.findById(query.customerId).catch(() => null);
+      const userPhone = user?.phone ? user.phone.trim() : null;
+
+      if (userPhone) {
+        try {
+          await LeadModel.updateMany({ customerId: { $exists: false }, phone: userPhone }, { customerId: query.customerId });
+        } catch (err) {
+          // silent sync
+        }
+        filter.$or = [{ customerId: query.customerId }, { phone: userPhone }];
+      } else {
+        filter.customerId = query.customerId;
+      }
+    }
     if (query.source && query.source !== 'all') filter.source = query.source;
     if (query.status && query.status !== 'all') filter.status = query.status;
     if (query.search) {
       const searchRegex = new RegExp(query.search, 'i');
-      filter.$or = [
+      const searchConditions = [
         { name: searchRegex },
         { phone: searchRegex },
         { email: searchRegex },
         { vehicleBrand: searchRegex },
         { vehicleModel: searchRegex }
       ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchConditions }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchConditions;
+      }
     }
 
     const [data, total] = await Promise.all([
