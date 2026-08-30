@@ -314,9 +314,40 @@ export class BookingService {
       .populate({
         path: 'partnerId',
         populate: { path: 'userId', select: 'fullName email phone' }
-      });
+      })
+      .lean();
 
-    return bids;
+    // MASKING PRIVACY: Mask partner name & contact details if customer has not accepted/paid for booking yet
+    const isPaidOrAccepted = ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
+
+    const processedBids = bids.map((bid: any) => {
+      if (isPaidOrAccepted || !bid.partnerId) {
+        return bid;
+      }
+
+      const p = bid.partnerId;
+      const rawName = p.businessName || p.userId?.fullName || 'Partner Garage';
+      const nameParts = rawName.split(' ');
+      const maskedName = nameParts.length > 1
+        ? `${nameParts[0]} ***** (Verified Partner)`
+        : `${rawName.substring(0, 3)}***** (Verified Partner)`;
+
+      return {
+        ...bid,
+        partnerId: {
+          ...p,
+          businessName: maskedName,
+          businessAddress: p.businessAddress ? `${p.cityId || 'Verified Location'} (Address details unlocked after booking)` : 'Verified Location',
+          userId: {
+            fullName: 'CarBlink Certified Partner',
+            email: 'unlocked_after_payment@carblink.in',
+            phone: '+91 XXXXX XXXXX',
+          }
+        }
+      };
+    });
+
+    return processedBids;
   }
 
   public static async selectQuote(
