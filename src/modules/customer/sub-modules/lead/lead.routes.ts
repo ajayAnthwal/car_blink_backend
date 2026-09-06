@@ -3,10 +3,19 @@ import { LeadController } from './lead.controller';
 import { validate } from '../../../../middlewares/validate.middleware';
 import { authMiddleware } from '../../../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../../../middlewares/role.middleware';
+import { rateLimiter } from '../../../../middlewares/rateLimiter.middleware';
 import { ROLES } from '../../../../common/constants/roles.constant';
-import { createLeadSchema } from './lead.validation';
+import { createLeadSchema, sendLeadOtpSchema } from './lead.validation';
 
 const router = Router();
+
+// Public route for requesting OTP for lead creation
+router.post(
+  '/send-otp',
+  rateLimiter,
+  validate({ body: sendLeadOtpSchema }),
+  LeadController.sendOtp
+);
 
 // Public route for creating leads from website forms
 // Uses authMiddleware optionally to attach req.user if logged in, but doesn't block if not

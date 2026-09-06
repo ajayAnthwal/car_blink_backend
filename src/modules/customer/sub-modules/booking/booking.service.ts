@@ -186,6 +186,21 @@ export class BookingService {
       }
     });
 
+    const PaymentModel = mongoose.model('Payment');
+    const allPayments = await PaymentModel.find({
+      $or: [
+        { bookingId: { $in: objectIds } },
+        { bookingId: { $in: bookingIdStrs } }
+      ]
+    }).lean();
+
+    const paymentsMap = new Map();
+    allPayments.forEach((p: any) => {
+      const key = String(p.bookingId);
+      if (!paymentsMap.has(key)) paymentsMap.set(key, []);
+      paymentsMap.get(key).push(p);
+    });
+
     const bookings = bookingsRaw.map(b => {
       const bKey = String(b._id);
       const jDetails = jobsMap.get(bKey) || null;
@@ -193,7 +208,8 @@ export class BookingService {
         ...b,
         jobDetails: jDetails,
         jobExtensions: jDetails?.jobExtensions || [],
-        additionalParts: jDetails?.jobExtensions || []
+        additionalParts: jDetails?.jobExtensions || [],
+        payments: paymentsMap.get(bKey) || []
       };
     });
 

@@ -1,9 +1,35 @@
+import { ApiError } from '../../../../common/errors/ApiError';
 import { LeadModel, ILead, LEAD_STATUS } from './lead.model';
 import { getPaginationOptions, formatPaginatedResponse, IPaginatedResult } from '../../../../common/utils/pagination.util';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 
 export class LeadService {
-  public static async createLead(data: Partial<ILead>): Promise<ILead> {
+  
+  public static async sendLeadOtp(phone: string): Promise<{ message: string }> {
+    const cleanPhone = phone.trim();
+    const { generateOtp, storeOtp } = require('../../../auth/strategies/otp.strategy');
+
+    const otp = generateOtp();
+    await storeOtp(cleanPhone, otp);
+
+    return {
+      message: `OTP sent successfully to ${cleanPhone}`,
+    };
+  }
+
+  public static async createLead(data: Partial<ILead> & { otp?: string }): Promise<ILead> {
+
+    // Verify OTP if OTP is provided or if source is QUICK_CALLBACK or WEBSITE_QUOTE
+    if (data.otp || data.source === 'QUICK_CALLBACK' || data.source === 'WEBSITE_QUOTE') {
+      if (!data.otp) {
+        throw new ApiError(400, 'OTP is required to submit lead request');
+      }
+      const { verifyStoredOtp } = require('../../../auth/strategies/otp.strategy');
+      const isValid = verifyStoredOtp(data.phone!, data.otp);
+      if (!isValid) {
+        throw new ApiError(400, 'Invalid or expired OTP code');
+      }
+    }
     // 1. Check/Auto-create Customer Account for Guest Leads
     const { UserModel } = require('../../../../modules/user/user.model');
     const { ROLES } = require('../../../../common/constants/roles.constant');

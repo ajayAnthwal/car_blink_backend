@@ -5,6 +5,12 @@ import { asyncHandler } from '../../../../common/utils/asyncHandler.util';
 import { IRequest } from '../../../../common/interfaces/IRequest';
 
 export class LeadController {
+
+  public static sendOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { phone } = req.body;
+    const result = await LeadService.sendLeadOtp(phone);
+    return successResponse(res, result, result.message);
+  });
   public static createLead = asyncHandler(async (req: IRequest, res: Response) => {
     const data = {
       ...req.body,

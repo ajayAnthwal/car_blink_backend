@@ -35,7 +35,7 @@ export async function runReminderCron(): Promise<void> {
 
         await notificationService.sendNotification(
           execId,
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.GENERAL,
           title,
           message

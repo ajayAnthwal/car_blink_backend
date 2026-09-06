@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { LEAD_SOURCE } from './lead.model';
 import { phoneSchema, emailSchema } from '../../../user/user.validation';
 
+export const sendLeadOtpSchema = z.object({
+  phone: phoneSchema,
+});
+
 export const createLeadSchema = z.object({
   name: z.string().min(1, 'Name is required').trim(),
   phone: phoneSchema,
@@ -12,4 +16,5 @@ export const createLeadSchema = z.object({
   vehicleModel: z.string().optional(),
   city: z.string().optional(),
   message: z.string().optional(),
+  otp: z.string().optional(),
 });
