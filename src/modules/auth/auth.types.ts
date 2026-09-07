@@ -5,6 +5,7 @@ export interface RegisterInput {
   email: string;
   phone: string;
   password?: string;
+  otp?: string;
   role: ROLES.CUSTOMER | ROLES.PARTNER;
 }
 

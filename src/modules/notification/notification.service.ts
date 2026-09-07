@@ -31,9 +31,14 @@ export class NotificationService {
 
     try {
       if (type === NOTIFICATION_TYPE.SMS) {
-        const result = await smsProvider.sendSms(user.phone, message);
-        success = result.success;
-        providerMessageId = result.providerMessageId;
+        if (!user.phone) {
+          logger.warn(`No phone registered for user ${userId}. SMS notification skipped.`);
+          success = false;
+        } else {
+          const result = await smsProvider.sendSms(user.phone, message);
+          success = result.success;
+          providerMessageId = result.providerMessageId;
+        }
       } else if (type === NOTIFICATION_TYPE.EMAIL) {
         if (!user.email) {
           logger.warn(`No email registered for user ${userId}. Email notification skipped.`);

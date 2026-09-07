@@ -8,6 +8,14 @@ import { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } from '../../notification/not
 // In-memory store: key is identifier (email/phone), value is object with otp and expiry timestamp
 const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
 
+
+export const storeOtpOnly = (identifier: string, otp: string): void => {
+  const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
+  const expiresAt = Date.now() + expiryDurationMs;
+  otpStore.set(identifier, { otp, expiresAt, attempts: 0 });
+  logger.info(`[OTP STORE ONLY] Stored OTP for ${identifier}: ${otp}`);
+};
+
 export const generateOtp = (): string => {
   return makeOtp();
 };

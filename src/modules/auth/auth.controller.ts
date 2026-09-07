@@ -75,5 +75,15 @@ export class AuthController {
     const result = await AuthService.getCurrentUser(String(userId));
     return successResponse(res, result, 'User profile retrieved successfully');
   });
+
+  public static googleLogin = asyncHandler(async (req: Request, res: Response) => {
+    const result = await AuthService.googleAuth(req.body);
+    if (result.tokens) {
+      res.cookie('accessToken', result.tokens.accessToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', maxAge: 15 * 60 * 1000, path: '/' });
+      res.cookie('refreshToken', result.tokens.refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' });
+      res.cookie('user_role', result.user.role || 'CUSTOMER', { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' });
+    }
+    return successResponse(res, result, 'Google login successful');
+  });
 }
 export default AuthController;

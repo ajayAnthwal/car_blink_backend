@@ -5,8 +5,9 @@ import { ROLES } from '../../common/constants/roles.constant';
 export interface IUser extends Document {
   fullName: string;
   email?: string;
-  phone: string;
+  phone?: string;
   password?: string;
+  googleId?: string;
   securityPin?: string;
   role: ROLES;
   isPhoneVerified: boolean;
@@ -36,8 +37,9 @@ const userSchema = new Schema<IUser>(
   {
     fullName: { type: String, required: true, trim: true },
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
-    phone: { type: String, required: true, unique: true, trim: true },
-    password: { type: String, required: true, select: false },
+    phone: { type: String, unique: true, sparse: true, trim: true },
+    password: { type: String, select: false },
+    googleId: { type: String, unique: true, sparse: true },
     securityPin: { type: String, select: false },
     role: { type: String, enum: Object.values(ROLES), required: true },
     isPhoneVerified: { type: Boolean, default: false },

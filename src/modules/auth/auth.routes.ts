@@ -21,6 +21,7 @@ router.post('/refresh-token', validate({ body: refreshTokenSchema }), AuthContro
 router.post('/logout', authMiddleware as any, AuthController.logout);
 router.post('/forgot-password', rateLimiter, validate({ body: forgotPasswordSchema }), AuthController.forgotPassword);
 router.post('/reset-password', validate({ body: resetPasswordSchema }), AuthController.resetPassword);
+router.post('/google', rateLimiter, AuthController.googleLogin);
 router.get('/me', authMiddleware as any, AuthController.getMe);
 
 export default router;
