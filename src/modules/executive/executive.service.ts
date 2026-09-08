@@ -11,6 +11,36 @@ import { ROLES } from '../../common/constants/roles.constant';
 import { BOOKING_STATUS } from '../../common/constants/status.constant';
 
 export class ExecutiveService {
+
+  /**
+   * Get all service warranties for executive oversight
+   */
+  async getAllWarranties(query: any = {}): Promise<any> {
+    const page = Math.max(1, parseInt(query.page || '1', 10));
+    const limit = Math.max(1, parseInt(query.limit || '10', 10));
+    const skip = (page - 1) * limit;
+
+    const { WarrantyModel } = require('../customer/sub-modules/warranty/warranty.model');
+    const filter: any = {};
+    if (query.status) filter.status = query.status;
+
+    const [warranties, total] = await Promise.all([
+      WarrantyModel.find(filter)
+        .populate({
+          path: 'bookingId',
+          populate: [{ path: 'vehicleId' }, { path: 'serviceId' }]
+        })
+        .populate('customerId', 'fullName email phone')
+        .populate('partnerId', 'businessName phone')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      WarrantyModel.countDocuments(filter),
+    ]);
+
+    return { warranties, total, page, limit };
+  }
+
   /**
    * Get aggregated status overview for customers (paginated)
    */

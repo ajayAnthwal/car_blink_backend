@@ -80,7 +80,7 @@ export class WalletService {
       return wallet;
     }
 
-    const COMMISSION_RATE = 0.10; // 10% fixed commission
+    const COMMISSION_RATE = 0.15; // 15% fixed commission
     const commissionAmount = totalAmount * COMMISSION_RATE;
     const partnerShare = totalAmount - commissionAmount;
 
@@ -93,7 +93,7 @@ export class WalletService {
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: partnerShare,
         type: TRANSACTION_TYPE.CREDIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Credit (Share: ${totalAmount} - 10%)`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Credit (Share: ${totalAmount} - 15%)`,
         balanceAfter: wallet.balance,
       });
     } else if (paymentMode === 'CASH') {
@@ -105,7 +105,7 @@ export class WalletService {
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: commissionAmount,
         type: TRANSACTION_TYPE.DEBIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Cash Booking Commission (10% of ${totalAmount})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Cash Booking Commission (15% of ${totalAmount})`,
         balanceAfter: wallet.balance,
       });
     }

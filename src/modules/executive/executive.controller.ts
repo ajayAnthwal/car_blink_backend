@@ -5,6 +5,12 @@ import { asyncHandler } from '../../common/utils/asyncHandler.util';
 import { IRequest } from '../../common/interfaces/IRequest';
 
 export class ExecutiveController {
+
+  public static getAllWarranties = asyncHandler(async (req: IRequest, res: Response) => {
+    const data = await executiveService.getAllWarranties(req.query);
+    return successResponse(res, data, 'Warranties retrieved successfully');
+  });
+
   public static getCustomerStatusOverview = asyncHandler(async (req: IRequest, res: Response) => {
     const overview = await executiveService.getCustomerStatusOverview(req.query);
     return successResponse(res, overview, 'Customer status overview retrieved successfully');

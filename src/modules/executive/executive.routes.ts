@@ -51,6 +51,7 @@ router.patch('/escalations/:id/resolve', validate({ body: updateEscalationSchema
 router.get('/customer-status', ExecutiveController.getCustomerStatusOverview);
 router.patch('/customer-status/:id/verify', ExecutiveController.verifyCustomer);
 router.get('/partner-status', ExecutiveController.getPartnerStatusOverview);
+router.get('/warranties', ExecutiveController.getAllWarranties);
 router.patch('/partner-status/:id/verify', ExecutiveController.verifyPartner);
 
 // SUB-MODULE 5: Communications
