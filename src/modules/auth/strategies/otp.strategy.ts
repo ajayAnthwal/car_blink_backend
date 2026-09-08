@@ -54,9 +54,15 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
         );
       }
     } else {
-      // If user doc does not exist yet, call smsProvider directly
+      // If user doc does not exist yet, call smsProvider and whatsappProvider directly
       if (!isEmail) {
         await smsProvider.sendSms(identifier, otpMessage);
+        try {
+          const { whatsappProvider } = require('../../notification/providers/whatsapp.provider');
+          await whatsappProvider.sendWhatsAppText(identifier, `🔑 *[CARBLINK OTP]*\nYour CarBlink verification code is: *${otp}*\nValid for 5 minutes.`);
+        } catch (waErr) {
+          logger.warn('[OTP Strategy] WhatsApp OTP dispatch warning:', waErr);
+        }
       } else {
         logger.info(`[MOCK EMAIL OTP] to: ${identifier} | Message: ${otpMessage}`);
       }

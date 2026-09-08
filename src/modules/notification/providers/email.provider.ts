@@ -41,7 +41,7 @@ export class EmailProvider implements IEmailProvider {
 
     try {
       const info = await this.transporter!.sendMail({
-        from: env.SMTP_FROM_EMAIL || 'no-reply@carblink.com',
+        from: env.SMTP_FROM_EMAIL || (env.SMTP_USER ? `"CarBlink Security" <${env.SMTP_USER}>` : '"CarBlink Security" <no-reply@carblink.in>'),
         to: toEmail,
         subject,
         html: htmlBody,

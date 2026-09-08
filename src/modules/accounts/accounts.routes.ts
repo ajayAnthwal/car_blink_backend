@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/role.middleware';
 import { ROLES } from '../../common/constants/roles.constant';
+import { AccountsController } from './accounts.controller';
 import refundRouter from './sub-modules/refunds/refund.routes';
 import settlementRouter from './sub-modules/settlements/settlement.routes';
 import reportsRouter from './sub-modules/reports/reports.routes';
@@ -17,5 +18,10 @@ router.use('/refunds', refundRouter);
 router.use('/settlements', settlementRouter);
 router.use('/reports', reportsRouter);
 router.use('/activity-logs', activityLogRouter);
+
+router.get('/transactions', AccountsController.getTransactions);
+router.get('/invoices', AccountsController.getMasterInvoices);
+router.get('/payouts', AccountsController.getExecutivePayouts);
+router.patch('/profile/pin', AccountsController.updateSecurityPin);
 
 export default router;

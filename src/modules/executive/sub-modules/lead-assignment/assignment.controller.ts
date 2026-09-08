@@ -54,4 +54,12 @@ export class AssignmentController {
     const booking = await assignmentService.convertWebsiteLeadToBooking(id, serviceId, cityId, vehicleBrand, vehicleModel);
     return successResponse(res, booking, 'Website lead converted to booking successfully');
   });
+
+  public static confirmQuoteSelection = asyncHandler(async (req: IRequest, res: Response) => {
+    const executiveId = req.user?.userId;
+    const { id } = req.params;
+    const result = await assignmentService.confirmQuoteSelection(String(executiveId), id);
+    return successResponse(res, result, 'Customer quote selection confirmed and assigned to partner successfully');
+  });
+
 }

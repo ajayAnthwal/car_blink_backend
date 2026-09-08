@@ -46,7 +46,7 @@ export class SettlementService {
       })
       .populate({
         path: 'partnerId',
-        select: 'businessName userId',
+        select: 'businessName userId bankDetails',
       });
 
     // 3. Filter in memory to check related Booking status & Payment success
@@ -213,7 +213,7 @@ export class SettlementService {
       SettlementModel.find(filter)
         .populate({
           path: 'partnerId',
-          select: 'businessName userId',
+          select: 'businessName userId bankDetails',
           populate: { path: 'userId', select: 'fullName' },
         })
         .populate({

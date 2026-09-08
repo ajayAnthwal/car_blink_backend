@@ -1,3 +1,4 @@
+import { emitToUser } from '../../../../sockets';
 import mongoose from 'mongoose';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
 import { PartnerModel } from '../../../partner/partner.model';
@@ -416,6 +417,132 @@ export class AssignmentService {
 
     return booking;
   }
+
+  /**
+   * Executive confirms customer's quote selection and assigns/notifies partner
+   */
+  async confirmQuoteSelection(
+    executiveId: string,
+    bookingId: string
+  ): Promise<any> {
+    const BookingModel = mongoose.model('Booking');
+    const BidModel = mongoose.model('Bid');
+    const PartnerModel = mongoose.model('Partner');
+    const JobModel = mongoose.model('Job');
+
+    const booking: any = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (booking.status !== BOOKING_STATUS.CUSTOMER_ACCEPTED) {
+      throw new BadRequestError(`Cannot confirm quote selection for booking in status '${booking.status}'. Status must be CUSTOMER_ACCEPTED.`);
+    }
+
+    if (!booking.acceptedBidId) {
+      throw new BadRequestError('No bid selected for this booking');
+    }
+
+    const selectedBid: any = await BidModel.findById(booking.acceptedBidId).populate('partnerId');
+    if (!selectedBid) {
+      throw new NotFoundError('Selected bid not found');
+    }
+
+    // 1. Mark selected bid as ACCEPTED, others as REJECTED
+    selectedBid.status = 'ACCEPTED';
+    await selectedBid.save();
+
+    await BidModel.updateMany(
+      { bookingId: booking._id, _id: { $ne: selectedBid._id }, status: { $ne: 'WITHDRAWN' } },
+      { $set: { status: 'REJECTED' } }
+    );
+
+    // 2. Update Booking status to ACCEPTED
+    booking.status = BOOKING_STATUS.ACCEPTED;
+    await booking.save();
+
+    // 3. Create Job document in NOT_STARTED status
+    let job = await JobModel.findOne({ bookingId: booking._id });
+    if (!job) {
+      job = await JobModel.create({
+        bookingId: booking._id,
+        partnerId: selectedBid.partnerId._id || selectedBid.partnerId,
+        bidId: selectedBid._id,
+        status: 'NOT_STARTED',
+        finalAmount: selectedBid.quotedAmount,
+      });
+    }
+
+    // 4. Emit live socket events & send notifications
+    const partnerUserId = selectedBid.partnerId?.userId?.toString();
+    const executiveUserId = booking.assignedExecutiveId?.toString() || executiveId;
+
+    const eventPayload = {
+      bookingId: booking._id,
+      jobId: job._id.toString(),
+      status: BOOKING_STATUS.ACCEPTED,
+      message: 'Booking confirmed by executive and assigned to partner.'
+    };
+
+    if (partnerUserId) {
+      emitToUser(partnerUserId, 'quote_accepted', eventPayload);
+    }
+    if (executiveUserId) {
+      emitToUser(executiveUserId, 'booking_confirmed', eventPayload);
+    }
+
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+
+      // A. Notify the winning partner
+      const winningPartner = await PartnerModel.findById(selectedBid.partnerId);
+      if (winningPartner && winningPartner.userId) {
+        await notificationService.sendNotification(
+          winningPartner.userId.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
+          'Job Confirmed & Assigned!',
+          `Executive has confirmed booking ${booking._id}. Your quote of INR ${selectedBid.quotedAmount} is accepted and job is assigned to you.`,
+          { bookingId: booking._id.toString(), jobId: job._id.toString() }
+        );
+      }
+
+      // B. Notify Customer
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
+        'Booking Confirmed!',
+        `Your booking #${booking._id.toString().slice(-8).toUpperCase()} has been confirmed by our executive and assigned to the partner.`,
+        { bookingId: booking._id.toString() }
+      );
+
+      // C. Notify rejected partners
+      const rejectedBids: any[] = await BidModel.find({ bookingId: booking._id, _id: { $ne: selectedBid._id } });
+      const rejectedPartnerIds = rejectedBids.map((b) => b.partnerId);
+      const rejectedPartners: any[] = await PartnerModel.find({ _id: { $in: rejectedPartnerIds } });
+
+      for (const partner of rejectedPartners) {
+        if (partner.userId) {
+          await notificationService.sendNotification(
+            partner.userId.toString(),
+            NOTIFICATION_TYPE.SMS,
+            NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
+            'Quote Not Selected',
+            `Your quote for booking ${booking._id} was not selected. Keep bidding!`,
+            { bookingId: booking._id.toString() }
+          );
+        }
+      }
+    } catch (notifErr: any) {
+      const { logger } = require('../../../../config/logger.config');
+      logger.warn('Failed to send executive confirmation notifications:', notifErr);
+    }
+
+    return { booking, job };
+  }
+
 }
 
 export const assignmentService = new AssignmentService();

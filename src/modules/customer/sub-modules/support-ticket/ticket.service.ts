@@ -76,7 +76,11 @@ export class TicketService {
         searchConditions.push({ _id: query.search });
       }
       
-      filter.$or = searchConditions;
+      filter.$and = [
+        { customerId },
+        { $or: searchConditions }
+      ];
+      delete filter.customerId;
     }
     
     const [tickets, total] = await Promise.all([

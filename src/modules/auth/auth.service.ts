@@ -36,10 +36,10 @@ export class AuthService {
     if (existingUser) {
       if (existingUser.isPhoneVerified || existingUser.isEmailVerified) {
         if (cleanEmail && existingUser.email === cleanEmail) {
-          throw new ConflictError('Email is already registered');
+          throw new ConflictError('This email address is already registered. Please sign in or use a different email.');
         }
         if (existingUser.phone === cleanPhone) {
-          throw new ConflictError('Phone number is already registered');
+          throw new ConflictError('This phone number is already registered. Please sign in or use a different phone number.');
         }
       }
     }
@@ -315,9 +315,34 @@ export class AuthService {
     const message = `Your password reset code for CarBlink is: ${otp}. Valid for 10 minutes.`;
 
     if (isEmail && emailTarget) {
-      await emailProvider.sendEmail(emailTarget, "CarBlink Password Reset OTP", message);
+      const htmlOtpTemplate = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 12px; background-color: #ffffff;">
+        <div style="text-align: center; padding-bottom: 20px; border-bottom: 1px solid #f0f0f0;">
+          <h2 style="color: #0F172A; margin: 0; font-size: 24px;">CarBlink Verification</h2>
+          <p style="color: #64748B; font-size: 14px; margin-top: 4px;">Password Reset Request</p>
+        </div>
+        <div style="padding: 24px 0; text-align: center;">
+          <p style="color: #334155; font-size: 16px; margin-bottom: 20px;">Use the following one-time verification code (OTP) to reset your CarBlink password:</p>
+          <div style="display: inline-block; background-color: #F1F5F9; border: 2px dashed #0284C7; border-radius: 8px; padding: 14px 28px; letter-spacing: 6px; font-size: 32px; font-weight: bold; color: #0284C7; margin: 10px 0;">
+            ${otp}
+          </div>
+          <p style="color: #64748B; font-size: 13px; margin-top: 20px;">This code is valid for <strong>10 minutes</strong>. Do not share this code with anyone.</p>
+        </div>
+        <div style="border-top: 1px solid #f0f0f0; padding-top: 16px; font-size: 12px; color: #94A3B8; text-align: center;">
+          <p style="margin: 0;">If you did not request this password reset, please ignore this email.</p>
+          <p style="margin: 4px 0 0 0;">© ${new Date().getFullYear()} CarBlink Services. All rights reserved.</p>
+        </div>
+      </div>
+      `;
+      await emailProvider.sendEmail(emailTarget, "CarBlink Password Reset OTP", htmlOtpTemplate);
     } else if (phoneTarget) {
       await smsProvider.sendSms(phoneTarget, message);
+      try {
+        const { whatsappProvider } = require('../notification/providers/whatsapp.provider');
+        await whatsappProvider.sendWhatsAppText(phoneTarget, `🔑 *[CARBLINK OTP]*\nYour CarBlink password reset code is: *${otp}*\nValid for 10 minutes.`);
+      } catch (waErr) {
+        console.warn('[AuthService] WhatsApp OTP dispatch warning:', waErr);
+      }
     }
 
     const formattedPhone = phoneTarget ? phoneTarget.slice(-10) : cleanIdentifier;
