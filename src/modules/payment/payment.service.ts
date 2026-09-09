@@ -199,13 +199,19 @@ export class PaymentService {
         } = require("../notification/notification.model");
         const payAmount = payment.amount;
 
-        // SMS
+        // SMS matching Specification Section 10 Notification Sequence
+        const isAdvance = payment.paymentType === 'ADVANCE';
+        const notifTitle = isAdvance ? `Booking Confirmed — ₹${payAmount} Paid` : `₹${payAmount} Paid — Service Completed`;
+        const notifBody = isAdvance 
+          ? `Booking Confirmed — ₹${payAmount} Paid. Partner/service location details are now available.` 
+          : `₹${payAmount} Paid. Booking Completed — Thank you for choosing CarBlink.`;
+
         await notificationService.sendNotification(
           payment.customerId.toString(),
           NOTIFICATION_TYPE.SMS,
           NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
-          "Payment Successful",
-          `Your payment of INR ${payAmount} for booking ${payment.bookingId} has been successfully processed.`,
+          notifTitle,
+          notifBody,
           {
             bookingId: payment.bookingId.toString(),
             paymentId: payment._id.toString(),
