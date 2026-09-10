@@ -58,6 +58,13 @@ export class AuthController {
     return successResponse(res, result, 'Logout successful');
   });
 
+    public static sendSignupOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { phone, identifier } = req.body;
+    const target = phone || identifier;
+    const result = await AuthService.sendSignupOtp(target);
+    return successResponse(res, result, result.message);
+  });
+
   public static forgotPassword = asyncHandler(async (req: Request, res: Response) => {
     const { identifier } = req.body;
     const result = await AuthService.forgotPassword(identifier);

@@ -30,9 +30,9 @@ export class SmsProvider implements ISmsProvider {
         const otpMatch = message.match(/\b\d{4,6}\b/);
         const otpCode = otpMatch ? otpMatch[0] : '123456';
 
-        // Format DLT approved message text matching Template 1777178764507236111
+        // Format DLT approved message text - Only use Password Reset template when message is explicitly a password reset request
         let textToSend = message;
-        if (env.VISPL_TEMPLATE_ID === '1777178764507236111' || message.toLowerCase().includes('otp')) {
+        if (message.toLowerCase().includes('reset') || message.toLowerCase().includes('password')) {
           textToSend = `Your OTP to reset your Carblink account password is ${otpCode}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
         }
 

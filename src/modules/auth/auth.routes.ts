@@ -19,6 +19,7 @@ router.post('/verify-otp', rateLimiter, validate({ body: verifyOtpSchema }), Aut
 router.post('/login', rateLimiter, validate({ body: loginSchema }), AuthController.login);
 router.post('/refresh-token', validate({ body: refreshTokenSchema }), AuthController.refreshToken);
 router.post('/logout', authMiddleware as any, AuthController.logout);
+router.post('/send-signup-otp', rateLimiter, AuthController.sendSignupOtp);
 router.post('/forgot-password', rateLimiter, validate({ body: forgotPasswordSchema }), AuthController.forgotPassword);
 router.post('/reset-password', validate({ body: resetPasswordSchema }), AuthController.resetPassword);
 router.post('/google', rateLimiter, AuthController.googleLogin);

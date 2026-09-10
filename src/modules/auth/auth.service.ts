@@ -237,7 +237,22 @@ export class AuthService {
     return { success: true };
   }
 
-          public static async forgotPassword(identifier: string): Promise<{ message: string }> {
+            public static async sendSignupOtp(phone: string): Promise<{ message: string }> {
+    const cleanPhone = phone ? phone.trim().replace(/[^0-9]/g, '') : '';
+    if (cleanPhone.length !== 10 || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      throw new ApiError(400, 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9');
+    }
+
+    const { generateOtp, storeOtp } = require('./strategies/otp.strategy');
+    const otp = generateOtp();
+    await storeOtp(cleanPhone, otp);
+
+    return {
+      message: `6-Digit verification code sent successfully to +91 ${cleanPhone}`
+    };
+  }
+
+  public static async forgotPassword(identifier: string): Promise<{ message: string }> {
     const lastSent = forgotCooldownMap.get(identifier.trim());
     if (lastSent && (Date.now() - lastSent) < 20000) {
       const isEmailInput = identifier.includes('@');
