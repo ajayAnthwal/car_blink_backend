@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 
 export interface ISmsProvider {
-  sendSms(toPhone: string, message: string): Promise<{ success: boolean; providerMessageId?: string }>;
+  sendSms(toPhone: string, message: string, templateIdOverride?: string): Promise<{ success: boolean; providerMessageId?: string }>;
 }
 
 const hasVispl = Boolean(env.VISPL_API_KEY || (env.VISPL_USERNAME && env.VISPL_PASSWORD));
@@ -16,7 +16,7 @@ if (hasVispl) {
 }
 
 export class SmsProvider implements ISmsProvider {
-  async sendSms(toPhone: string, message: string): Promise<{ success: boolean; providerMessageId?: string }> {
+  async sendSms(toPhone: string, message: string, templateIdOverride?: string): Promise<{ success: boolean; providerMessageId?: string }> {
     // Standardize Indian phone number format (10 digits)
     const cleanPhone = toPhone.replace(/[^0-9]/g, '');
     const tenDigitPhone = cleanPhone.slice(-10);
@@ -30,31 +30,66 @@ export class SmsProvider implements ISmsProvider {
         const otpMatch = message.match(/\b\d{4,6}\b/);
         const otpCode = otpMatch ? otpMatch[0] : '123456';
 
-        // Format DLT approved message text - Only use Password Reset template when message is explicitly a password reset request
-        let textToSend = message;
-        if (message.toLowerCase().includes('reset') || message.toLowerCase().includes('password')) {
+        // Default: Mobile Verification (Quote / Lead Form)
+        let targetTemplateId = '1560211';
+        let targetDltContentId = process.env.VISPL_MOBILE_VERIFY_DLT_ID || '1777178764465460706';
+        let textToSend = `Your OTP for mobile number verification on Carblink is ${otpCode}. This OTP is valid for 5minutes. Please do not share this OTP with anyone.`;
+
+        const lowerMsg = message.toLowerCase();
+
+        if (lowerMsg.includes('has been reset') || lowerMsg.includes('reset successfully') || lowerMsg.includes('confirmation')) {
+          // 1. Password Reset Confirmation (SmartPing 1560213 | DLT 1777178859197386663)
+          targetTemplateId = '1560213';
+          targetDltContentId = process.env.VISPL_RESET_CONFIRM_DLT_ID || '1777178859197386663';
+          textToSend = 'Your Carblink account password has been successfully reset. If you did not initiate this request, please contact Carblink support.';
+        } else if (lowerMsg.includes('reset') || lowerMsg.includes('forgot') || lowerMsg.includes('password')) {
+          // 2. Password Reset OTP Request (SmartPing 1557291 | DLT 1777178764507236111)
+          targetTemplateId = '1557291';
+          targetDltContentId = process.env.VISPL_RESET_DLT_ID || '1777178764507236111';
           textToSend = `Your OTP to reset your Carblink account password is ${otpCode}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
+        } else if (lowerMsg.includes('register') || lowerMsg.includes('signup')) {
+          // 3. Account Registration Flow (SmartPing 1560212 | DLT 1777178798813648790)
+          targetTemplateId = '1560212';
+          targetDltContentId = process.env.VISPL_REGISTER_DLT_ID || '1777178798813648790';
+          textToSend = `Your Carblink account has been successfully registered with mobile number ${tenDigitPhone}. Welcome to Carblink.`;
+        } else if (lowerMsg.includes('login')) {
+          // 4. Login OTP Flow (SmartPing 1557713 | DLT 1777178764480007649)
+          targetTemplateId = '1557713';
+          targetDltContentId = process.env.VISPL_LOGIN_DLT_ID || '1777178764480007649';
+          textToSend = `Your OTP for login to your Carblink account is ${otpCode}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
+        } else {
+          // 5. Mobile Verification / Quick Callback / Quote Flow (SmartPing 1560211 | DLT 1777178764465460706)
+          targetTemplateId = '1560211';
+          targetDltContentId = process.env.VISPL_MOBILE_VERIFY_DLT_ID || '1777178764465460706';
+          textToSend = `Your OTP for mobile number verification on Carblink is ${otpCode}. This OTP is valid for 5minutes. Please do not share this OTP with anyone.`;
+        }
+
+        if (templateIdOverride) {
+          targetTemplateId = templateIdOverride;
         }
 
         // Exact VISPL / Smartping HTTP API Parameters
-        const visplParams = {
-          username: env.VISPL_USERNAME || env.VISPL_API_KEY,
-          password: env.VISPL_PASSWORD || env.VISPL_API_KEY,
+        const visplParams: Record<string, string> = {
+          username: env.VISPL_USERNAME || env.VISPL_API_KEY || '',
+          password: env.VISPL_PASSWORD || env.VISPL_API_KEY || '',
           unicode: 'false',
           from: env.VISPL_SENDER_ID || 'CRBLNK',
           to: tenDigitPhone,
           text: textToSend,
-          ...(env.VISPL_INTERNAL_TEMPLATE_ID ? { templateId: env.VISPL_INTERNAL_TEMPLATE_ID } : {}),
-          ...(env.VISPL_TEMPLATE_ID ? { dltContentId: env.VISPL_TEMPLATE_ID } : {}),
-          ...(env.VISPL_ENTITY_ID ? { dltPrincipalEntityId: env.VISPL_ENTITY_ID } : {}),
+          templateId: targetTemplateId,
+          dltContentId: targetDltContentId,
         };
 
-        logger.info(`Sending SMS via VISPL SmartPing API to ${tenDigitPhone}`);
+        if (env.VISPL_ENTITY_ID) {
+          visplParams.dltPrincipalEntityId = env.VISPL_ENTITY_ID;
+        }
+
+        logger.info(`Sending SMS via VISPL SmartPing API to ${tenDigitPhone} [templateId: ${targetTemplateId}, dltContentId: ${targetDltContentId}]`);
 
         // HTTP GET Request as per VISPL / Smartping API Spec
         const response = await axios.get(baseUrl, { params: visplParams, timeout: 8000 });
 
-        logger.info('VISPL SmartPing SMS response:', response?.data);
+        logger.info('VISPL SmartPing SMS response:', JSON.stringify(response?.data));
 
         // STRICT SUCCESS CHECK: Only return success: true if statusCode is 200 AND state is SUBMIT_ACCEPTED
         const isSuccess = response.data?.statusCode === 200 && response.data?.state === 'SUBMIT_ACCEPTED';
