@@ -68,7 +68,7 @@ export class NotificationService {
     }
 
     // Direct WhatsApp Notification Dispatch to user's registered phone
-    if (user.phone) {
+    if (user.phone && category !== NOTIFICATION_CATEGORY.OTP) {
       try {
         const { whatsappProvider } = require('./providers/whatsapp.provider');
         let portalUrl = 'https://dashboard.carblink.in/login';

@@ -29,11 +29,16 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
 
   try {
     const isEmail = identifier.includes('@');
+    const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
+
     const user = await UserModel.findOne({
-      $or: [{ email: identifier }, { phone: identifier }],
+      $or: [
+        ...(isEmail ? [{ email: identifier }] : []),
+        ...(cleanPhone ? [{ phone: cleanPhone }] : [{ phone: identifier }]),
+      ],
     });
 
-    const otpMessage = `Your Carblink verification code is ${otp}. Valid for 5 minutes.`;
+    const otpMessage = `Your OTP for mobile number verification on Carblink is ${otp}. This OTP is valid for 5minutes. Please do not share this OTP with anyone.`;
 
     if (user) {
       if (isEmail) {
@@ -54,17 +59,25 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
         );
       }
     } else {
-      // If user doc does not exist yet, call smsProvider and whatsappProvider directly
       if (!isEmail) {
         await smsProvider.sendSms(identifier, otpMessage);
-        try {
-          const { whatsappProvider } = require('../../notification/providers/whatsapp.provider');
-          await whatsappProvider.sendWhatsAppText(identifier, `🔑 *[CARBLINK OTP]*\nYour CarBlink verification code is: *${otp}*\nValid for 5 minutes.`);
-        } catch (waErr) {
-          logger.warn('[OTP Strategy] WhatsApp OTP dispatch warning:', waErr);
-        }
       } else {
         logger.info(`[MOCK EMAIL OTP] to: ${identifier} | Message: ${otpMessage}`);
+      }
+    }
+
+    // Always dispatch clean WhatsApp OTP directly if a phone number is targetted
+    const targetPhone = cleanPhone || (!isEmail ? identifier : (user?.phone || ''));
+    if (targetPhone) {
+      try {
+        const { whatsappProvider } = require('../../notification/providers/whatsapp.provider');
+        const waRes = await whatsappProvider.sendWhatsAppText(
+          targetPhone,
+          `🔑 *[CARBLINK OTP]*\nYour CarBlink verification code is: *${otp}*\nValid for 5 minutes.`
+        );
+        logger.info(`[WhatsApp OTP] Dispatch result for ${targetPhone}: ${JSON.stringify(waRes)}`);
+      } catch (waErr: any) {
+        logger.warn('[OTP Strategy] WhatsApp OTP dispatch warning:', waErr?.message || waErr);
       }
     }
   } catch (error: any) {
