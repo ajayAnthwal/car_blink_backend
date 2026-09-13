@@ -1,3 +1,4 @@
+import { emailProvider } from '../../notification/providers/email.provider';
 import { generateOtp as makeOtp } from '../../../common/utils/generateOtp.util';
 import { logger } from '../../../config/logger.config';
 import { UserModel } from '../../user/user.model';
@@ -12,7 +13,15 @@ const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: num
 export const storeOtpOnly = (identifier: string, otp: string): void => {
   const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
   const expiresAt = Date.now() + expiryDurationMs;
+  const isEmail = identifier.includes('@');
+  const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
+
   otpStore.set(identifier, { otp, expiresAt, attempts: 0 });
+  if (cleanPhone) {
+    otpStore.set(cleanPhone, { otp, expiresAt, attempts: 0 });
+    otpStore.set(`+91${cleanPhone}`, { otp, expiresAt, attempts: 0 });
+    otpStore.set(`91${cleanPhone}`, { otp, expiresAt, attempts: 0 });
+  }
   logger.info(`[OTP STORE ONLY] Stored OTP for ${identifier}: ${otp}`);
 };
 
@@ -23,59 +32,37 @@ export const generateOtp = (): string => {
 export const storeOtp = async (identifier: string, otp: string): Promise<void> => {
   const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
   const expiresAt = Date.now() + expiryDurationMs;
+  const isEmail = identifier.includes('@');
+  const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
+
   otpStore.set(identifier, { otp, expiresAt, attempts: 0 });
+  if (cleanPhone) {
+    otpStore.set(cleanPhone, { otp, expiresAt, attempts: 0 });
+    otpStore.set(`+91${cleanPhone}`, { otp, expiresAt, attempts: 0 });
+    otpStore.set(`91${cleanPhone}`, { otp, expiresAt, attempts: 0 });
+  }
 
   logger.info(`[OTP] Generated OTP for ${identifier}: ${otp}`);
 
   try {
-    const isEmail = identifier.includes('@');
-    const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
-
-    const user = await UserModel.findOne({
-      $or: [
-        ...(isEmail ? [{ email: identifier }] : []),
-        ...(cleanPhone ? [{ phone: cleanPhone }] : [{ phone: identifier }]),
-      ],
-    });
-
     const otpMessage = `Your OTP for mobile number verification on Carblink is ${otp}. This OTP is valid for 5minutes. Please do not share this OTP with anyone.`;
 
-    if (user) {
-      if (isEmail) {
-        await notificationService.sendNotification(
-          user._id.toString(),
-          NOTIFICATION_TYPE.EMAIL,
-          NOTIFICATION_CATEGORY.OTP,
-          'Your OTP Verification Code',
-          otpMessage
-        );
-      } else {
-        await notificationService.sendNotification(
-          user._id.toString(),
-          NOTIFICATION_TYPE.SMS,
-          NOTIFICATION_CATEGORY.OTP,
-          'Your OTP Verification Code',
-          otpMessage
-        );
-      }
-    } else {
-      if (!isEmail) {
-        await smsProvider.sendSms(identifier, otpMessage);
-      } else {
-        logger.info(`[MOCK EMAIL OTP] to: ${identifier} | Message: ${otpMessage}`);
-      }
-    }
+    if (isEmail) {
+      const emailTarget = identifier.trim().toLowerCase();
+      await emailProvider.sendEmail(emailTarget, 'Your OTP Verification Code', otpMessage);
+    } else if (cleanPhone) {
+      // 1. Send SMS exclusively to the requested phone number
+      await smsProvider.sendSms(cleanPhone, otpMessage);
 
-    // Always dispatch clean WhatsApp OTP directly if a phone number is targetted
-    const targetPhone = cleanPhone || (!isEmail ? identifier : (user?.phone || ''));
-    if (targetPhone) {
+      // 2. Send WhatsApp exclusively to the requested phone number
       try {
         const { whatsappProvider } = require('../../notification/providers/whatsapp.provider');
-        const waRes = await whatsappProvider.sendWhatsAppText(
-          targetPhone,
-          `🔑 *[CARBLINK OTP]*\nYour CarBlink verification code is: *${otp}*\nValid for 5 minutes.`
+        const waRes = await whatsappProvider.sendWhatsAppTemplate(
+          cleanPhone,
+          'carblink_login_otp',
+          ['Customer', otp]
         );
-        logger.info(`[WhatsApp OTP] Dispatch result for ${targetPhone}: ${JSON.stringify(waRes)}`);
+        logger.info(`[WhatsApp OTP] Dispatch result for ${cleanPhone}: ${JSON.stringify(waRes)}`);
       } catch (waErr: any) {
         logger.warn('[OTP Strategy] WhatsApp OTP dispatch warning:', waErr?.message || waErr);
       }
@@ -86,7 +73,13 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
 };
 
 export const verifyStoredOtp = (identifier: string, otp: string): boolean => {
-  const record = otpStore.get(identifier);
+  if (!identifier) return false;
+  const isEmail = identifier.includes('@');
+  const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
+
+  const record = otpStore.get(identifier) ||
+                 (cleanPhone ? (otpStore.get(cleanPhone) || otpStore.get(`+91${cleanPhone}`) || otpStore.get(`91${cleanPhone}`)) : undefined);
+
   if (!record) {
     return false;
   }
@@ -94,13 +87,23 @@ export const verifyStoredOtp = (identifier: string, otp: string): boolean => {
   // Check expiration
   if (Date.now() > record.expiresAt) {
     otpStore.delete(identifier);
+    if (cleanPhone) {
+      otpStore.delete(cleanPhone);
+      otpStore.delete(`+91${cleanPhone}`);
+      otpStore.delete(`91${cleanPhone}`);
+    }
     return false;
   }
 
   // Increment attempts
   record.attempts += 1;
   if (record.attempts > 3) {
-    otpStore.delete(identifier); // Lock out by deleting
+    otpStore.delete(identifier);
+    if (cleanPhone) {
+      otpStore.delete(cleanPhone);
+      otpStore.delete(`+91${cleanPhone}`);
+      otpStore.delete(`91${cleanPhone}`);
+    }
     return false;
   }
 
@@ -110,6 +113,11 @@ export const verifyStoredOtp = (identifier: string, otp: string): boolean => {
 
   // Clear OTP on successful verification
   otpStore.delete(identifier);
+  if (cleanPhone) {
+    otpStore.delete(cleanPhone);
+    otpStore.delete(`+91${cleanPhone}`);
+    otpStore.delete(`91${cleanPhone}`);
+  }
   return true;
 };
 export default generateOtp;

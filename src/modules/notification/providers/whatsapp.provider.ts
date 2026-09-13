@@ -71,7 +71,7 @@ export class CombinedWhatsAppProvider implements IWhatsAppProvider {
           type: 'template',
           template: {
             name: templateName,
-            language: { code: 'en' },
+            language: { code: 'en_US' },
             components
           }
         };

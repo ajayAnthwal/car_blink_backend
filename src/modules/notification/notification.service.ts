@@ -78,10 +78,17 @@ export class NotificationService {
         if (user.role === 'ACCOUNTS') portalUrl = 'https://dashboard.carblink.in/accounts/dashboard';
         if (user.role === 'SUPER_ADMIN') portalUrl = 'https://dashboard.carblink.in/admin/dashboard';
 
-        await whatsappProvider.sendWhatsAppText(
+        const waMessage = `${title}: ${message}`;
+        await whatsappProvider.sendWhatsAppTemplate(
           user.phone,
-          `🔔 *[CARBLINK ${user.role} NOTIFICATION]*\n*${title}*\n${message}\nOpen Portal: ${portalUrl}`
-        );
+          'carblink_notification',
+          [user.fullName || 'Customer', waMessage]
+        ).catch(() => {
+          return whatsappProvider.sendWhatsAppText(
+            user.phone,
+            `🔔 *[CARBLINK ${user.role} NOTIFICATION]*\n*${title}*\n${message}\nOpen Portal: ${portalUrl}`
+          );
+        });
       } catch (waErr: any) {
         logger.warn(`[NotificationService] WhatsApp alert warning for ${user.phone}:`, waErr?.message || waErr);
       }

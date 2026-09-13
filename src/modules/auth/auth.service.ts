@@ -21,10 +21,33 @@ const forgotCooldownMap = new Map<string, number>();
 export class AuthService {
   public static async registerUser(data: RegisterInput): Promise<{ user: Partial<IUser>; tokens?: AuthTokens; message: string }> {
     const cleanEmail = data.email && typeof data.email === 'string' && data.email.trim() ? data.email.trim().toLowerCase() : undefined;
-    const cleanPhone = data.phone ? data.phone.trim() : '';
+    const cleanPhone = data.phone ? data.phone.trim().replace(/[^0-9]/g, '').slice(-10) : '';
 
-    // 1. Check uniqueness of email/phone
-    const queryConditions: any[] = [{ phone: cleanPhone }];
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      throw new ApiError(400, 'Please enter a valid 10-digit Indian mobile number.');
+    }
+
+    // 1. Mandatory 6-digit OTP verification for account registration
+    if (!data.otp) {
+      throw new ApiError(400, 'OTP verification code is required to complete registration.');
+    }
+    const { verifyStoredOtp } = require('./strategies/otp.strategy');
+    const isOtpValid = verifyStoredOtp(cleanPhone, data.otp) || verifyStoredOtp(data.phone, data.otp);
+    if (!isOtpValid) {
+      throw new ApiError(400, 'Incorrect or expired OTP code. Please check your SMS/WhatsApp and try again.');
+    }
+
+    // Lock role registration to only CUSTOMER or PARTNER
+    if (data.role !== ROLES.CUSTOMER && data.role !== ROLES.PARTNER) {
+      throw new UnauthorizedError('Unauthorized role registration');
+    }
+
+    // 2. Check uniqueness of email/phone
+    const queryConditions: any[] = [
+      { phone: cleanPhone },
+      { phone: `+91${cleanPhone}` },
+      { phone: `91${cleanPhone}` }
+    ];
     if (cleanEmail) {
       queryConditions.push({ email: cleanEmail });
     }
@@ -34,69 +57,66 @@ export class AuthService {
     });
 
     if (existingUser) {
-      if (existingUser.isPhoneVerified || existingUser.isEmailVerified) {
+      // Only block if existing user is an already completed, verified registration with a password set
+      const isDummyGuest = existingUser.fullName === 'Guest Lead User' || existingUser.email?.includes('@phone.carblink.com');
+      if (!isDummyGuest && existingUser.isPhoneVerified) {
         if (cleanEmail && existingUser.email === cleanEmail) {
           throw new ConflictError('This email address is already registered. Please sign in or use a different email.');
         }
-        if (existingUser.phone === cleanPhone) {
-          throw new ConflictError('This phone number is already registered. Please sign in or use a different phone number.');
+        if (existingUser.phone === cleanPhone || existingUser.phone === `+91${cleanPhone}`) {
+          throw new ConflictError('This phone number is already registered. Please sign in with your password.');
         }
       }
     }
 
-    // Mandatory 6-digit OTP verification for account registration
-    if (!data.otp) {
-      throw new ApiError(400, 'OTP verification code is required to complete registration.');
-    }
-    const { verifyStoredOtp } = require('./strategies/otp.strategy');
-    const isOtpValid = verifyStoredOtp(cleanPhone, data.otp) || verifyStoredOtp(data.phone, data.otp);
-    if (!isOtpValid) {
-      throw new ApiError(400, 'Incorrect or expired OTP code. Please check your SMS and try again.');
-    }
-
-    // Lock role registration to only CUSTOMER or PARTNER
-    if (data.role !== ROLES.CUSTOMER && data.role !== ROLES.PARTNER) {
-      throw new UnauthorizedError('Unauthorized role registration');
-    }
-
     const userData: any = {
-      fullName: data.fullName,
+      fullName: data.fullName.trim(),
       phone: cleanPhone,
       password: data.password,
-      role: data.role,
-      isPhoneVerified: !!data.otp,
+      role: data.role || ROLES.CUSTOMER,
+      isPhoneVerified: true,
     };
 
     if (cleanEmail) {
       userData.email = cleanEmail;
+      userData.isEmailVerified = true;
     }
 
-    // 2. Create or Update the user
+    // 3. Create or Update the user
     let newUser;
     if (existingUser) {
-      existingUser.fullName = data.fullName;
+      existingUser.fullName = data.fullName.trim();
+      existingUser.phone = cleanPhone;
       if (cleanEmail) existingUser.email = cleanEmail;
       existingUser.password = data.password;
-      existingUser.isPhoneVerified = !!data.otp;
+      existingUser.role = data.role || ROLES.CUSTOMER;
+      existingUser.isPhoneVerified = true;
+      if (cleanEmail) existingUser.isEmailVerified = true;
       await existingUser.save();
       newUser = existingUser;
     } else {
       newUser = await UserModel.create(userData);
     }
 
-    // 3. Auto-link any past guest bookings or leads created with this phone/email to the new user ID
+    // 4. Auto-link any past guest bookings or leads created with this phone/email to the new user ID
     try {
       const { BookingModel } = require('../customer/sub-modules/booking/booking.model');
       const { LeadModel } = require('../customer/sub-modules/lead/lead.model');
       
-      const matchPhoneQuery = { phone: cleanPhone };
+      const matchPhoneQuery = {
+        $or: [
+          { phone: cleanPhone },
+          { phone: `+91${cleanPhone}` },
+          { phone: `91${cleanPhone}` }
+        ]
+      };
       await BookingModel.updateMany({ customerId: { $exists: false }, ...matchPhoneQuery }, { customerId: newUser._id });
       await LeadModel.updateMany({ customerId: { $exists: false }, ...matchPhoneQuery }, { customerId: newUser._id });
     } catch (linkErr) {
       console.warn('[AuthService] Guest booking linking warning:', linkErr);
     }
 
-    // 4. Generate Tokens for Instant Auto-Login after Registration
+    // 5. Generate Tokens for Instant Auto-Login after Registration
     const payload: JwtPayload = {
       userId: newUser._id.toString(),
       role: newUser.role,
@@ -124,17 +144,25 @@ export class AuthService {
       throw new UnauthorizedError('Incorrect or expired OTP code. Please enter the valid 6-digit OTP received on your mobile.');
     }
 
+    const isPhone = !identifier.includes('@');
+    const cleanPhone = isPhone ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
+    const cleanEmail = !isPhone ? identifier.trim().toLowerCase() : '';
+
     // 2. Find user or auto-create customer account for guest OTP login
     let user = await UserModel.findOne({
-      $or: [{ email: identifier }, { phone: identifier }],
+      $or: [
+        ...(cleanEmail ? [{ email: cleanEmail }] : []),
+        ...(cleanPhone ? [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }] : []),
+        { email: identifier },
+        { phone: identifier }
+      ],
     });
 
     if (!user) {
-      const isPhone = !identifier.includes('@');
       user = await UserModel.create({
-        fullName: isPhone ? `Customer ${identifier.slice(-4)}` : identifier.split('@')[0],
-        phone: identifier.trim(),
-        email: isPhone ? undefined : identifier.trim().toLowerCase(),
+        fullName: isPhone ? `Customer ${cleanPhone.slice(-4)}` : identifier.split('@')[0],
+        phone: isPhone ? cleanPhone : undefined,
+        email: isPhone ? undefined : cleanEmail,
         password: 'CarBlink@123',
         role: ROLES.CUSTOMER,
         isPhoneVerified: isPhone,
@@ -145,7 +173,7 @@ export class AuthService {
       try {
         const { LeadModel } = require('../customer/sub-modules/lead/lead.model');
         await LeadModel.updateMany(
-          { phone: identifier.trim(), customerId: { $exists: false } },
+          { phone: cleanPhone || identifier.trim(), customerId: { $exists: false } },
           { customerId: user._id }
         );
       } catch (bindErr) {}
@@ -175,9 +203,31 @@ export class AuthService {
   }
 
   public static async loginUser(data: LoginInput): Promise<{ user: Partial<IUser>; tokens: AuthTokens }> {
+    const rawIdentifier = data.identifier ? data.identifier.trim() : '';
+    if (!rawIdentifier) {
+      throw new ApiError(400, 'Please enter your registered mobile number or email address');
+    }
+    if (!data.password) {
+      throw new ApiError(400, 'Please enter your password');
+    }
+
+    const isEmail = rawIdentifier.includes('@');
+    const cleanEmail = isEmail ? rawIdentifier.toLowerCase() : '';
+    const cleanPhone = !isEmail ? rawIdentifier.replace(/[^0-9]/g, '').slice(-10) : '';
+
     // 1. Find user (explicitly selecting password)
     const user = await UserModel.findOne({
-      $or: [{ email: data.identifier }, { phone: data.identifier }],
+      $or: [
+        ...(cleanEmail ? [{ email: cleanEmail }] : []),
+        ...(cleanPhone ? [
+          { phone: cleanPhone },
+          { phone: `+91${cleanPhone}` },
+          { phone: `91${cleanPhone}` },
+          { phone: `+91 ${cleanPhone}` }
+        ] : []),
+        { email: rawIdentifier.toLowerCase() },
+        { phone: rawIdentifier }
+      ],
     }).select('+password');
 
     if (!user) {
@@ -185,11 +235,11 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw new UnauthorizedError('Account is suspended');
+      throw new UnauthorizedError('Account is suspended. Please contact support.');
     }
 
     // 2. Compare password
-    const isMatch = await user.comparePassword(data.password || '');
+    const isMatch = await user.comparePassword(data.password);
     if (!isMatch) {
       throw new UnauthorizedError('Incorrect mobile number/email or password. Please check your login details and try again.');
     }
@@ -296,10 +346,9 @@ export class AuthService {
     });
 
     if (!user) {
-      const dummyPhone = `9${Math.floor(100000000 + Math.random() * 900000000)}`;
       user = await UserModel.create({
         fullName: isEmail ? cleanIdentifier.split('@')[0] : `Customer ${cleanIdentifier.slice(-4)}`,
-        phone: isEmail ? dummyPhone : cleanIdentifier,
+        phone: isEmail ? undefined : cleanIdentifier,
         email: isEmail ? cleanIdentifier : `${cleanIdentifier}@phone.carblink.com`,
         password: 'CarBlink@123',
         role: ROLES.CUSTOMER,

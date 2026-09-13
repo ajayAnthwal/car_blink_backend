@@ -236,8 +236,9 @@ export class AssignmentService {
       
       // Create DB notifications for specific partners
       if (partnerIds && partnerIds.length > 0) {
-        const notificationsToInsert = partnerIds.map(pid => ({
-          userId: pid,
+        const targetPartners = await PartnerModel.find({ _id: { $in: partnerIds } });
+        const notificationsToInsert = targetPartners.map((partner: any) => ({
+          userId: partner.userId,
           title: 'New Lead Available',
           message: 'A new lead has been assigned to you. Please check your dashboard.',
           type: NOTIFICATION_TYPE.IN_APP,
@@ -433,6 +434,11 @@ export class AssignmentService {
     const booking: any = await BookingModel.findById(bookingId);
     if (!booking) {
       throw new NotFoundError('Booking not found');
+    }
+
+    if (booking.status === BOOKING_STATUS.ACCEPTED) {
+      const job = await JobModel.findOne({ bookingId: booking._id });
+      return { booking, job, message: 'Booking is already confirmed and assigned to partner' };
     }
 
     if (booking.status !== BOOKING_STATUS.CUSTOMER_ACCEPTED) {
