@@ -57,12 +57,19 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
       // 2. Send WhatsApp exclusively to the requested phone number
       try {
         const { whatsappProvider } = require('../../notification/providers/whatsapp.provider');
-        const waRes = await whatsappProvider.sendWhatsAppTemplate(
+        const waRes1 = await whatsappProvider.sendWhatsAppTemplate(
           cleanPhone,
           'carblink_login_otp',
           ['Customer', otp]
         );
-        logger.info(`[WhatsApp OTP] Dispatch result for ${cleanPhone}: ${JSON.stringify(waRes)}`);
+        logger.info(`[WhatsApp OTP Login Template] Dispatch result for ${cleanPhone}: ${JSON.stringify(waRes1)}`);
+
+        const waRes2 = await whatsappProvider.sendWhatsAppTemplate(
+          cleanPhone,
+          'carblink_notification',
+          ['CarBlink Verification', `Your OTP for mobile number verification on CarBlink is: ${otp}. Valid for 5 minutes.`]
+        );
+        logger.info(`[WhatsApp OTP Notification Template] Dispatch result for ${cleanPhone}: ${JSON.stringify(waRes2)}`);
       } catch (waErr: any) {
         logger.warn('[OTP Strategy] WhatsApp OTP dispatch warning:', waErr?.message || waErr);
       }

@@ -54,6 +54,14 @@ export class CombinedWhatsAppProvider implements IWhatsAppProvider {
   ): Promise<{ success: boolean; data?: any; error?: string }> {
     const formattedPhone = this.parsePhone(toPhone);
 
+    // Auto-fix parameter count for templates requiring 2 params
+    let sanitizedParams = [...bodyValues];
+    if (sanitizedParams.length === 0) {
+      sanitizedParams = ['CarBlink Alert', 'Notification from CarBlink'];
+    } else if (sanitizedParams.length === 1) {
+      sanitizedParams = ['CarBlink Alert', sanitizedParams[0]];
+    }
+
     // 1. Try Meta Cloud API if configured
     if (this.whatsappToken && this.phoneNumberId) {
       try {
@@ -61,7 +69,7 @@ export class CombinedWhatsAppProvider implements IWhatsAppProvider {
         if (bodyValues.length > 0) {
           components.push({
             type: 'body',
-            parameters: bodyValues.map(val => ({ type: 'text', text: val }))
+            parameters: sanitizedParams.map(val => ({ type: 'text', text: val }))
           });
         }
 
@@ -109,7 +117,7 @@ export class CombinedWhatsAppProvider implements IWhatsAppProvider {
           template: {
             name: templateName,
             languageCode: 'en',
-            bodyValues,
+            bodyValues: sanitizedParams,
           },
         };
 
@@ -146,6 +154,12 @@ export class CombinedWhatsAppProvider implements IWhatsAppProvider {
     toPhone: string,
     message: string
   ): Promise<{ success: boolean; data?: any; error?: string }> {
+    // Route via approved template to guarantee 24/7 delivery outside 24h window
+    const tplRes = await this.sendWhatsAppTemplate(toPhone, 'carblink_notification', ['CarBlink Alert', message]);
+    if (tplRes.success) {
+      return tplRes;
+    }
+
     const formattedPhone = this.parsePhone(toPhone);
 
     // Meta Cloud API
