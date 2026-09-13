@@ -57,8 +57,8 @@ router.patch('/partner-status/:id/verify', ExecutiveController.verifyPartner);
 // SUB-MODULE 5: Communications
 router.post('/call', ExecutiveController.clickToCall);
 
-router.use("/logistics", logisticsRouter);
-router.use("/tickets", ticketsRouter);
-router.use("/ads", bannerAdRouter);
+router.use("/logistics", (logisticsRouter as any).default || logisticsRouter);
+router.use("/tickets", (ticketsRouter as any).default || ticketsRouter);
+router.use("/ads", (bannerAdRouter as any).default || bannerAdRouter);
 
 export default router;
