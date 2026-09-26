@@ -137,6 +137,11 @@ export class AuthService {
     const userObj = newUser.toObject();
     delete userObj.password;
 
+    // Trigger Account Registration Welcome SMS
+    if (cleanPhone) {
+      smsProvider.sendSms(cleanPhone, `Your Carblink account has been successfully registered with mobile number ${cleanPhone}. Welcome to Carblink.`).catch(() => {});
+    }
+
     return {
       user: userObj,
       tokens: { accessToken, refreshToken },
@@ -487,6 +492,10 @@ export class AuthService {
 
     user.password = data.newPassword;
     await user.save();
+
+    if (user.phone) {
+      smsProvider.sendSms(user.phone, 'Your Carblink account password has been successfully reset. If you did not initiate this request, please contact Carblink support.').catch(() => {});
+    }
 
     return { message: 'Password has been reset successfully' };
   }

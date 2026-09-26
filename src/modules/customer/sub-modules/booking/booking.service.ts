@@ -234,6 +234,11 @@ export class BookingService {
       .populate('vehicleId')
       .populate('serviceId')
       .populate('cityId')
+      .populate({
+        path: 'assignedPartnerId',
+        populate: { path: 'userId', select: 'fullName email phone' }
+      })
+      .populate('acceptedBidId')
       .lean();
 
     if (!booking) {
@@ -251,8 +256,27 @@ export class BookingService {
     const PaymentModel = mongoose.model('Payment');
     const payments = await PaymentModel.find({ bookingId }).lean();
 
+    const hasPaid15PercentAdvance = payments && payments.some((p) => p.status === 'SUCCESS' && p.amount > 0);
+    const isUnlocked = hasPaid15PercentAdvance || ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
+
+    let assignedPartner = (booking as any).assignedPartnerId;
+    if (assignedPartner && !isUnlocked) {
+      assignedPartner = {
+        ...assignedPartner,
+        businessName: 'Verified CarBlink Workshop',
+        businessAddress: 'Unlocked after 15% advance payment',
+        phone: '+91 XXXXX XXXXX',
+        userId: {
+          fullName: 'CarBlink Certified Partner',
+          email: 'unlocked_after_payment@carblink.in',
+          phone: '+91 XXXXX XXXXX'
+        }
+      };
+    }
+
     return {
       ...booking,
+      assignedPartnerId: assignedPartner,
       jobDetails: jobDetails || null,
       payments: payments || []
     };
