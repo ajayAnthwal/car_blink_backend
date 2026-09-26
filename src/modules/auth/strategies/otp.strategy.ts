@@ -29,7 +29,7 @@ export const generateOtp = (): string => {
   return makeOtp();
 };
 
-export const storeOtp = async (identifier: string, otp: string): Promise<void> => {
+export const storeOtp = async (identifier: string, otp: string, purpose: 'LOGIN' | 'RESET' | 'MOBILE_VERIFY' | 'REGISTER' = 'LOGIN'): Promise<void> => {
   const isEmail = identifier.includes('@');
   const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
   const cooldownKey = cleanPhone || identifier.trim().toLowerCase();
@@ -60,7 +60,16 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
   logger.info(`[OTP] Generated OTP for ${identifier}: ${otp}`);
 
   try {
-    const otpMessage = `Your OTP for mobile number verification on Carblink is ${otp}. This OTP is valid for 5minutes. Please do not share this OTP with anyone.`;
+    let otpMessage = `Your OTP for login to your Carblink account is ${otp}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
+    if (purpose === 'RESET') {
+      otpMessage = `Your OTP to reset your Carblink account password is ${otp}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
+    } else if (purpose === 'MOBILE_VERIFY') {
+      otpMessage = `Your OTP for mobile number verification on Carblink is ${otp}. This OTP is valid for 5minutes. Please do not share this OTP with anyone.`;
+    } else if (purpose === 'REGISTER') {
+      otpMessage = `Your Carblink account has been successfully registered with mobile number ${cleanPhone}. Welcome to Carblink.`;
+    } else {
+      otpMessage = `Your OTP for login to your Carblink account is ${otp}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
+    }
 
     if (isEmail) {
       const emailTarget = identifier.trim().toLowerCase();

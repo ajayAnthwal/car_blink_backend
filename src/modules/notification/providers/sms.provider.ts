@@ -50,7 +50,7 @@ export class SmsProvider implements ISmsProvider {
         } else if (lowerMsg.includes('register') || lowerMsg.includes('signup')) {
           // 3. Account Registration Flow (SmartPing 1560212 | DLT 1777178798813648790)
           targetTemplateId = '1560212';
-          targetDltContentId = process.env.VISPL_REGISTER_DLT_ID || '1777178798813648790';
+          targetDltContentId = process.env.VISPL_REGISTER_DLT_ID || '177717898813648790';
           textToSend = `Your Carblink account has been successfully registered with mobile number ${tenDigitPhone}. Welcome to Carblink.`;
         } else if (lowerMsg.includes('login')) {
           // 4. Login OTP Flow (SmartPing 1557713 | DLT 1777178764480007649)

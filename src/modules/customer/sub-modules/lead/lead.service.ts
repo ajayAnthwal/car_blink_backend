@@ -10,7 +10,7 @@ export class LeadService {
     const { generateOtp, storeOtp } = require('../../../auth/strategies/otp.strategy');
 
     const otp = generateOtp();
-    await storeOtp(cleanPhone, otp);
+    await storeOtp(cleanPhone, otp, 'MOBILE_VERIFY');
 
     return {
       message: `OTP sent successfully to ${cleanPhone}`,

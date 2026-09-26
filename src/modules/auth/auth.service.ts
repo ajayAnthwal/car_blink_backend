@@ -413,7 +413,7 @@ export class AuthService {
     if (phoneTarget) storeOtpOnly(phoneTarget, otp);
     if (emailTarget) storeOtpOnly(emailTarget, otp);
 
-    const message = `Your password reset code for CarBlink is: ${otp}. Valid for 10 minutes.`;
+    const message = `Your OTP to reset your Carblink account password is ${otp}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
 
     if (isEmail && emailTarget) {
       const htmlOtpTemplate = `
