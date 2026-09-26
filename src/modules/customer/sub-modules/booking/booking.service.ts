@@ -245,7 +245,7 @@ export class BookingService {
       throw new NotFoundError('Booking not found');
     }
 
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('You are not authorized to view this booking');
     }
 
@@ -292,7 +292,7 @@ export class BookingService {
       throw new NotFoundError('Booking not found');
     }
 
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('You are not authorized to cancel this booking');
     }
 
@@ -352,7 +352,7 @@ export class BookingService {
     if (!booking) {
       throw new NotFoundError('Booking not found');
     }
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('You are not authorized to view quotes for this booking');
     }
 
@@ -411,7 +411,7 @@ export class BookingService {
     if (!booking) {
       throw new NotFoundError('Booking not found');
     }
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('You are not authorized to select quotes for this booking');
     }
 
@@ -497,7 +497,7 @@ export class BookingService {
   ): Promise<any> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) throw new NotFoundError('Booking not found');
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('Not authorized');
     }
 
@@ -560,7 +560,7 @@ export class BookingService {
   public static async applyCoupon(customerId: string, bookingId: string, couponCode: string): Promise<IBooking> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) throw new NotFoundError('Booking not found');
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('Not authorized');
     }
 
@@ -620,7 +620,7 @@ export class BookingService {
   public static async getTracking(customerId: string, bookingId: string): Promise<any> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) throw new NotFoundError('Booking not found');
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('Not authorized');
     }
 
@@ -697,7 +697,7 @@ export class BookingService {
       throw new NotFoundError('Booking not found');
     }
 
-    if (booking.customerId.toString() !== customerId) {
+    if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('You are not authorized to review this booking');
     }
 
@@ -746,5 +746,33 @@ export class BookingService {
 
     return booking;
   }
+
+  public static async verifyBookingCustomerAccess(booking: any, customerId: string): Promise<boolean> {
+    if (!booking) return false;
+    const bCustId = booking.customerId ? booking.customerId.toString() : '';
+    if (bCustId === customerId) return true;
+
+    try {
+      const { UserModel } = require('../../../user/user.model');
+      const user = await UserModel.findById(customerId).lean();
+      if (!user) return false;
+
+      if (user.role === 'SUPER_ADMIN' || user.role === 'EXECUTIVE') return true;
+
+      const userPhone = user.phone ? user.phone.trim() : null;
+      if (userPhone) {
+        const bPhone = (booking.phone || booking.customerPhone || '').trim();
+        if (bPhone && bPhone === userPhone) {
+          // Auto link customerId for future queries
+          BookingModel.updateOne({ _id: booking._id || booking.id }, { $set: { customerId } }).exec();
+          return true;
+        }
+      }
+    } catch (err) {
+      console.error("Error in verifyBookingCustomerAccess:", err);
+    }
+
+    return false;
+  }
+
 }
-export default BookingService;
