@@ -111,6 +111,42 @@ export class ReviewService {
       logger.warn('Failed to send review notification to partner:', notifErr);
     }
 
+    // 8. Live Real-Time Socket Broadcast & Notification to Executives & Admins
+    try {
+      const { emitToRole } = require('../../sockets');
+      const { ROLES } = require('../../common/constants/roles.constant');
+      const { UserModel } = require('../user/user.model');
+      const customer = await UserModel.findById(customerId);
+
+      const reviewPayload = {
+        reviewId: review._id.toString(),
+        bookingId: data.bookingId,
+        rating: data.rating,
+        comment: review.comment,
+        customerName: customer?.fullName || 'Customer',
+        partnerId: job.partnerId,
+        createdAt: review.createdAt
+      };
+
+      // Real-time socket broadcast to Executives and Admins
+      emitToRole(ROLES.EXECUTIVE, 'review_submitted', reviewPayload);
+      emitToRole(ROLES.EXECUTIVE, 'review:submitted', reviewPayload);
+      emitToRole(ROLES.SUPER_ADMIN, 'review_submitted', reviewPayload);
+      emitToRole(ROLES.SUPER_ADMIN, 'review:submitted', reviewPayload);
+
+      // Save notification to Executive portal
+      await notificationService.sendToRole(
+        ROLES.EXECUTIVE,
+        NOTIFICATION_TYPE.PUSH,
+        NOTIFICATION_CATEGORY.REVIEW_RECEIVED,
+        '⭐ New Customer Satisfaction Rating Received',
+        `${customer?.fullName || 'Customer'} submitted a ${data.rating}/5 ⭐ rating for booking #${data.bookingId.slice(-6).toUpperCase()}: "${review.comment || 'No comment'}"`,
+        reviewPayload
+      );
+    } catch (realtimeErr: any) {
+      logger.warn('Failed to dispatch real-time review notification to executive:', realtimeErr);
+    }
+
     return review;
   }
 
