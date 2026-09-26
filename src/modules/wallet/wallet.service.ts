@@ -1,3 +1,4 @@
+import axios from 'axios';
 import mongoose from 'mongoose';
 import WalletModel from './wallet.model';
 import LedgerTransactionModel, { TRANSACTION_TYPE } from './ledger.model';
@@ -290,54 +291,52 @@ export class WalletService {
       balanceAfter: wallet.balance,
     });
 
-    const rzp = getRazorpayInstance();
+    const razorpayXAccount = process.env.RAZORPAYX_ACCOUNT_NUMBER;
+    const enableRazorpayX = process.env.ENABLE_RAZORPAYX === 'true';
 
-    if (rzp) {
-      // RazorpayX Real Payout Flow
+    if (razorpayXAccount && enableRazorpayX) {
       try {
-        // 1. Create Contact
-        const contact = await (rzp as any).contacts.create({
-          name: partner.bankDetails.accountHolderName,
-          reference_id: partnerId,
-          type: "vendor"
-        });
+        const keyId = process.env.RAZORPAY_KEY_ID;
+        const keySecret = process.env.RAZORPAY_KEY_SECRET;
+        const authHeader = 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64');
 
-        // 2. Create Fund Account
-        const fundAccount = await (rzp as any).fundAccount.create({
-          contact_id: contact.id,
+        const contactRes = await axios.post('https://api.razorpay.com/v1/contacts', {
+          name: bankDetails.accountHolderName,
+          reference_id: partnerId.toString(),
+          type: "vendor"
+        }, { headers: { Authorization: authHeader } });
+
+        const fundRes = await axios.post('https://api.razorpay.com/v1/fund_accounts', {
+          contact_id: contactRes.data.id,
           account_type: "bank_account",
           bank_account: {
-            name: partner.bankDetails.accountHolderName,
-            ifsc: partner.bankDetails.ifscCode,
-            account_number: partner.bankDetails.accountNumber
+            name: bankDetails.accountHolderName,
+            ifsc: bankDetails.ifscCode,
+            account_number: bankDetails.accountNumber
           }
-        });
+        }, { headers: { Authorization: authHeader } });
 
-        // 3. Request Payout
-        const payout = await (rzp as any).payouts.create({
-          account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER || process.env.RAZORPAY_KEY_ID, // Merchant Account ID for RazorpayX
-          fund_account_id: fundAccount.id,
+        const payoutRes = await axios.post('https://api.razorpay.com/v1/payouts', {
+          account_number: razorpayXAccount,
+          fund_account_id: fundRes.data.id,
           amount: Math.round(amount * 100),
           currency: "INR",
           mode: "IMPS",
           purpose: "payout",
           reference_id: withdrawal._id.toString()
-        });
+        }, { headers: { Authorization: authHeader } });
 
         withdrawal.status = WITHDRAWAL_STATUS.PROCESSING;
-        withdrawal.referenceId = payout.id;
+        withdrawal.referenceId = payoutRes.data.id;
         await withdrawal.save();
-        
-        // Payout status should ideally be updated via Webhooks
       } catch (err: any) {
-        console.error("RazorpayX Payout Error:", err);
-        // If it fails, refund the wallet
+        console.error("RazorpayX Payout Error:", err?.response?.data || err.message);
         wallet.balance += amount;
         await wallet.save();
         withdrawal.status = WITHDRAWAL_STATUS.FAILED;
-        withdrawal.failureReason = err.description || err.message;
+        withdrawal.failureReason = err?.response?.data?.error?.description || err.message;
         await withdrawal.save();
-        
+
         await LedgerTransactionModel.create({
           walletId: wallet._id,
           amount: amount,
@@ -345,24 +344,24 @@ export class WalletService {
           description: `Withdrawal Failed - Refunded`,
           balanceAfter: wallet.balance,
         });
-        
+
         throw new ApiError(500, `Payout failed: ${withdrawal.failureReason}`);
       }
     } else {
-      // Simulate instant payout processing (Mock Mode)
+      // Smooth mock payout processing when RazorpayX is disabled
       setTimeout(async () => {
         try {
           const req = await WithdrawalRequestModel.findById(withdrawal._id);
-          if (req) {
+          if (req && req.status === WITHDRAWAL_STATUS.PENDING) {
             req.status = WITHDRAWAL_STATUS.COMPLETED;
             req.referenceId = `payout_${crypto.randomBytes(8).toString('hex')}`;
             req.processedAt = new Date();
             await req.save();
           }
         } catch (err) {
-          console.error(err);
+          console.error("Mock payout error:", err);
         }
-      }, 5000);
+      }, 3000);
     }
 
     return withdrawal;
