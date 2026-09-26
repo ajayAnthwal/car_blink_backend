@@ -32,8 +32,13 @@ export class BookingService {
     if (!vehicle) {
       throw new NotFoundError('Vehicle not found in garage');
     }
-    if (vehicle.customerId.toString() !== customerId) {
-      throw new UnauthorizedError('You do not own this vehicle');
+    if (vehicle.customerId) {
+      if (vehicle.customerId.toString() !== customerId) {
+        throw new UnauthorizedError('You do not own this vehicle');
+      }
+    } else {
+      vehicle.customerId = customerId as any;
+      await vehicle.save();
     }
 
     // 2. Verify service exists

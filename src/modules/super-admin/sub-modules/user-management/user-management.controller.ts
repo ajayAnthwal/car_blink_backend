@@ -31,5 +31,13 @@ export class UserManagementController {
       `User stats updated successfully`
     );
   });
+
+  public static deleteUser = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { AuthService } = require('../../../auth/auth.service');
+    const result = await AuthService.deleteUserById(id);
+    return successResponse(res, result, result.message || 'User deleted successfully');
+  });
 }
+
 export default UserManagementController;

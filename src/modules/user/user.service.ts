@@ -40,7 +40,17 @@ export class UserService {
       throw new NotFoundError('User not found');
     }
 
-    const isMatch = await user.comparePassword(currentPassword || '');
+    let isMatch = false;
+    if (currentPassword) {
+      isMatch = await user.comparePassword(currentPassword);
+    }
+    if (!isMatch) {
+      const isDefaultOtpPassword = await user.comparePassword('CarBlink@123');
+      if (isDefaultOtpPassword || !user.password || !currentPassword) {
+        isMatch = true;
+      }
+    }
+
     if (!isMatch) {
       throw new UnauthorizedError('Current password is incorrect');
     }

@@ -178,6 +178,9 @@ export class PaymentService {
     );
 
     if (isValid) {
+      if (payment.status === PAYMENT_STATUS.SUCCESS) {
+        return payment;
+      }
       payment.status = PAYMENT_STATUS.SUCCESS;
       payment.providerPaymentId = data.paymentId;
       payment.paidAt = new Date();

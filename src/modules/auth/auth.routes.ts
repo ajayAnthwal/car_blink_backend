@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { AuthController } from './auth.controller';
 import { authMiddleware } from '../../middlewares/auth.middleware';
+import { roleMiddleware } from '../../middlewares/role.middleware';
+import { ROLES } from '../../common/constants/roles.constant';
 import { validate } from '../../middlewares/validate.middleware';
 import { rateLimiter } from '../../middlewares/rateLimiter.middleware';
 import {
@@ -24,5 +26,6 @@ router.post('/forgot-password', rateLimiter, validate({ body: forgotPasswordSche
 router.post('/reset-password', validate({ body: resetPasswordSchema }), AuthController.resetPassword);
 router.post('/google', rateLimiter, AuthController.googleLogin);
 router.get('/me', authMiddleware as any, AuthController.getMe);
+router.delete('/users/:id', authMiddleware as any, roleMiddleware([ROLES.SUPER_ADMIN, ROLES.ADMIN]) as any, AuthController.deleteUser);
 
 export default router;

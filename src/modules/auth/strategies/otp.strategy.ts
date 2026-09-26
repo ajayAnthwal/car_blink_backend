@@ -8,7 +8,7 @@ import { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } from '../../notification/not
 
 // In-memory store: key is identifier (email/phone), value is object with otp and expiry timestamp
 const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
-
+const otpCooldownMap = new Map<string, number>();
 
 export const storeOtpOnly = (identifier: string, otp: string): void => {
   const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
@@ -30,10 +30,25 @@ export const generateOtp = (): string => {
 };
 
 export const storeOtp = async (identifier: string, otp: string): Promise<void> => {
-  const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
-  const expiresAt = Date.now() + expiryDurationMs;
   const isEmail = identifier.includes('@');
   const cleanPhone = !isEmail ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
+  const cooldownKey = cleanPhone || identifier.trim().toLowerCase();
+
+  // Enforce 20-second rate limiting cooldown per phone/email to prevent multi-trigger SMS/WhatsApp floods
+  const lastSentTime = otpCooldownMap.get(cooldownKey);
+  if (lastSentTime && (Date.now() - lastSentTime) < 20000) {
+    logger.info(`[OTP COOLDOWN] Request for ${cooldownKey} within 20s cooldown. Reusing active OTP.`);
+    // Keep existing OTP in store so user can still verify with the active code
+    const existing = otpStore.get(cooldownKey) || otpStore.get(identifier);
+    if (existing) {
+      return;
+    }
+  }
+
+  otpCooldownMap.set(cooldownKey, Date.now());
+
+  const expiryDurationMs = 5 * 60 * 1000; // 5 minutes
+  const expiresAt = Date.now() + expiryDurationMs;
 
   otpStore.set(identifier, { otp, expiresAt, attempts: 0 });
   if (cleanPhone) {
@@ -54,22 +69,15 @@ export const storeOtp = async (identifier: string, otp: string): Promise<void> =
       // 1. Send SMS exclusively to the requested phone number
       await smsProvider.sendSms(cleanPhone, otpMessage);
 
-      // 2. Send WhatsApp exclusively to the requested phone number
+      // 2. Send WhatsApp exclusively to the requested phone number (Active Utility Template carblink_verification_notice)
       try {
         const { whatsappProvider } = require('../../notification/providers/whatsapp.provider');
-        const waRes1 = await whatsappProvider.sendWhatsAppTemplate(
+        const waRes = await whatsappProvider.sendWhatsAppTemplate(
           cleanPhone,
-          'carblink_login_otp',
+          'carblink_verification_notice',
           ['Customer', otp]
         );
-        logger.info(`[WhatsApp OTP Login Template] Dispatch result for ${cleanPhone}: ${JSON.stringify(waRes1)}`);
-
-        const waRes2 = await whatsappProvider.sendWhatsAppTemplate(
-          cleanPhone,
-          'carblink_notification',
-          ['CarBlink Verification', `Your OTP for mobile number verification on CarBlink is: ${otp}. Valid for 5 minutes.`]
-        );
-        logger.info(`[WhatsApp OTP Notification Template] Dispatch result for ${cleanPhone}: ${JSON.stringify(waRes2)}`);
+        logger.info(`[WhatsApp OTP Dispatch] Result for ${cleanPhone}: ${JSON.stringify(waRes)}`);
       } catch (waErr: any) {
         logger.warn('[OTP Strategy] WhatsApp OTP dispatch warning:', waErr?.message || waErr);
       }
@@ -114,7 +122,10 @@ export const verifyStoredOtp = (identifier: string, otp: string): boolean => {
     return false;
   }
 
-  if (record.otp !== otp) {
+  const inputOtpStr = String(otp || '').trim();
+  const storedOtpStr = String(record.otp || '').trim();
+
+  if (storedOtpStr !== inputOtpStr) {
     return false;
   }
 

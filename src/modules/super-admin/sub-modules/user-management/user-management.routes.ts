@@ -11,4 +11,6 @@ router.patch('/:id/status', validate({ body: userStatusSchema }), UserManagement
 router.patch('/:id/password', validate({ body: userStatusSchema }), UserManagementController.updateUser);
 router.patch('/:id/rewards-savings', UserManagementController.updateUserStats);
 
+router.delete('/:id', UserManagementController.deleteUser);
+
 export default router;

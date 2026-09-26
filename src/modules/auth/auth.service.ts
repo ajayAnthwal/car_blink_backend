@@ -27,22 +27,7 @@ export class AuthService {
       throw new ApiError(400, 'Please enter a valid 10-digit Indian mobile number.');
     }
 
-    // 1. Mandatory 6-digit OTP verification for account registration
-    if (!data.otp) {
-      throw new ApiError(400, 'OTP verification code is required to complete registration.');
-    }
-    const { verifyStoredOtp } = require('./strategies/otp.strategy');
-    const isOtpValid = verifyStoredOtp(cleanPhone, data.otp) || verifyStoredOtp(data.phone, data.otp);
-    if (!isOtpValid) {
-      throw new ApiError(400, 'Incorrect or expired OTP code. Please check your SMS/WhatsApp and try again.');
-    }
-
-    // Lock role registration to only CUSTOMER or PARTNER
-    if (data.role !== ROLES.CUSTOMER && data.role !== ROLES.PARTNER) {
-      throw new UnauthorizedError('Unauthorized role registration');
-    }
-
-    // 2. Check uniqueness of email/phone
+    // 1. Check existing user record
     const queryConditions: any[] = [
       { phone: cleanPhone },
       { phone: `+91${cleanPhone}` },
@@ -55,6 +40,31 @@ export class AuthService {
     const existingUser = await UserModel.findOne({
       $or: queryConditions,
     });
+
+    // 2. Mandatory 6-digit OTP verification for account registration
+    if (!data.otp) {
+      throw new ApiError(400, 'OTP verification code is required to complete registration.');
+    }
+    const { verifyStoredOtp } = require('./strategies/otp.strategy');
+    const inputOtp = String(data.otp).trim();
+
+    // Check if user already exists and was already verified in step 1, or verify active stored OTP
+    let isOtpValid = verifyStoredOtp(cleanPhone, inputOtp) || verifyStoredOtp(data.phone, inputOtp) || verifyStoredOtp(`+91${cleanPhone}`, inputOtp) || verifyStoredOtp(`91${cleanPhone}`, inputOtp);
+
+    // Fallback: If OTP was verified & cleared in a preceding /verify-otp API call and existing user record is verified, allow registration
+    if (!isOtpValid && existingUser && existingUser.isPhoneVerified) {
+      isOtpValid = true;
+    }
+
+    if (!isOtpValid) {
+      throw new ApiError(400, 'Incorrect or expired OTP code. Please check your SMS/WhatsApp and try again.');
+    }
+
+    // Lock role registration to only CUSTOMER or PARTNER
+    const requestedRole = data.role || ROLES.CUSTOMER;
+    if (requestedRole !== ROLES.CUSTOMER && requestedRole !== ROLES.PARTNER) {
+      throw new UnauthorizedError('Unauthorized role registration');
+    }
 
     if (existingUser) {
       // Only block if existing user is an already completed, verified registration with a password set
@@ -138,15 +148,17 @@ export class AuthService {
     identifier: string,
     otp: string
   ): Promise<{ user: Partial<IUser>; tokens: AuthTokens }> {
-    // 1. Verify OTP
-    const isValid = verifyStoredOtp(identifier, otp);
-    if (!isValid) {
-      throw new UnauthorizedError('Incorrect or expired OTP code. Please enter the valid 6-digit OTP received on your mobile.');
-    }
-
     const isPhone = !identifier.includes('@');
     const cleanPhone = isPhone ? identifier.trim().replace(/[^0-9]/g, '').slice(-10) : '';
     const cleanEmail = !isPhone ? identifier.trim().toLowerCase() : '';
+
+    // 1. Verify OTP across all phone identifier variants
+    const isValid = verifyStoredOtp(identifier, otp) ||
+                    verifyStoredOtp(identifier.trim(), otp) ||
+                    (cleanPhone ? (verifyStoredOtp(cleanPhone, otp) || verifyStoredOtp(`+91${cleanPhone}`, otp) || verifyStoredOtp(`91${cleanPhone}`, otp)) : false);
+    if (!isValid) {
+      throw new UnauthorizedError('Incorrect or expired OTP code. Please enter the valid 6-digit OTP received on your mobile.');
+    }
 
     // 2. Find user or auto-create customer account for guest OTP login
     let user = await UserModel.findOne({
@@ -346,15 +358,35 @@ export class AuthService {
     });
 
     if (!user) {
-      user = await UserModel.create({
+      const refCode = 'CB' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newUserData: any = {
         fullName: isEmail ? cleanIdentifier.split('@')[0] : `Customer ${cleanIdentifier.slice(-4)}`,
-        phone: isEmail ? undefined : cleanIdentifier,
-        email: isEmail ? cleanIdentifier : `${cleanIdentifier}@phone.carblink.com`,
         password: 'CarBlink@123',
         role: ROLES.CUSTOMER,
         isPhoneVerified: false,
         isEmailVerified: false,
-      });
+        referralCode: refCode
+      };
+
+      if (isEmail) {
+        newUserData.email = cleanIdentifier;
+      } else {
+        newUserData.phone = cleanIdentifier;
+      }
+
+      try {
+        user = await UserModel.create(newUserData);
+      } catch (createErr) {
+        user = await UserModel.findOne({
+          $or: [
+            { email: cleanIdentifier },
+            { phone: cleanIdentifier }
+          ]
+        });
+        if (!user) {
+          throw new ApiError(400, 'Unable to send reset code. Please check your email/phone number and try again.');
+        }
+      }
 
       try {
         const { LeadModel } = require('../customer/sub-modules/lead/lead.model');
@@ -403,7 +435,11 @@ export class AuthService {
       await smsProvider.sendSms(phoneTarget, message);
       try {
         const { whatsappProvider } = require('../notification/providers/whatsapp.provider');
-        await whatsappProvider.sendWhatsAppText(phoneTarget, `🔑 *[CARBLINK OTP]*\nYour CarBlink password reset code is: *${otp}*\nValid for 10 minutes.`);
+        await whatsappProvider.sendWhatsAppTemplate(
+          phoneTarget,
+          'carblink_verification_notice',
+          ['Customer', otp]
+        );
       } catch (waErr) {
         console.warn('[AuthService] WhatsApp OTP dispatch warning:', waErr);
       }
@@ -536,15 +572,18 @@ export class AuthService {
       await user.save();
     } else {
       const assignedRole = (data.role === ROLES.PARTNER || data.role === ROLES.CUSTOMER) ? data.role : ROLES.CUSTOMER;
+      const refCode = 'CB' + Math.random().toString(36).substring(2, 8).toUpperCase();
       user = await UserModel.create({
         fullName: name || 'Google User',
         email,
         googleId: googleId || `g_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        password: 'CarBlink@123',
         role: assignedRole,
         isEmailVerified: true,
         isPhoneVerified: false,
         profileImage: picture,
         isActive: true,
+        referralCode: refCode,
         lastLoginAt: new Date(),
       });
     }
@@ -565,6 +604,18 @@ export class AuthService {
       tokens: { accessToken, refreshToken },
       message: 'Google authentication successful',
     };
+  }
+
+  public static async deleteUserById(userId: string): Promise<{ message: string }> {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    if (user.role === ROLES.SUPER_ADMIN) {
+      throw new ApiError(400, 'Super Admin accounts cannot be deleted');
+    }
+    await UserModel.findByIdAndDelete(userId);
+    return { message: 'User deleted successfully' };
   }
 }
 export default AuthService;

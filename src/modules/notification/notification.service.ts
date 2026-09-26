@@ -81,7 +81,7 @@ export class NotificationService {
         const waMessage = `${title}: ${message}`;
         await whatsappProvider.sendWhatsAppTemplate(
           user.phone,
-          'carblink_notification',
+          'carblink_verification_notice',
           [user.fullName || 'Customer', waMessage]
         ).catch(() => {
           return whatsappProvider.sendWhatsAppText(

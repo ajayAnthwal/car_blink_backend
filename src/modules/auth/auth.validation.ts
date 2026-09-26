@@ -10,6 +10,7 @@ export const registerSchema = z.object({
   role: z.enum([ROLES.CUSTOMER, ROLES.PARTNER], {
     errorMap: () => ({ message: 'Self-registration is only allowed for CUSTOMER or PARTNER' }),
   }),
+  otp: z.string().optional().or(z.literal('')),
 });
 
 export const loginSchema = z.object({

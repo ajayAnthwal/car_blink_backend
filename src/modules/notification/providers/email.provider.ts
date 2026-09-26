@@ -40,10 +40,19 @@ export class EmailProvider implements IEmailProvider {
     }
 
     try {
+      const plainText = htmlBody
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const fromHeader = env.SMTP_FROM_EMAIL || (env.SMTP_USER ? `"CarBlink Support" <${env.SMTP_USER}>` : '"CarBlink Support" <no-reply@carblink.in>');
+
       const info = await this.transporter!.sendMail({
-        from: env.SMTP_FROM_EMAIL || (env.SMTP_USER ? `"CarBlink Security" <${env.SMTP_USER}>` : '"CarBlink Security" <no-reply@carblink.in>'),
+        from: fromHeader,
         to: toEmail,
         subject,
+        text: plainText,
         html: htmlBody,
       });
       return {

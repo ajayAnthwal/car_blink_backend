@@ -5,13 +5,20 @@ import { IRequest } from '../common/interfaces/IRequest';
 import { TokenBlacklistModel } from '../modules/auth/token-blacklist.model';
 
 export const authMiddleware = async (req: IRequest, res: Response, next: NextFunction): Promise<void> => {
-  let token = req.cookies?.accessToken;
+  let token: string | undefined;
 
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
+  // 1. Prioritize explicit Authorization: Bearer header
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const parts = authHeader.split(' ');
+    if (parts[1] && parts[1] !== 'null' && parts[1] !== 'undefined') {
+      token = parts[1];
     }
+  }
+
+  // 2. Fallback to cookies
+  if (!token) {
+    token = req.cookies?.accessToken || req.cookies?.car_blink_access_token;
   }
 
   if (!token) {
