@@ -1,3 +1,18 @@
+// Eagerly register all Mongoose Schemas to prevent MissingSchemaError on .populate()
+import './modules/user/user.model';
+import './modules/customer/sub-modules/garage/garage.model';
+import './modules/customer/sub-modules/booking/booking.model';
+import './modules/master-data/models/service.model';
+import './modules/master-data/models/city.model';
+import './modules/partner/sub-modules/bidding/bid.model';
+import './modules/partner/partner.model';
+import './modules/partner/sub-modules/jobs/job.model';
+import './modules/payment/payment.model';
+import './modules/wallet/wallet.model';
+import './modules/wallet/withdrawal.model';
+import './modules/wallet/ledger.model';
+import './modules/review/review.model';
+
 import express, { Application } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';

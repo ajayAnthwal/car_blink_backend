@@ -1,3 +1,4 @@
+import { PaymentModel } from '../../../payment/payment.model';
 import mongoose from 'mongoose';
 import { BookingModel, IBooking } from './booking.model';
 import { GarageModel } from '../garage/garage.model';
@@ -197,7 +198,7 @@ export class BookingService {
       }
     });
 
-    const PaymentModel = mongoose.model('Payment');
+    // PaymentModel imported at top
     const allPayments = await PaymentModel.find({
       $or: [
         { bookingId: { $in: objectIds } },
@@ -230,15 +231,17 @@ export class BookingService {
   }
 
   public static async getBookingById(customerId: string, bookingId: string): Promise<any> {
+    require('../../../master-data/models/city.model');
+    require('../../../master-data/models/service.model');
+    require('../garage/garage.model');
+    require('../../../partner/sub-modules/bidding/bid.model');
+
     const booking = await BookingModel.findById(bookingId)
       .populate('vehicleId')
       .populate('serviceId')
-      .populate('cityId')
-      .populate({
-        path: 'assignedPartnerId',
-        populate: { path: 'userId', select: 'fullName email phone' }
-      })
+      .populate({ path: 'cityId', model: 'City' })
       .populate('acceptedBidId')
+      .setOptions({ strictPopulate: false })
       .lean();
 
     if (!booking) {
@@ -253,7 +256,7 @@ export class BookingService {
     const jobDetails = await JobModel.findOne({ bookingId }).lean();
 
     // Fetch payments
-    const PaymentModel = mongoose.model('Payment');
+    // PaymentModel imported at top
     const payments = await PaymentModel.find({ bookingId }).lean();
 
     const hasPaid15PercentAdvance = payments && payments.some((p) => p.status === 'SUCCESS' && p.amount > 0);
@@ -320,7 +323,7 @@ export class BookingService {
     }
 
     // Check for successful payment to auto-initiate refund
-    const PaymentModel = mongoose.model('Payment');
+    // PaymentModel imported at top
     const successfulPayments = await PaymentModel.find({
       bookingId: booking._id,
       status: 'SUCCESS'
