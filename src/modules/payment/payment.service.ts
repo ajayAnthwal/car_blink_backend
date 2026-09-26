@@ -40,38 +40,33 @@ export class PaymentService {
       throw new NotFoundError("Booking not found");
     }
 
-    // Verify ownership
-    if (booking.customerId.toString() !== customerId) {
+        // Verify ownership
+    const { BookingService } = require('../customer/sub-modules/booking/booking.service');
+    const isOwner = await BookingService.verifyBookingCustomerAccess(booking, customerId);
+    if (!isOwner && booking.customerId.toString() !== customerId) {
       throw new UnauthorizedError(
         "You are not authorized to initiate payment for this booking",
       );
     }
 
     // Verify booking state depending on paymentType
+    const allowedAdvanceStatuses = ['PENDING', 'QUOTED', 'CUSTOMER_ACCEPTED', 'ACCEPTED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED'];
     if (paymentType === PAYMENT_TYPE.ADVANCE) {
-      if (
-        booking.status !== BOOKING_STATUS.ACCEPTED &&
-        booking.status !== BOOKING_STATUS.IN_PROGRESS &&
-        booking.status !== BOOKING_STATUS.COMPLETED
-      ) {
+      if (!allowedAdvanceStatuses.includes(booking.status as string)) {
         throw new BadRequestError(
-          "Advance payment requires the booking to be in ACCEPTED, IN_PROGRESS, or COMPLETED status",
+          "Advance payment requires valid booking status",
         );
       }
     } else if (paymentType === PAYMENT_TYPE.FINAL) {
-      if (booking.status !== BOOKING_STATUS.COMPLETED) {
+      if (booking.status === 'CANCELLED') {
         throw new BadRequestError(
-          "Final payment requires the booking to be in COMPLETED status",
+          "Cannot pay final amount for cancelled booking",
         );
       }
     } else if (paymentType === PAYMENT_TYPE.FULL) {
-      if (
-        booking.status !== BOOKING_STATUS.ACCEPTED &&
-        booking.status !== BOOKING_STATUS.IN_PROGRESS &&
-        booking.status !== BOOKING_STATUS.COMPLETED
-      ) {
+      if (!allowedAdvanceStatuses.includes(booking.status as string)) {
         throw new BadRequestError(
-          "Full payment requires the booking to be ACCEPTED, IN_PROGRESS, or COMPLETED",
+          "Full payment requires valid booking status",
         );
       }
     }
