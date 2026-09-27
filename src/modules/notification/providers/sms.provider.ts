@@ -57,7 +57,7 @@ export class SmsProvider implements ISmsProvider {
           targetTemplateId = '1557713';
           targetDltContentId = process.env.VISPL_LOGIN_DLT_ID || '1777178764480007649';
           textToSend = `Your OTP for login to your Carblink account is ${otpCode}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
-        } else if (lowerMsg.includes('start') || lowerMsg.includes('started') || lowerMsg.includes('service') || lowerMsg.includes('booking confirmed') || lowerMsg.includes('booking for')) {
+        } else if (lowerMsg.includes('booking confirmed') || lowerMsg.includes('booking_confirmed') || lowerMsg.includes('confirmed booking') || lowerMsg.includes('service confirmed')) {
           // 5. Booking Confirmation Flow (SmartPing 1561218 | DLT 1777178939663828651)
           targetTemplateId = '1561218';
           targetDltContentId = process.env.VISPL_BOOKING_CONFIRM_DLT_ID || '1777178939663828651';
@@ -69,7 +69,7 @@ export class SmsProvider implements ISmsProvider {
           const payMatch = message.match(/₹?\s*(\d+)/);
           const payAmount = payMatch ? payMatch[1] : '300';
           textToSend = `Carblink Services Private Limited: We have received your payment of Rs.${payAmount} towards your advance service booking. Booking ID: CB1042. For booking details, visit https://carblink.in/. Thank you for choosing CarBlink.`;
-        } else if (lowerMsg.includes('comparison') || lowerMsg.includes('request received') || lowerMsg.includes('request submitted')) {
+        } else if (lowerMsg.includes('comparison') || lowerMsg.includes('request received') || lowerMsg.includes('request submitted') || lowerMsg.includes('service') || lowerMsg.includes('booking requested') || lowerMsg.includes('request')) {
           // 7. CarBlink Request Received Flow (SmartPing 1561220 | DLT 1777178939780575133)
           targetTemplateId = '1561220';
           targetDltContentId = process.env.VISPL_REQUEST_RECEIVED_DLT_ID || '1777178939780575133';

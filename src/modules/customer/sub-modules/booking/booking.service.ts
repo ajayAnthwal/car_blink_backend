@@ -129,7 +129,20 @@ export class BookingService {
       }
     }
 
-    const userFilter: any = userPhone ? { $or: [{ customerId }, { phone: userPhone }] } : { customerId };
+    const custIdObj = mongoose.Types.ObjectId.isValid(customerId) ? new mongoose.Types.ObjectId(customerId) : customerId;
+    const cleanUserPhone = userPhone ? userPhone.replace(/[^0-9]/g, '').slice(-10) : '';
+
+    const userFilter: any = {
+      $or: [
+        { customerId: custIdObj },
+        { customerId: customerId.toString() },
+        ...(cleanUserPhone ? [
+          { phone: cleanUserPhone },
+          { phone: `+91${cleanUserPhone}` },
+          { phone: `91${cleanUserPhone}` }
+        ] : [])
+      ]
+    };
     const filter: any = {};
     if (query.status && Object.values(BOOKING_STATUS).includes(query.status as BOOKING_STATUS)) {
       filter.status = query.status;
