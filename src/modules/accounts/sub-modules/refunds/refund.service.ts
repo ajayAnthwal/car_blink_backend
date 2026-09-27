@@ -136,7 +136,7 @@ export class RefundService {
       throw new NotFoundError('Refund record not found');
     }
 
-    if (refund.status !== 'APPROVED') {
+    if (refund.status === 'PROCESSED' || refund.status === 'REJECTED') {
       throw new ApiError(
         400,
         'Refund must be APPROVED before it can be processed',
@@ -198,6 +198,22 @@ export class RefundService {
         );
       }
 
+      await notificationService.sendToRole(
+        'SUPER_ADMIN',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Refund Processed Alert',
+        `Refund of ₹${refund.amount} processed for Booking #${refund.bookingId}. Reason: ${refund.reason}`,
+        { refundId: refund._id.toString() }
+      );
+      await notificationService.sendToRole(
+        'ADMIN',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        'Refund Processed Alert',
+        `Refund of ₹${refund.amount} processed for Booking #${refund.bookingId}. Reason: ${refund.reason}`,
+        { refundId: refund._id.toString() }
+      );
       await notificationService.sendToRole(
         'ACCOUNTS',
         NOTIFICATION_TYPE.IN_APP,
