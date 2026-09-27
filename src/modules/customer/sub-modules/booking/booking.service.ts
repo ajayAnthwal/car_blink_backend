@@ -179,7 +179,20 @@ export class BookingService {
         .populate('vehicleId')
         .populate('serviceId')
         .populate('cityId')
-        .populate('acceptedBidId')
+        .populate({
+        path: 'assignedPartnerId',
+        model: 'Partner',
+        populate: { path: 'userId', select: 'fullName email phone profileImage' }
+      })
+      .populate({
+        path: 'acceptedBidId',
+        model: 'Bid',
+        populate: {
+          path: 'partnerId',
+          model: 'Partner',
+          populate: { path: 'userId', select: 'fullName email phone profileImage' }
+        }
+      })
         .populate('assignedExecutiveId', 'fullName email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -244,6 +257,8 @@ export class BookingService {
     require('../../../master-data/models/service.model');
     require('../garage/garage.model');
     require('../../../partner/sub-modules/bidding/bid.model');
+    require('../../../partner/partner.model');
+    require('../../../user/user.model');
 
     const booking = await BookingModel.findById(bookingId)
       .populate('vehicleId')
@@ -271,20 +286,32 @@ export class BookingService {
     const hasPaid15PercentAdvance = payments && payments.some((p) => p.status === 'SUCCESS' && p.amount > 0);
     const isUnlocked = hasPaid15PercentAdvance || ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
 
-    let assignedPartner = (booking as any).assignedPartnerId;
-    if (assignedPartner && !isUnlocked) {
-      assignedPartner = {
-        ...assignedPartner,
-        businessName: 'Verified CarBlink Workshop',
-        businessAddress: 'Unlocked after 15% advance payment',
-        phone: '+91 XXXXX XXXXX',
-        userId: {
-          fullName: 'CarBlink Certified Partner',
-          email: 'unlocked_after_payment@carblink.in',
-          phone: '+91 XXXXX XXXXX'
-        }
-      };
+    let rawPartner: any = (booking as any).assignedPartnerId || (booking.acceptedBidId as any)?.partnerId || null;
+
+    if (rawPartner) {
+      if (!isUnlocked) {
+        rawPartner = {
+          _id: rawPartner._id,
+          businessName: 'Verified CarBlink Workshop',
+          businessAddress: 'Unlocked after 15% advance payment',
+          phone: '+91 XXXXX XXXXX',
+          rating: rawPartner.rating || 4.8,
+          userId: {
+            fullName: 'CarBlink Certified Partner',
+            email: 'unlocked_after_payment@carblink.in',
+            phone: '+91 XXXXX XXXXX'
+          }
+        };
+      } else {
+        rawPartner = {
+          ...rawPartner,
+          phone: rawPartner.phone || rawPartner.userId?.phone || '',
+          email: rawPartner.email || rawPartner.userId?.email || ''
+        };
+      }
     }
+
+    let assignedPartner = rawPartner;
 
     return {
       ...booking,
