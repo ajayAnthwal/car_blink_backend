@@ -12,7 +12,7 @@ const router = Router();
 
 // Secure all accounts endpoints to ACCOUNTS role only
 router.use(authMiddleware as any);
-router.use(roleMiddleware([ROLES.ACCOUNTS]) as any);
+router.use(roleMiddleware([ROLES.ACCOUNTS, ROLES.SUPER_ADMIN]) as any);
 
 router.use('/refunds', refundRouter);
 router.use('/settlements', settlementRouter);
