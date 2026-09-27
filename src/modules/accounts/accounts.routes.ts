@@ -24,4 +24,8 @@ router.get('/invoices', AccountsController.getMasterInvoices);
 router.get('/payouts', AccountsController.getExecutivePayouts);
 router.patch('/profile/pin', AccountsController.updateSecurityPin);
 
+router.get('/withdrawals', AccountsController.getWithdrawalRequests);
+router.patch('/withdrawals/:id/process', AccountsController.processWithdrawalRequest);
+router.patch('/withdrawals/:id/reject', AccountsController.rejectWithdrawalRequest);
+
 export default router;

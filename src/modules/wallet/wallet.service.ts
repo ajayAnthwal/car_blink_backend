@@ -291,6 +291,33 @@ export class WalletService {
       balanceAfter: wallet.balance,
     });
 
+    // Notify Accounts team & emit real-time socket event
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+      const { UserModel } = require('../user/user.model');
+      const { emitToUser } = require('../../sockets');
+
+      const accountsUsers = await UserModel.find({ role: 'ACCOUNTS' });
+      for (const accUser of accountsUsers) {
+        await notificationService.sendNotification(
+          accUser._id.toString(),
+          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          `Partner Withdrawal Request — ₹${amount}`,
+          `Partner ${partner?.businessName || 'Workshop'} requested a wallet withdrawal of ₹${amount}.`,
+          { withdrawalId: withdrawal._id.toString(), partnerId: partnerId.toString() }
+        );
+        emitToUser(accUser._id.toString(), 'new_withdrawal_request', {
+          withdrawalId: withdrawal._id,
+          partnerName: partner?.businessName || 'Partner',
+          amount
+        });
+      }
+    } catch (notifErr) {
+      console.error('Failed to send withdrawal notification to accounts:', notifErr);
+    }
+
     const razorpayXAccount = process.env.RAZORPAYX_ACCOUNT_NUMBER;
     const enableRazorpayX = process.env.ENABLE_RAZORPAYX === 'true';
 

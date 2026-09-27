@@ -178,4 +178,108 @@ export class AccountsService {
 
     return { payouts, total, page, limit };
   }
+
+  /**
+   * Get Partner Withdrawal Requests for Accounts
+   */
+  static async getWithdrawalRequests(query: any): Promise<{ withdrawals: any[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, parseInt(query.page || '1', 10));
+    const limit = Math.max(1, parseInt(query.limit || '10', 10));
+    const skip = (page - 1) * limit;
+
+    const filter: any = {};
+    if (query.status && query.status !== 'all') {
+      filter.status = query.status;
+    }
+
+    const WithdrawalRequestModel = mongoose.model('WithdrawalRequest');
+    const [withdrawals, total] = await Promise.all([
+      WithdrawalRequestModel.find(filter)
+        .populate({
+          path: 'partnerId',
+          select: 'businessName userId bankDetails phone email'
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      WithdrawalRequestModel.countDocuments(filter)
+    ]);
+
+    return { withdrawals, total, page, limit };
+  }
+
+  /**
+   * Process & Approve Partner Withdrawal Request
+   */
+  static async processWithdrawalRequest(userId: string, id: string, pin: string, referenceId?: string): Promise<any> {
+    await this.verifySecurityPin(userId, pin);
+    const WithdrawalRequestModel = mongoose.model('WithdrawalRequest');
+    const withdrawal: any = await WithdrawalRequestModel.findById(id);
+    if (!withdrawal) {
+      throw new ApiError(404, 'Withdrawal request not found', ERROR_CODES.NOT_FOUND);
+    }
+
+    withdrawal.status = 'COMPLETED';
+    withdrawal.processedAt = new Date();
+    if (referenceId) withdrawal.referenceId = referenceId;
+    await withdrawal.save();
+
+    // Notify Partner
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+      await notificationService.sendNotification(
+        withdrawal.partnerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        `Withdrawal Paid — ₹${withdrawal.amount}`,
+        `Your withdrawal request of ₹${withdrawal.amount} has been processed and paid out. Ref: ${referenceId || withdrawal._id}`,
+        { withdrawalId: withdrawal._id.toString() }
+      );
+    } catch (err) {
+      console.warn("Failed to send partner withdrawal notification:", err);
+    }
+
+    return withdrawal;
+  }
+
+  /**
+   * Reject Partner Withdrawal Request & Refund Wallet
+   */
+  static async rejectWithdrawalRequest(userId: string, id: string, pin: string, reason?: string): Promise<any> {
+    await this.verifySecurityPin(userId, pin);
+    const WithdrawalRequestModel = mongoose.model('WithdrawalRequest');
+    const withdrawal: any = await WithdrawalRequestModel.findById(id);
+    if (!withdrawal) {
+      throw new ApiError(404, 'Withdrawal request not found', ERROR_CODES.NOT_FOUND);
+    }
+
+    if (withdrawal.status === 'COMPLETED') {
+      throw new ApiError(400, 'Cannot reject an already completed withdrawal', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    withdrawal.status = 'FAILED';
+    withdrawal.failureReason = reason || 'Rejected by Accounts';
+    await withdrawal.save();
+
+    // Refund back to Partner Wallet
+    const { WalletModel } = require('../wallet/wallet.model');
+    const { LedgerTransactionModel, TRANSACTION_TYPE } = require('../wallet/ledger.model');
+    const wallet = await WalletModel.findOne({ partnerId: withdrawal.partnerId });
+    if (wallet) {
+      wallet.balance += withdrawal.amount;
+      await wallet.save();
+
+      await LedgerTransactionModel.create({
+        walletId: wallet._id,
+        amount: withdrawal.amount,
+        type: TRANSACTION_TYPE.CREDIT,
+        description: `Withdrawal Refunded - Ref: ${withdrawal._id}`,
+        balanceAfter: wallet.balance,
+      });
+    }
+
+    return withdrawal;
+  }
 }

@@ -26,4 +26,21 @@ export class AccountsController {
     const result = await AccountsService.getExecutivePayouts(req.query);
     return successResponse(res, result, 'Executive payouts retrieved successfully');
   });
+
+  public static getWithdrawalRequests = asyncHandler(async (req: IRequest, res: Response) => {
+    const result = await AccountsService.getWithdrawalRequests(req.query);
+    return successResponse(res, result, 'Withdrawal requests retrieved successfully');
+  });
+
+  public static processWithdrawalRequest = asyncHandler(async (req: IRequest, res: Response) => {
+    const { pin, referenceId } = req.body;
+    const result = await AccountsService.processWithdrawalRequest((req as any).user?._id || (req as any).user?.userId, req.params.id, pin, referenceId);
+    return successResponse(res, result, 'Withdrawal request processed & paid');
+  });
+
+  public static rejectWithdrawalRequest = asyncHandler(async (req: IRequest, res: Response) => {
+    const { pin, reason } = req.body;
+    const result = await AccountsService.rejectWithdrawalRequest((req as any).user?._id || (req as any).user?.userId, req.params.id, pin, reason);
+    return successResponse(res, result, 'Withdrawal request rejected & wallet refunded');
+  });
 }
