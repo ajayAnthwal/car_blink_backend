@@ -228,9 +228,9 @@ export class AuthService {
       throw new ApiError(400, 'Please enter your password');
     }
 
-    const isEmail = rawIdentifier.includes('@');
-    const cleanEmail = isEmail ? rawIdentifier.toLowerCase() : '';
-    const cleanPhone = !isEmail ? rawIdentifier.replace(/[^0-9]/g, '').slice(-10) : '';
+    const cleanEmail = rawIdentifier.includes('@') ? rawIdentifier.toLowerCase() : '';
+    const digitsOnly = rawIdentifier.replace(/[^0-9]/g, '');
+    const cleanPhone = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : '';
 
     // 1. Find user (explicitly selecting password)
     const user = await UserModel.findOne({
@@ -240,7 +240,8 @@ export class AuthService {
           { phone: cleanPhone },
           { phone: `+91${cleanPhone}` },
           { phone: `91${cleanPhone}` },
-          { phone: `+91 ${cleanPhone}` }
+          { phone: `+91 ${cleanPhone}` },
+          { phone: new RegExp(cleanPhone + '$') }
         ] : []),
         { email: rawIdentifier.toLowerCase() },
         { phone: rawIdentifier }
@@ -253,6 +254,10 @@ export class AuthService {
 
     if (!user.isActive) {
       throw new UnauthorizedError('Account is suspended. Please contact support.');
+    }
+
+    if (!user.password) {
+      throw new UnauthorizedError('This account was created without a password (via Google or Mobile OTP). Please click "Forgot password?" to set a password or sign in with Google.');
     }
 
     // 2. Compare password
