@@ -83,12 +83,21 @@ export class BookingService {
       const { notificationService } = require('../../../../modules/notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../../modules/notification/notification.model');
 
-      const payload = { bookingId: booking._id.toString() };
+      const { UserModel } = require('../../../user/user.model');
+      const custUser = await UserModel.findById(customerId).lean();
+
+      const payload = {
+        bookingId: booking._id.toString(),
+        name: custUser?.fullName || 'Customer',
+        phone: custUser?.phone || '',
+        source: 'Platform Booking',
+        message: data.description || 'New service booking requested',
+      };
       emitToRole('SUPER_ADMIN', 'new_lead', payload);
       emitToRole('EXECUTIVE', 'new_lead', payload);
 
       const title = 'New Service Booking';
-      const msg = `A new booking has been created for vehicle ID ${data.vehicleId}.`;
+      const msg = `A new booking #${booking._id.toString().slice(-8).toUpperCase()} created by ${custUser?.fullName || 'Customer'} (${custUser?.phone || ''}).`;
 
       await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
       await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);

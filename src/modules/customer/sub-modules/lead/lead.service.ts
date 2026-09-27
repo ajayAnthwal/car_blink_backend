@@ -88,12 +88,21 @@ export class LeadService {
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../../modules/notification/notification.model');
       const { emitToRole } = require('../../../../sockets');
       
-      const payload = { leadId: lead._id.toString(), source: lead.source };
+      const payload = {
+        leadId: lead._id.toString(),
+        source: lead.source,
+        name: lead.name || 'Customer',
+        phone: lead.phone || '',
+        city: lead.city || '',
+        vehicleBrand: lead.vehicleBrand || '',
+        vehicleModel: lead.vehicleModel || '',
+        message: lead.message || 'New lead received',
+      };
       emitToRole('SUPER_ADMIN', 'new_lead', payload);
       emitToRole('EXECUTIVE', 'new_lead', payload);
 
       const title = 'New Lead Received';
-      const msg = `A new ${lead.source?.replace('_', ' ')} has been submitted by ${lead.name}.`;
+      const msg = `A new ${lead.source ? lead.source.replace(/_/g, ' ') : 'Lead'} submitted by ${lead.name || 'Customer'} (${lead.phone || ''}).`;
 
       await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
       await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);

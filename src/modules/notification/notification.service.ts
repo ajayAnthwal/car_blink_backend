@@ -127,7 +127,7 @@ export class NotificationService {
     message: string,
     metadata?: Record<string, any>
   ): Promise<void> {
-    const users = await UserModel.find({ role, isActive: true }, '_id phone fullName');
+    const users = await UserModel.find({ role, isActive: { $ne: false } }, '_id phone fullName');
     if (users.length === 0) return;
 
     const payload = { title, message, metadata, timestamp: new Date(), isRead: false };
