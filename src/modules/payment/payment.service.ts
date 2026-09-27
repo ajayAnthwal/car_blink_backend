@@ -181,6 +181,40 @@ export class PaymentService {
       payment.paidAt = new Date();
       await payment.save();
 
+      // Automatically confirm booking & assign partner on successful 15% Advance / Full Payment
+      try {
+        if (payment.paymentType === PAYMENT_TYPE.ADVANCE || payment.paymentType === PAYMENT_TYPE.FULL) {
+          const booking: any = await BookingModel.findById(payment.bookingId);
+          if (booking && (booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED || booking.status === BOOKING_STATUS.QUOTED || booking.status === BOOKING_STATUS.PENDING)) {
+            booking.status = BOOKING_STATUS.ACCEPTED;
+            await booking.save();
+
+            if (booking.acceptedBidId) {
+              const BidModel = mongoose.model('Bid');
+              const JobModel = mongoose.model('Job');
+              const selectedBid: any = await BidModel.findById(booking.acceptedBidId);
+              if (selectedBid) {
+                selectedBid.status = 'ACCEPTED';
+                await selectedBid.save();
+
+                let job = await JobModel.findOne({ bookingId: booking._id });
+                if (!job) {
+                  await JobModel.create({
+                    bookingId: booking._id,
+                    partnerId: selectedBid.partnerId._id || selectedBid.partnerId,
+                    bidId: selectedBid._id,
+                    status: 'NOT_STARTED',
+                    finalAmount: selectedBid.quotedAmount,
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (confirmErr) {
+        logger.warn("Failed to auto-confirm booking on payment success:", confirmErr);
+      }
+
       if (payment.couponCode) {
         const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
         await CouponService.incrementCouponUsage(payment.couponCode);

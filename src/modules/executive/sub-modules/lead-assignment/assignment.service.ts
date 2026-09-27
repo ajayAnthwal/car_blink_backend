@@ -449,6 +449,20 @@ export class AssignmentService {
       throw new BadRequestError('No bid selected for this booking');
     }
 
+    const PaymentModel = mongoose.model('Payment');
+    const successfulPayments = await PaymentModel.find({
+      bookingId: booking._id,
+      status: 'SUCCESS'
+    }).lean();
+
+    const hasAdvance = successfulPayments && successfulPayments.some(
+      (p: any) => p.paymentType === 'ADVANCE' || p.paymentType === 'FULL' || p.amount > 0
+    );
+
+    if (!hasAdvance) {
+      throw new BadRequestError('Customer has selected the quote but HAS NOT paid the 15% advance token yet. 15% advance payment is required to confirm booking.');
+    }
+
     const selectedBid: any = await BidModel.findById(booking.acceptedBidId).populate('partnerId');
     if (!selectedBid) {
       throw new NotFoundError('Selected bid not found');
