@@ -142,7 +142,8 @@ export class NotificationService {
       isRead: false
     }));
 
-    await NotificationModel.insertMany(notifications);
+    const savedDocs = await NotificationModel.insertMany(notifications);
+    savedDocs.forEach(doc => { emitToUser(doc.userId.toString(), 'notification:new', doc.toJSON ? doc.toJSON() : doc); });
     emitToRole(role, 'notification:new', payload);
 
     // Multi-Role WhatsApp Alert Broadcast (Admin, Executive, Accounts, Partner)

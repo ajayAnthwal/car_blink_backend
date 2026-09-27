@@ -104,8 +104,8 @@ export class LeadService {
       const title = 'New Lead Received';
       const msg = `A new ${lead.source ? lead.source.replace(/_/g, ' ') : 'Lead'} submitted by ${lead.name || 'Customer'} (${lead.phone || ''}).`;
 
-      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
-      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.IN_APP, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.IN_APP, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
     } catch (err: any) {
       const { logger } = require('../../../../config/logger.config');
       logger.warn('Failed to send lead creation notification:', err);
@@ -196,8 +196,8 @@ export class LeadService {
         // Also notify Executive & Admin Team on WhatsApp & Console
         const execTitle = `Lead Updated to ${String(status).replace('_', ' ')}`;
         const execMsg = `Lead for ${lead.name} (${lead.phone}) has been updated to ${String(status).replace('_', ' ')}.`;
-        await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.JOB_STATUS, execTitle, execMsg, { leadId: lead._id.toString() });
-        await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.JOB_STATUS, execTitle, execMsg, { leadId: lead._id.toString() });
+        await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.IN_APP, NOTIFICATION_CATEGORY.JOB_STATUS, execTitle, execMsg, { leadId: lead._id.toString() });
+        await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.IN_APP, NOTIFICATION_CATEGORY.JOB_STATUS, execTitle, execMsg, { leadId: lead._id.toString() });
       } catch (waErr) {
         console.warn('[LeadService] WhatsApp lead status alert warning:', waErr);
       }

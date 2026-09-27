@@ -99,8 +99,8 @@ export class BookingService {
       const title = 'New Service Booking';
       const msg = `A new booking #${booking._id.toString().slice(-8).toUpperCase()} created by ${custUser?.fullName || 'Customer'} (${custUser?.phone || ''}).`;
 
-      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
-      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.SYSTEM, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+      await notificationService.sendToRole('SUPER_ADMIN', NOTIFICATION_TYPE.IN_APP, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
+      await notificationService.sendToRole('EXECUTIVE', NOTIFICATION_TYPE.IN_APP, NOTIFICATION_CATEGORY.LEAD_CREATED, title, msg, payload);
     } catch (err: any) {
       const { logger } = require('../../../../config/logger.config');
       logger.warn('Failed to send booking creation notification:', err);
@@ -745,7 +745,7 @@ export class BookingService {
 
       await notificationService.sendToRole(
         'EXECUTIVE',
-        NOTIFICATION_TYPE.SYSTEM,
+        NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.JOB_STATUS,
         payload.title,
         payload.message,
