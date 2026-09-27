@@ -36,6 +36,7 @@ export interface IBooking extends Document {
   updatedAt: Date;
 }
 
+
 const BookingSchema = new Schema<IBooking>(
   {
     customerId: {
