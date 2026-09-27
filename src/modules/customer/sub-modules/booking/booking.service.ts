@@ -301,14 +301,40 @@ export class BookingService {
 
     let rawPartner: any = (booking as any).assignedPartnerId || (booking.acceptedBidId as any)?.partnerId || null;
 
+    if (!rawPartner) {
+      try {
+        const acceptedBid = await BidModel.findOne({
+          bookingId: booking._id,
+          status: { $in: ['ACCEPTED', 'CUSTOMER_ACCEPTED', 'CONFIRMED'] }
+        })
+        .populate({
+          path: 'partnerId',
+          model: 'Partner',
+          populate: { path: 'userId', select: 'fullName email phone profileImage' }
+        })
+        .lean();
+
+        if (acceptedBid && (acceptedBid as any).partnerId) {
+          rawPartner = (acceptedBid as any).partnerId;
+        }
+      } catch (bidErr) {}
+    }
+
     if (rawPartner) {
+      if (typeof rawPartner === 'string' || rawPartner instanceof mongoose.Types.ObjectId) {
+        try {
+          const { PartnerModel } = require('../../../partner/partner.model');
+          rawPartner = await PartnerModel.findById(rawPartner).populate('userId', 'fullName email phone profileImage').lean();
+        } catch (pErr) {}
+      }
+
       if (!isUnlocked) {
         rawPartner = {
           _id: rawPartner._id,
           businessName: 'Verified CarBlink Workshop',
           businessAddress: 'Unlocked after 15% advance payment',
           phone: '+91 XXXXX XXXXX',
-          rating: rawPartner.rating || 4.8,
+          rating: rawPartner?.rating || 4.8,
           userId: {
             fullName: 'CarBlink Certified Partner',
             email: 'unlocked_after_payment@carblink.in',
@@ -316,10 +342,18 @@ export class BookingService {
           }
         };
       } else {
+        const userObj = rawPartner?.userId && typeof rawPartner.userId === 'object' ? rawPartner.userId : null;
         rawPartner = {
           ...rawPartner,
-          phone: rawPartner.phone || rawPartner.userId?.phone || '',
-          email: rawPartner.email || rawPartner.userId?.email || ''
+          businessName: rawPartner?.businessName || userObj?.fullName || 'Verified Service Partner',
+          businessAddress: rawPartner?.businessAddress || 'Verified Partner Address',
+          phone: rawPartner?.phone || userObj?.phone || '',
+          email: rawPartner?.email || userObj?.email || '',
+          userId: userObj || {
+            fullName: rawPartner?.businessName || 'Verified Service Partner',
+            phone: rawPartner?.phone || '',
+            email: rawPartner?.email || ''
+          }
         };
       }
     }
@@ -488,6 +522,7 @@ export class BookingService {
     // 3. Mark booking as CUSTOMER_ACCEPTED and store acceptedBidId (Pending Executive confirmation)
     booking.status = BOOKING_STATUS.CUSTOMER_ACCEPTED;
     booking.acceptedBidId = selectedBid._id;
+    (booking as any).assignedPartnerId = selectedBid.partnerId?._id || selectedBid.partnerId;
     await booking.save();
 
     // 4. Emit live socket events & Notifications to Executive & Super Admin ONLY
