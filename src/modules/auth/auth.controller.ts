@@ -8,7 +8,7 @@ export class AuthController {
   public static register = asyncHandler(async (req: Request, res: Response) => {
     const result = await AuthService.registerUser(req.body);
     if (result.tokens) {
-      const cookieOpts = { secure: process.env.NODE_ENV === 'production', sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' };
+      const isProd = process.env.NODE_ENV === 'production'; const domain = isProd ? '.carblink.in' : undefined; const cookieOpts = { secure: isProd, sameSite: (isProd ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/', ...(domain ? { domain } : {}) };
       res.cookie('accessToken', result.tokens.accessToken, { ...cookieOpts, httpOnly: true });
       res.cookie('car_blink_access_token', result.tokens.accessToken, { ...cookieOpts, httpOnly: false });
       res.cookie('refreshToken', result.tokens.refreshToken, { ...cookieOpts, httpOnly: true });
@@ -23,7 +23,7 @@ export class AuthController {
     const result = await AuthService.verifyOtp(identifier, otp);
     
     if (result.tokens) {
-      const cookieOpts = { secure: process.env.NODE_ENV === 'production', sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' };
+      const isProd = process.env.NODE_ENV === 'production'; const domain = isProd ? '.carblink.in' : undefined; const cookieOpts = { secure: isProd, sameSite: (isProd ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/', ...(domain ? { domain } : {}) };
       res.cookie('accessToken', result.tokens.accessToken, { ...cookieOpts, httpOnly: true });
       res.cookie('car_blink_access_token', result.tokens.accessToken, { ...cookieOpts, httpOnly: false });
       res.cookie('refreshToken', result.tokens.refreshToken, { ...cookieOpts, httpOnly: true });
@@ -38,7 +38,7 @@ export class AuthController {
     const result = await AuthService.loginUser(req.body);
     
     if (result.tokens) {
-      const cookieOpts = { secure: process.env.NODE_ENV === 'production', sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' };
+      const isProd = process.env.NODE_ENV === 'production'; const domain = isProd ? '.carblink.in' : undefined; const cookieOpts = { secure: isProd, sameSite: (isProd ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/', ...(domain ? { domain } : {}) };
       res.cookie('accessToken', result.tokens.accessToken, { ...cookieOpts, httpOnly: true });
       res.cookie('car_blink_access_token', result.tokens.accessToken, { ...cookieOpts, httpOnly: false });
       res.cookie('refreshToken', result.tokens.refreshToken, { ...cookieOpts, httpOnly: true });
@@ -105,7 +105,7 @@ export class AuthController {
   public static googleLogin = asyncHandler(async (req: Request, res: Response) => {
     const result = await AuthService.googleAuth(req.body);
     if (result.tokens) {
-      const cookieOpts = { secure: process.env.NODE_ENV === 'production', sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' };
+      const isProd = process.env.NODE_ENV === 'production'; const domain = isProd ? '.carblink.in' : undefined; const cookieOpts = { secure: isProd, sameSite: (isProd ? 'none' : 'lax') as any, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/', ...(domain ? { domain } : {}) };
       res.cookie('accessToken', result.tokens.accessToken, { ...cookieOpts, httpOnly: true });
       res.cookie('car_blink_access_token', result.tokens.accessToken, { ...cookieOpts, httpOnly: false });
       res.cookie('refreshToken', result.tokens.refreshToken, { ...cookieOpts, httpOnly: true });
