@@ -35,8 +35,22 @@ const GarageSchema = new Schema<IGarage>(
     },
     fuelType: {
       type: String,
+      uppercase: true,
+      trim: true,
+      set: (val: any) => {
+        if (!val || typeof val !== 'string') return val;
+        const upper = val.trim().toUpperCase();
+        if (upper === 'EV' || upper === 'ELECTRICAL') return 'ELECTRIC';
+        if (upper.includes('PETROL') && upper.includes('CNG')) return 'CNG';
+        return upper;
+      },
       enum: {
-        values: ['PETROL', 'DIESEL', 'ELECTRIC', 'CNG', 'HYBRID'],
+        values: [
+          'PETROL', 'DIESEL', 'ELECTRIC', 'EV', 'CNG', 'HYBRID',
+          'petrol', 'diesel', 'electric', 'ev', 'cng', 'hybrid',
+          'Petrol', 'Diesel', 'Electric', 'Cng', 'Hybrid',
+          'PETROL+CNG', 'CNG+PETROL', 'LPG', 'lpg'
+        ],
         message: '{VALUE} is not a valid fuel type',
       },
       required: [true, 'Fuel type is required'],

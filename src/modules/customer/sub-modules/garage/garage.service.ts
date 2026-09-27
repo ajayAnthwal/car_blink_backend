@@ -7,6 +7,11 @@ export class GarageService {
     customerId: string,
     data: Partial<IGarage>
   ): Promise<IGarage> {
+    if (data.fuelType && typeof data.fuelType === 'string') {
+      let f = data.fuelType.trim().toUpperCase();
+      if (f === 'EV' || f === 'ELECTRICAL') f = 'ELECTRIC';
+      data.fuelType = f as any;
+    }
     const newVehicle = await GarageModel.create({
       ...data,
       customerId,
