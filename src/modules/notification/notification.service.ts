@@ -71,14 +71,14 @@ export class NotificationService {
     if (user.phone && category !== NOTIFICATION_CATEGORY.OTP) {
       try {
         const { whatsappProvider } = require('./providers/whatsapp.provider');
-        let portalUrl = 'https://dashboard.carblink.in/login';
+        let portalUrl = 'https://dashboard.carblink.in/';
         if (user.role === 'PARTNER') portalUrl = 'https://dashboard.carblink.in/partner/leads';
         if (user.role === 'EXECUTIVE') portalUrl = 'https://dashboard.carblink.in/executive/leads';
         if (user.role === 'CUSTOMER') portalUrl = 'https://dashboard.carblink.in/customer/dashboard';
         if (user.role === 'ACCOUNTS') portalUrl = 'https://dashboard.carblink.in/accounts/dashboard';
         if (user.role === 'SUPER_ADMIN') portalUrl = 'https://dashboard.carblink.in/admin/dashboard';
 
-        const waMessage = `${title}: ${message}`;
+        const waMessage = `${title}: ${message}. Login to Dashboard: ${portalUrl}`;
         await whatsappProvider.sendWhatsAppTemplate(
           user.phone,
           'carblink_verification_notice',
