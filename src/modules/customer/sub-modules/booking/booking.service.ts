@@ -896,8 +896,12 @@ export class BookingService {
 
   public static async verifyBookingCustomerAccess(booking: any, customerId: string): Promise<boolean> {
     if (!booking) return false;
-    const bCustId = booking.customerId ? booking.customerId.toString() : '';
-    if (bCustId === customerId) return true;
+    const bCustId = booking.customerId
+      ? (typeof booking.customerId === 'object' && booking.customerId._id
+          ? String(booking.customerId._id)
+          : String(booking.customerId))
+      : '';
+    if (bCustId && bCustId === String(customerId)) return true;
 
     try {
       const { UserModel } = require('../../../user/user.model');
@@ -906,14 +910,18 @@ export class BookingService {
 
       if (user.role === 'SUPER_ADMIN' || user.role === 'EXECUTIVE') return true;
 
-      const userPhone = user.phone ? user.phone.trim() : null;
-      if (userPhone) {
-        const bPhone = (booking.phone || booking.customerPhone || '').trim();
-        if (bPhone && bPhone === userPhone) {
-          // Auto link customerId for future queries
-          BookingModel.updateOne({ _id: booking._id || booking.id }, { $set: { customerId } }).exec();
-          return true;
-        }
+      const userPhone = user.phone ? user.phone.trim().replace(/[^0-9]/g, '').slice(-10) : null;
+      const bPhone = (
+        (typeof booking.customerId === 'object' && booking.customerId?.phone) ||
+        booking.phone ||
+        booking.customerPhone ||
+        ''
+      ).trim().replace(/[^0-9]/g, '').slice(-10);
+
+      if (userPhone && bPhone && userPhone === bPhone) {
+        // Auto link customerId for future queries
+        BookingModel.updateOne({ _id: booking._id || booking.id }, { $set: { customerId } }).exec();
+        return true;
       }
     } catch (err) {
       console.error("Error in verifyBookingCustomerAccess:", err);
@@ -928,7 +936,12 @@ export class BookingService {
       throw new NotFoundError('Booking not found');
     }
     const hasAccess = await this.verifyBookingCustomerAccess(booking, customerId);
-    if (!hasAccess && booking.customerId?.toString() !== customerId) {
+    const bCustId = booking.customerId
+      ? (typeof booking.customerId === 'object' && booking.customerId._id
+          ? String(booking.customerId._id)
+          : String(booking.customerId))
+      : '';
+    if (!hasAccess && bCustId !== String(customerId)) {
       throw new UnauthorizedError('Unauthorized to update this booking');
     }
     booking.paymentMode = paymentMode;
