@@ -11,7 +11,9 @@ export interface IBooking extends Document {
   status: BOOKING_STATUS;
   acceptedBidId?: mongoose.Types.ObjectId;
   forwardedBidIds?: mongoose.Types.ObjectId[];
+  assignedPartnerId?: mongoose.Types.ObjectId;
   assignedExecutiveId?: mongoose.Types.ObjectId;
+  hasPaidAdvance?: boolean;
   beforePhotos: string[];
   afterPhotos: string[];
   cancellationReason?: string;
@@ -27,6 +29,9 @@ export interface IBooking extends Document {
   address?: string;
   landmark?: string;
   remarks?: string;
+  verificationCode?: string;
+  isVerifiedByPartner?: boolean;
+  verifiedAt?: Date;
   satisfactionStatus?: 'NOT_SENT' | 'PENDING_CUSTOMER' | 'SATISFIED' | 'DISSATISFIED';
   satisfactionRating?: number;
   satisfactionFeedback?: string;
@@ -84,6 +89,11 @@ const BookingSchema = new Schema<IBooking>(
       type: Schema.Types.ObjectId,
       ref: 'Bid',
     }],
+    assignedPartnerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Partner',
+      default: null,
+    },
     assignedExecutiveId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -142,6 +152,17 @@ const BookingSchema = new Schema<IBooking>(
     remarks: {
       type: String,
       trim: true,
+    },
+    verificationCode: {
+      type: String,
+      trim: true,
+    },
+    isVerifiedByPartner: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedAt: {
+      type: Date,
     },
     satisfactionStatus: {
       type: String,

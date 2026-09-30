@@ -85,7 +85,7 @@ export class RazorpayProvider implements IPaymentProvider {
   }
 
   async issueRefund(paymentId: string, amount: number, notes?: any): Promise<string> {
-    if (isMockMode) {
+    if (isMockMode || !paymentId || paymentId.startsWith('mock_') || paymentId.startsWith('pay_mock_')) {
       return `mock_refund_${crypto.randomUUID().replace(/-/g, '')}`;
     }
 

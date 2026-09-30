@@ -141,9 +141,9 @@ export class SuperAdminBookingsService {
   }
 
   /**
-   * Force cancel a booking as super admin
+   * Force cancel a booking as super admin with audit log
    */
-  async cancelBooking(bookingId: string, reason: string) {
+  async cancelBooking(adminUserId: string, adminRole: string, bookingId: string, reason: string) {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) {
       throw new NotFoundError('Booking not found');
@@ -152,6 +152,139 @@ export class SuperAdminBookingsService {
     booking.status = BOOKING_STATUS.CANCELLED;
     booking.cancellationReason = `Super Admin: ${reason || 'Cancelled by administration'}`;
     await booking.save();
+
+    try {
+      const AuditLog = require('../audit-logs/audit-log.model').default;
+      await AuditLog.create({
+        userId: adminUserId,
+        userRole: adminRole || 'SUPER_ADMIN',
+        action: 'SUPER_ADMIN_CANCEL_BOOKING',
+        endpoint: `/api/super-admin/bookings/${bookingId}/cancel`,
+        method: 'PUT',
+        payload: {
+          bookingId,
+          reason: reason || 'Cancelled by administration',
+        },
+        status: 'SUCCESS',
+      });
+    } catch (auditErr) {
+      console.error('Audit Log Error:', auditErr);
+    }
+
+    return booking;
+  }
+
+  /**
+   * Super Admin Manual Booking / Workflow Bypass & Assignment
+   */
+  async manualAssignAndBypass(
+    adminUserId: string,
+    adminRole: string,
+    bookingId: string,
+    data: {
+      partnerId?: string;
+      executiveId?: string;
+      status?: string;
+      quotedAmount?: number;
+      overridePayment?: boolean;
+      reason: string;
+    }
+  ) {
+    const { partnerId, executiveId, status, quotedAmount, overridePayment, reason } = data;
+
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    const prevStatus = booking.status;
+    const updatesPerformed: string[] = [];
+
+    if (partnerId && mongoose.Types.ObjectId.isValid(partnerId)) {
+      booking.assignedPartnerId = partnerId as any;
+      updatesPerformed.push(`Partner assigned (${partnerId})`);
+    }
+
+    if (executiveId && mongoose.Types.ObjectId.isValid(executiveId)) {
+      booking.assignedExecutiveId = executiveId as any;
+      updatesPerformed.push(`Executive assigned (${executiveId})`);
+    }
+
+    if (status) {
+      booking.status = status as any;
+      updatesPerformed.push(`Status changed from ${prevStatus} to ${status}`);
+    }
+
+    if (overridePayment) {
+      booking.hasPaidAdvance = true;
+      const { PaymentModel } = require('../../../payment/payment.model');
+      const existingSuccessPayment = await PaymentModel.findOne({ bookingId: booking._id, status: 'SUCCESS' });
+      if (!existingSuccessPayment) {
+        await PaymentModel.create({
+          bookingId: booking._id,
+          customerId: booking.customerId,
+          amount: quotedAmount || 500,
+          paymentType: 'ADVANCE',
+          status: 'SUCCESS',
+          provider: 'SUPER_ADMIN_BYPASS',
+          paidAt: new Date(),
+        });
+      }
+      updatesPerformed.push(`Payment requirement bypassed & marked as PAID`);
+    }
+
+    await booking.save();
+
+    if (partnerId && mongoose.Types.ObjectId.isValid(partnerId)) {
+      const { JobModel } = require('../../../partner/sub-modules/jobs/job.model');
+      const existingJob = await JobModel.findOne({ bookingId: booking._id });
+      const jobStatus = status === 'COMPLETED' ? 'COMPLETED' : status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'ASSIGNED';
+
+      if (!existingJob) {
+        await JobModel.create({
+          bookingId: booking._id,
+          partnerId: partnerId,
+          customerId: booking.customerId,
+          serviceId: booking.serviceId,
+          vehicleId: booking.vehicleId,
+          status: jobStatus,
+          jobDetails: { finalAmount: quotedAmount || 0 },
+        });
+      } else {
+        existingJob.partnerId = partnerId as any;
+        if (status) existingJob.status = jobStatus as any;
+        if (quotedAmount) {
+          existingJob.jobDetails = existingJob.jobDetails || {};
+          existingJob.jobDetails.finalAmount = quotedAmount;
+        }
+        await existingJob.save();
+      }
+    }
+
+    // Write audit log entry
+    try {
+      const AuditLog = require('../audit-logs/audit-log.model').default;
+      await AuditLog.create({
+        userId: adminUserId,
+        userRole: adminRole || 'SUPER_ADMIN',
+        action: 'SUPER_ADMIN_MANUAL_BYPASS',
+        endpoint: `/api/super-admin/bookings/${bookingId}/manual-assign`,
+        method: 'POST',
+        payload: {
+          bookingId,
+          partnerId,
+          executiveId,
+          status,
+          quotedAmount,
+          overridePayment,
+          reason: reason || 'Manual workflow override by Super Admin',
+          summary: updatesPerformed.join(', '),
+        },
+        status: 'SUCCESS',
+      });
+    } catch (auditErr) {
+      console.error('Audit Log Error:', auditErr);
+    }
 
     return booking;
   }

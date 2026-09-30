@@ -20,8 +20,18 @@ export class SuperAdminBookingsController {
   public static cancelBooking = asyncHandler(async (req: IRequest, res: Response) => {
     const { id } = req.params;
     const { reason } = req.body;
-    const booking = await superAdminBookingsService.cancelBooking(id, reason);
+    const adminUserId = req.user?.userId || 'system';
+    const adminRole = req.user?.role || 'SUPER_ADMIN';
+    const booking = await superAdminBookingsService.cancelBooking(adminUserId, adminRole, id, reason);
     return successResponse(res, booking, 'Booking cancelled successfully');
+  });
+
+  public static manualAssignAndBypass = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const adminUserId = req.user?.userId || 'system';
+    const adminRole = req.user?.role || 'SUPER_ADMIN';
+    const booking = await superAdminBookingsService.manualAssignAndBypass(adminUserId, adminRole, id, req.body);
+    return successResponse(res, booking, 'Manual override/assignment executed successfully');
   });
 }
 

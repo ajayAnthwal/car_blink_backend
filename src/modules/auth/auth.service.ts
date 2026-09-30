@@ -108,6 +108,80 @@ export class AuthService {
       newUser = await UserModel.create(userData);
     }
 
+    // 3b. If registration role is PARTNER, create/update detailed Partner profile
+    if (data.role === ROLES.PARTNER || requestedRole === ROLES.PARTNER) {
+      try {
+        const { PartnerModel } = require('../partner/partner.model');
+        const { autoResolvePartnerLocation } = require('../partner/partner.service');
+        const rawAddress = (data.businessAddress || data.address || '').trim();
+        
+        let resolvedCoords: [number, number] = [78.0322, 30.3165]; // Dehradun default
+        if (data.longitude && data.latitude) {
+          resolvedCoords = [Number(data.longitude), Number(data.latitude)];
+        } else if (rawAddress) {
+          const autoCoords = autoResolvePartnerLocation(rawAddress);
+          if (autoCoords) resolvedCoords = autoCoords;
+        }
+
+        const partnerData: any = {
+          userId: newUser._id,
+          businessName: (data.businessName || data.fullName).trim(),
+          ownerName: (data.ownerName || data.fullName).trim(),
+          businessAddress: rawAddress || 'Workshop Address',
+          gstNumber: data.gstNumber ? data.gstNumber.trim().toUpperCase() : undefined,
+          msmeNumber: data.msmeNumber ? data.msmeNumber.trim().toUpperCase() : undefined,
+          executiveVerificationStatus: 'PENDING',
+          verificationStatus: 'PENDING',
+          isVerified: false,
+          location: {
+            type: 'Point',
+            coordinates: resolvedCoords
+          },
+        };
+        if (data.cityId) partnerData.cityId = data.cityId;
+
+        const createdPartner = await PartnerModel.findOneAndUpdate(
+          { userId: newUser._id },
+          { $set: partnerData },
+          { upsert: true, new: true }
+        );
+
+        // Send In-App Notifications & Real-Time Socket Event to Executive & Super Admin
+        try {
+          const { notificationService } = require('../notification/notification.service');
+          const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+          const { emitToRole } = require('../../sockets');
+
+          await notificationService.sendToRole(
+            'EXECUTIVE',
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.SYSTEM,
+            'New Partner Registered',
+            `New Workshop Partner "${partnerData.businessName}" (${partnerData.ownerName}, Ph: ${newUser.phone || data.phone}) has registered. Verification Pending.`,
+            { partnerId: createdPartner._id.toString(), userId: newUser._id.toString() }
+          );
+
+          await notificationService.sendToRole(
+            'SUPER_ADMIN',
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.SYSTEM,
+            'New Partner Registered',
+            `New Workshop Partner "${partnerData.businessName}" (${partnerData.ownerName}, Ph: ${newUser.phone || data.phone}) has registered. Verification Pending.`,
+            { partnerId: createdPartner._id.toString(), userId: newUser._id.toString() }
+          );
+
+          emitToRole('EXECUTIVE', 'partner_registered', { partner: createdPartner });
+          emitToRole('SUPER_ADMIN', 'partner_registered', { partner: createdPartner });
+          emitToRole('EXECUTIVE', 'partner_status_updated', { partnerId: createdPartner._id, status: 'PENDING', executiveVerificationStatus: 'PENDING' });
+          emitToRole('SUPER_ADMIN', 'partner_status_updated', { partnerId: createdPartner._id, status: 'PENDING', executiveVerificationStatus: 'PENDING' });
+        } catch (notifErr) {
+          console.error('[AuthService] Error sending partner registration notification:', notifErr);
+        }
+      } catch (partnerErr) {
+        console.error('[AuthService] Error creating Partner document during registration:', partnerErr);
+      }
+    }
+
     // 4. Auto-link any past guest bookings or leads created with this phone/email to the new user ID
     try {
       const { BookingModel } = require('../customer/sub-modules/booking/booking.model');
@@ -136,6 +210,7 @@ export class AuthService {
 
     const userObj = newUser.toObject();
     delete userObj.password;
+    await AuthService.populatePartnerDetails(userObj, newUser._id);
 
     // Trigger Account Registration Welcome SMS
     if (cleanPhone) {
@@ -212,6 +287,7 @@ export class AuthService {
 
     const userObj = user.toObject();
     delete userObj.password;
+    await AuthService.populatePartnerDetails(userObj, user._id);
 
     return {
       user: userObj,
@@ -220,7 +296,7 @@ export class AuthService {
   }
 
   public static async loginUser(data: LoginInput): Promise<{ user: Partial<IUser>; tokens: AuthTokens }> {
-    const rawIdentifier = data.identifier ? data.identifier.trim() : '';
+    const rawIdentifier = (data.identifier || (data as any).email || (data as any).phone || '').trim();
     if (!rawIdentifier) {
       throw new ApiError(400, 'Please enter your registered mobile number or email address');
     }
@@ -277,6 +353,7 @@ export class AuthService {
 
     const userObj = user.toObject();
     delete userObj.password;
+    await AuthService.populatePartnerDetails(userObj, user._id);
 
     return {
       user: userObj,
@@ -338,29 +415,36 @@ export class AuthService {
     forgotCooldownMap.set(identifier.trim(), Date.now());
     const rawInput = identifier.trim();
     const isEmail = rawInput.includes('@');
+    let cleanIdentifier = '';
 
     if (isEmail) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(rawInput)) {
         throw new ApiError(400, 'Please enter a valid email address');
       }
+      cleanIdentifier = rawInput.toLowerCase();
     } else {
-      if (/[^\d]/.test(rawInput)) {
-        throw new ApiError(400, 'Mobile number must contain digits only (10 digits required)');
-      }
-      if (rawInput.length !== 10) {
-        throw new ApiError(400, 'Mobile number must be exactly 10 digits');
+      const digitsOnly = rawInput.replace(/[^0-9]/g, '');
+      const cleanPhone = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+      if (cleanPhone.length !== 10) {
+        throw new ApiError(400, 'Mobile number must be a valid 10-digit number');
       }
       const phoneRegex = /^[6-9]\d{9}$/;
-      if (!phoneRegex.test(rawInput)) {
+      if (!phoneRegex.test(cleanPhone)) {
         throw new ApiError(400, 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9');
       }
+      cleanIdentifier = cleanPhone;
     }
-
-    const cleanIdentifier = isEmail ? rawInput.toLowerCase() : rawInput.replace(/[^0-9]/g, '');
 
     let user = await UserModel.findOne({
       $or: [
+        ...(isEmail ? [{ email: cleanIdentifier }] : []),
+        ...(!isEmail ? [
+          { phone: cleanIdentifier },
+          { phone: `+91${cleanIdentifier}` },
+          { phone: `91${cleanIdentifier}` },
+          { phone: rawInput }
+        ] : []),
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
         { phone: rawInput }
@@ -428,13 +512,33 @@ export class AuthService {
     };
   }
 
-    public static async resetPassword(data: { identifier: string; token: string; newPassword?: string }): Promise<{ message: string }> {
-    const rawInput = data.identifier.trim();
+  public static async resetPassword(data: { identifier: string; token?: string; otp?: string; newPassword?: string; password?: string }): Promise<{ message: string }> {
+    const rawInput = (data.identifier || (data as any).email || (data as any).phone || '').trim();
+    const token = (data.token || data.otp || '').trim();
+    const newPassword = data.newPassword || data.password;
+
+    if (!rawInput) {
+      throw new ApiError(400, 'Email or phone number is required');
+    }
+    if (!token) {
+      throw new ApiError(400, 'Reset token or OTP is required');
+    }
+    if (!newPassword || newPassword.length < 6) {
+      throw new ApiError(400, 'New password must be at least 6 characters');
+    }
+
     const isEmail = rawInput.includes('@');
-    const cleanIdentifier = isEmail ? rawInput.toLowerCase() : rawInput.replace(/[^0-9]/g, '');
+    const cleanIdentifier = isEmail ? rawInput.toLowerCase() : rawInput.replace(/[^0-9]/g, '').slice(-10);
 
     const user = await UserModel.findOne({
       $or: [
+        ...(isEmail ? [{ email: cleanIdentifier }] : []),
+        ...(!isEmail && cleanIdentifier ? [
+          { phone: cleanIdentifier },
+          { phone: `+91${cleanIdentifier}` },
+          { phone: `91${cleanIdentifier}` },
+          { phone: rawInput }
+        ] : []),
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
         { phone: rawInput }
@@ -446,20 +550,16 @@ export class AuthService {
     }
 
     const { verifyStoredOtp } = require('./strategies/otp.strategy');
-    const isValid = verifyStoredOtp(rawInput, data.token) || 
-                    verifyStoredOtp(cleanIdentifier, data.token) ||
-                    (user.email ? verifyStoredOtp(user.email, data.token) : false) || 
-                    (user.phone ? verifyStoredOtp(user.phone, data.token) : false);
+    const isValid = verifyStoredOtp(rawInput, token) || 
+                    verifyStoredOtp(cleanIdentifier, token) ||
+                    (user.email ? verifyStoredOtp(user.email, token) : false) || 
+                    (user.phone ? verifyStoredOtp(user.phone, token) : false);
 
     if (!isValid) {
       throw new ApiError(400, 'Invalid or expired reset OTP code');
     }
 
-    if (!data.newPassword || data.newPassword.length < 6) {
-      throw new ApiError(400, 'New password must be at least 6 characters');
-    }
-
-    user.password = data.newPassword;
+    user.password = newPassword;
     await user.save();
 
     if (user.phone) {
@@ -484,6 +584,8 @@ export class AuthService {
     
     const userObj = user.toObject();
     delete userObj.password;
+    await AuthService.populatePartnerDetails(userObj, user._id);
+
     return userObj;
   }
 
@@ -576,12 +678,31 @@ export class AuthService {
 
     const userObj = user.toObject();
     delete userObj.password;
+    await AuthService.populatePartnerDetails(userObj, user._id);
 
     return {
       user: userObj,
       tokens: { accessToken, refreshToken },
       message: 'Google authentication successful',
     };
+  }
+
+  private static async populatePartnerDetails(userObj: any, userId: any): Promise<void> {
+    if (userObj.role === ROLES.PARTNER) {
+      try {
+        const { PartnerModel } = require('../partner/partner.model');
+        const partner = await PartnerModel.findOne({ userId }).lean();
+        if (partner) {
+          userObj.partnerInfo = partner;
+          userObj.partnerDetails = partner;
+          userObj.isVerified = !!partner.isVerified;
+          userObj.verificationStatus = partner.verificationStatus || 'PENDING';
+          userObj.executiveVerificationStatus = partner.executiveVerificationStatus || 'PENDING';
+        }
+      } catch (pErr) {
+        console.error('[AuthService] Error populating partner details:', pErr);
+      }
+    }
   }
 
   public static async deleteUserById(userId: string): Promise<{ message: string }> {

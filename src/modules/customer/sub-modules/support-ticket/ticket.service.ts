@@ -13,12 +13,9 @@ export class TicketService {
     data: { bookingId?: string; subject: string; description: string; priority?: 'LOW' | 'MEDIUM' | 'HIGH' }
   ): Promise<ISupportTicket> {
     // Optional: verify booking ownership if bookingId is provided
-    if (data.bookingId) {
+    if (data.bookingId && mongoose.Types.ObjectId.isValid(data.bookingId)) {
       const booking = await BookingModel.findById(data.bookingId);
-      if (!booking) {
-        throw new NotFoundError('Booking not found');
-      }
-      if (booking.customerId.toString() !== customerId) {
+      if (booking && booking.customerId.toString() !== customerId) {
         throw new UnauthorizedError('You do not own this booking');
       }
     }
@@ -85,6 +82,14 @@ export class TicketService {
     
     const [tickets, total] = await Promise.all([
       SupportTicketModel.find(filter)
+        .populate({
+          path: 'bookingId',
+          select: 'status description vehicleId serviceId preferredDate',
+          populate: [
+            { path: 'vehicleId', select: 'brand model registrationNumber year' },
+            { path: 'serviceId', select: 'name price category' }
+          ]
+        })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -95,7 +100,14 @@ export class TicketService {
   }
 
   public static async getTicketById(customerId: string, ticketId: string): Promise<ISupportTicket> {
-    const ticket = await SupportTicketModel.findById(ticketId);
+    const ticket = await SupportTicketModel.findById(ticketId).populate({
+      path: 'bookingId',
+      select: 'status description vehicleId serviceId preferredDate',
+      populate: [
+        { path: 'vehicleId', select: 'brand model registrationNumber year' },
+        { path: 'serviceId', select: 'name price category' }
+      ]
+    });
     if (!ticket) {
       throw new NotFoundError('Support ticket not found');
     }

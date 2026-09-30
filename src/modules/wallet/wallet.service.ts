@@ -82,7 +82,7 @@ export class WalletService {
     }
 
     const COMMISSION_RATE = 0.15; // 15% fixed commission
-    const commissionAmount = totalAmount * COMMISSION_RATE;
+    const commissionAmount = Math.round(totalAmount * COMMISSION_RATE);
     const partnerShare = totalAmount - commissionAmount;
 
     if (paymentMode === 'ONLINE') {

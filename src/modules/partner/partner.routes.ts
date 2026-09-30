@@ -43,6 +43,7 @@ router.patch('/bids/:id/withdraw', BidController.withdrawBid);
 
 // 4. Jobs
 router.get('/jobs', JobController.getMyJobs);
+router.post('/verify-customer', JobController.verifyCustomerCode);
 router.patch('/jobs/:id/start', JobController.startJob);
 router.patch('/jobs/:id/complete', JobController.completeJob);
 router.post('/jobs/:id/invoice', JobController.uploadInvoice);

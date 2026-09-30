@@ -11,10 +11,19 @@ export class JobController {
     return successResponse(res, result, 'My jobs retrieved successfully');
   });
 
+  public static verifyCustomerCode = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const verificationCode = req.body?.verificationCode || req.body?.code || req.query?.verificationCode;
+    const jobId = req.body?.jobId || req.query?.jobId;
+    const result = await JobService.verifyCustomerCode(String(userId), { verificationCode, jobId });
+    return successResponse(res, result, result.message);
+  });
+
   public static startJob = asyncHandler(async (req: IRequest, res: Response) => {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const job = await JobService.startJob(String(userId), id);
+    const verificationCode = req.body?.verificationCode || req.query?.verificationCode || req.body?.code;
+    const job = await JobService.startJob(String(userId), id, verificationCode);
     return successResponse(res, job, 'Job started successfully');
   });
 

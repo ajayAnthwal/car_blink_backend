@@ -248,6 +248,27 @@ export class AssignmentService {
         }));
         await NotificationModel.insertMany(notificationsToInsert);
       }
+      // Notify Customer that executive has assigned partner workshop(s)
+      if (booking.customerId) {
+        const { notificationService } = require('../../../notification/notification.service');
+        const partnerCount = partnerIds && partnerIds.length > 0 ? partnerIds.length : 1;
+        const workshopText = partnerCount > 1 ? `${partnerCount} verified workshop partners` : `a verified workshop partner`;
+
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+          'Partner Workshop Assigned',
+          `Your service request has been assigned to ${workshopText} for quotation. You will receive quotes shortly.`,
+          { bookingId: booking._id.toString() }
+        );
+
+        emitToUser(booking.customerId.toString(), 'booking_updated', {
+          bookingId: booking._id.toString(),
+          status: booking.status,
+          message: 'Partner workshop assigned by executive'
+        });
+      }
     } catch (err) {
       console.error('Failed to emit new_lead event or create notification', err);
     }
@@ -295,12 +316,54 @@ export class AssignmentService {
 
       await notificationService.sendNotification(
         booking.customerId.toString(),
-        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.BID_RECEIVED,
         'New Quotes Received',
-        `You have received ${bidIds.length} new quote(s) for your service request.`,
+        `You have received ${bidIds.length} new quote(s) for your service request. Compare and select your preferred workshop.`,
         { bookingId: booking._id.toString() }
       );
+
+      const { emitToUser } = require('../../../../sockets');
+      emitToUser(booking.customerId.toString(), 'quote_received', {
+        bookingId: booking._id.toString(),
+        count: bidIds.length,
+        status: BOOKING_STATUS.QUOTED
+      });
+      emitToUser(booking.customerId.toString(), 'booking_updated', {
+        bookingId: booking._id.toString(),
+        status: BOOKING_STATUS.QUOTED
+      });
+
+      // Direct WhatsApp Alert to Customer about new quote(s)
+      try {
+        const { whatsappProvider } = require('../../../notification/providers/whatsapp.provider');
+        const UserModel = mongoose.model('User');
+        const GarageModel = mongoose.model('Garage');
+        const [customerUser, vehicle] = await Promise.all([
+          UserModel.findById(booking.customerId),
+          GarageModel.findById(booking.vehicleId)
+        ]);
+
+        if (customerUser && customerUser.phone) {
+          const vehicleName = vehicle ? (vehicle.brand + ' ' + vehicle.model) : 'your vehicle';
+          const lowestBid = bids.slice().sort((a: any, b: any) => a.quotedAmount - b.quotedAmount)[0];
+          const bestAmount = lowestBid ? ('₹' + lowestBid.quotedAmount.toLocaleString()) : '';
+
+          const waMsg = '🚘 *[CARBLINK - WORKSHOP QUOTE RECEIVED]*\n\n' +
+            'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
+            'We have received competitive workshop quotes for your *' + vehicleName + '*!\n\n' +
+            '🏷️ *Best Quote:* ' + bestAmount + '\n' +
+            '⏱️ *Quotes Count:* ' + bidIds.length + ' quote(s) ready to compare\n\n' +
+            '👉 *Review & Select Your Quote:*\nhttps://dashboard.carblink.in/customer/quotes\n\n' +
+            'Thank you for choosing CarBlink!';
+
+          await whatsappProvider.sendWhatsAppText(customerUser.phone, waMsg).catch((err: any) => {
+            console.warn('Failed to send quote received WhatsApp:', err?.message || err);
+          });
+        }
+      } catch (waErr: any) {
+        console.warn('Failed to dispatch customer quote WhatsApp:', waErr?.message || waErr);
+      }
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');
       logger.warn('Failed to send quote forwarded notification:', notifErr);
@@ -509,6 +572,10 @@ export class AssignmentService {
     }
     if (executiveUserId) {
       emitToUser(executiveUserId, 'booking_confirmed', eventPayload);
+    }
+    if (booking.customerId) {
+      emitToUser(booking.customerId.toString(), 'booking_confirmed', eventPayload);
+      emitToUser(booking.customerId.toString(), 'booking_updated', eventPayload);
     }
 
     try {

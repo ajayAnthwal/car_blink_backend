@@ -20,7 +20,7 @@ export class SuperAdminPartnersController {
   public static updateKycStatus = asyncHandler(async (req: IRequest, res: Response) => {
     const { id } = req.params;
     const { status, reason } = req.body;
-    const partner = await superAdminPartnersService.updateKycStatus(id, status, reason);
+    const partner = await superAdminPartnersService.updateKycStatus(id, status, reason, req.user?.userId);
     return successResponse(res, partner, `Partner KYC ${status.toLowerCase()} successfully`);
   });
 }

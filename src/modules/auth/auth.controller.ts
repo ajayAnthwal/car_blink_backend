@@ -85,14 +85,19 @@ export class AuthController {
   });
 
   public static forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-    const { identifier } = req.body;
-    const result = await AuthService.forgotPassword(identifier);
+    const { identifier, email, phone } = req.body;
+    const target = (identifier || email || phone || '').trim();
+    const result = await AuthService.forgotPassword(target);
     return successResponse(res, result, 'Reset OTP sent successfully');
   });
 
   public static resetPassword = asyncHandler(async (req: Request, res: Response) => {
-    const { identifier, token, newPassword } = req.body;
-    const result = await AuthService.resetPassword({ identifier, token, newPassword });
+    const { identifier, token, otp, newPassword, password, email, phone } = req.body;
+    const result = await AuthService.resetPassword({
+      identifier: identifier || email || phone,
+      token: token || otp,
+      newPassword: newPassword || password
+    });
     return successResponse(res, result, 'Password reset successful');
   });
 

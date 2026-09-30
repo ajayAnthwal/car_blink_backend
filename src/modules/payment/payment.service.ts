@@ -40,7 +40,7 @@ export class PaymentService {
       throw new NotFoundError("Booking not found");
     }
 
-        // Verify ownership
+    // Verify ownership
     const { BookingService } = require('../customer/sub-modules/booking/booking.service');
     const isOwner = await BookingService.verifyBookingCustomerAccess(booking, customerId);
     if (!isOwner && booking.customerId.toString() !== customerId) {
@@ -84,18 +84,18 @@ export class PaymentService {
       if (coupon.currentUses >= coupon.maxUses) {
         throw new BadRequestError("Coupon usage limit reached");
       }
-      
+
       if (coupon.discountType === 'PERCENTAGE') {
         discountAmount = baseAmount * (coupon.discountValue / 100);
       } else {
         discountAmount = coupon.discountValue;
       }
-      
+
       if (discountAmount > baseAmount) discountAmount = baseAmount;
       amount = baseAmount - discountAmount;
     } else if (booking.appliedCoupon) {
-       couponCode = booking.appliedCoupon;
-       // We don't recalculate discountAmount here because the frontend already passed the correctly discounted installment amount
+      couponCode = booking.appliedCoupon;
+      // We don't recalculate discountAmount here because the frontend already passed the correctly discounted installment amount
     }
 
     let pointsApplied = 0;
@@ -185,8 +185,13 @@ export class PaymentService {
       try {
         if (payment.paymentType === PAYMENT_TYPE.ADVANCE || payment.paymentType === PAYMENT_TYPE.FULL) {
           const booking: any = await BookingModel.findById(payment.bookingId);
-          if (booking && (booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED || booking.status === BOOKING_STATUS.QUOTED || booking.status === BOOKING_STATUS.PENDING)) {
-            booking.status = BOOKING_STATUS.ACCEPTED;
+          if (booking) {
+            if (!booking.verificationCode) {
+              booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+            }
+            if (booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED || booking.status === BOOKING_STATUS.QUOTED || booking.status === BOOKING_STATUS.PENDING) {
+              booking.status = BOOKING_STATUS.ACCEPTED;
+            }
             await booking.save();
 
             if (booking.acceptedBidId) {
@@ -234,8 +239,8 @@ export class PaymentService {
         // SMS matching Specification Section 10 Notification Sequence
         const isAdvance = payment.paymentType === 'ADVANCE';
         const notifTitle = isAdvance ? `Booking Confirmed — ₹${payAmount} Paid` : `₹${payAmount} Paid — Service Completed`;
-        const notifBody = isAdvance 
-          ? `Booking Confirmed — ₹${payAmount} Paid. Partner/service location details are now available.` 
+        const notifBody = isAdvance
+          ? `Booking Confirmed — ₹${payAmount} Paid. Partner/service location details are now available.`
           : `₹${payAmount} Paid. Booking Completed — Thank you for choosing CarBlink.`;
 
         await notificationService.sendNotification(
@@ -281,6 +286,45 @@ export class PaymentService {
             paymentId: payment._id.toString(),
           },
         );
+
+        // Direct WhatsApp to Customer confirming Advance Payment + Workshop Address + 4-Digit Handover PIN!
+        try {
+          const { whatsappProvider } = require('../notification/providers/whatsapp.provider');
+          const UserModel = mongoose.model('User');
+          const customerUser = await UserModel.findById(payment.customerId);
+          if (customerUser && customerUser.phone) {
+            const bookingObj: any = await BookingModel.findById(payment.bookingId).populate('assignedPartnerId');
+            const pinCode = bookingObj?.verificationCode || '';
+            const partnerName = bookingObj?.assignedPartnerId?.businessName || 'Verified Partner Workshop';
+            const partnerAddress = bookingObj?.assignedPartnerId?.businessAddress || 'Shared in Customer Portal';
+            const bRef = payment.bookingId.toString().slice(-8).toUpperCase();
+
+            let waMsg = '';
+            if (isAdvance) {
+              waMsg = '✅ *[CARBLINK - ADVANCE PAYMENT RECEIVED & BOOKING CONFIRMED]*\n\n' +
+                'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
+                'Your 15% advance payment of *₹' + payAmount.toLocaleString() + '* has been received successfully!\n\n' +
+                '📋 *Booking ID:* #' + bRef + '\n' +
+                '🏪 *Workshop:* ' + partnerName + '\n' +
+                '📍 *Address:* ' + partnerAddress + '\n\n' +
+                '🔑 *YOUR 4-DIGIT WORKSHOP HANDOVER PIN: [ ' + pinCode + ' ]*\n' +
+                '*(Please share this PIN with the workshop manager upon car arrival to start service work)*\n\n' +
+                '👉 *Live Tracking & Details:*\nhttps://dashboard.carblink.in/customer/bookings/' + payment.bookingId + '\n\n' +
+                'Drive safe with CarBlink!';
+            } else {
+              waMsg = '✅ *[CARBLINK - PAYMENT SUCCESSFUL]*\n\n' +
+                'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
+                'Payment of *₹' + payAmount.toLocaleString() + '* has been processed successfully for Booking #' + bRef + '.\n\n' +
+                'Thank you for choosing CarBlink!';
+            }
+
+            await whatsappProvider.sendWhatsAppText(customerUser.phone, waMsg).catch((err: any) => {
+              console.warn('Failed to send advance payment confirmation WhatsApp to customer:', err?.message || err);
+            });
+          }
+        } catch (waCustErr: any) {
+          console.warn('Failed to dispatch customer payment WhatsApp:', waCustErr?.message || waCustErr);
+        }
       } catch (notifErr: any) {
         logger.warn("Failed to send payment success notifications:", notifErr);
       }
@@ -451,17 +495,17 @@ export class PaymentService {
       if (coupon.currentUses >= coupon.maxUses) {
         throw new BadRequestError("Coupon usage limit reached");
       }
-      
+
       if (coupon.discountType === 'PERCENTAGE') {
         discountAmount = baseAmount * (coupon.discountValue / 100);
       } else {
         discountAmount = coupon.discountValue;
       }
-      
+
       if (discountAmount > baseAmount) discountAmount = baseAmount;
       amount = baseAmount - discountAmount;
     } else if (booking.appliedCoupon) {
-       couponCode = booking.appliedCoupon;
+      couponCode = booking.appliedCoupon;
     }
 
     const tempPaymentId = new mongoose.Types.ObjectId();
@@ -638,7 +682,7 @@ export class PaymentService {
     const discountAmount = payment.discountAmount || 0;
     const commissionAmount = baseAmount * 0.15;
     const duesToAdd = commissionAmount - discountAmount;
-    
+
     await PartnerModel.findByIdAndUpdate(job.partnerId, {
       $inc: { outstandingDues: duesToAdd },
     });
@@ -738,8 +782,8 @@ export class PaymentService {
     if (webhookSecret && signature) {
       try {
         const shasum = crypto.createHmac("sha256", webhookSecret);
-        const payloadString = typeof payload === "string" || Buffer.isBuffer(payload) 
-          ? payload 
+        const payloadString = typeof payload === "string" || Buffer.isBuffer(payload)
+          ? payload
           : JSON.stringify(payload);
         shasum.update(payloadString);
         const expectedSignature = shasum.digest("hex");
@@ -780,7 +824,7 @@ export class PaymentService {
 
           if (payment.couponCode) {
             const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
-            await CouponService.incrementCouponUsage(payment.couponCode).catch(() => {});
+            await CouponService.incrementCouponUsage(payment.couponCode).catch(() => { });
           }
 
           // Emit live socket updates so dashboard updates instantly without page refresh!

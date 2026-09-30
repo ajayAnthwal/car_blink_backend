@@ -90,7 +90,164 @@ export class JobService {
     return { jobs: jobsWithPayments as any, total, page, limit };
   }
 
-  public static async startJob(userId: string, jobId: string): Promise<IJob> {
+  public static async verifyCustomerCode(
+    userId: string,
+    payload: { verificationCode: string; jobId?: string }
+  ): Promise<{ job: IJob; booking: any; message: string }> {
+    const partner = await PartnerModel.findOne({ userId });
+    if (!partner) {
+      throw new NotFoundError("Partner profile not found");
+    }
+
+    const inputCode = String(payload.verificationCode || "").trim().toUpperCase();
+    if (!inputCode) {
+      throw new ApiError(400, "Customer Verification Code is required", ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    let targetJob: any = null;
+
+    if (payload.jobId) {
+      targetJob = await JobModel.findById(payload.jobId).populate("bookingId");
+      if (!targetJob) {
+        throw new NotFoundError("Job not found");
+      }
+      if (targetJob.partnerId.toString() !== partner._id.toString()) {
+        throw new UnauthorizedError("You are not authorized to access this job");
+      }
+    } else {
+      // Search for partner's job matching the verification code
+      const jobs = await JobModel.find({ partnerId: partner._id }).populate("bookingId");
+      targetJob = jobs.find((j: any) => {
+        const b = j.bookingId;
+        return b && b.verificationCode && String(b.verificationCode).trim().toUpperCase() === inputCode;
+      });
+    }
+
+    const logAttempt = async (status: "SUCCESS" | "FAILED", failureReason?: string, bId?: any, jId?: any) => {
+      try {
+        const { VerificationLogModel } = require("./verification-log.model");
+        await VerificationLogModel.create({
+          partnerId: partner._id,
+          partnerUserId: partner.userId,
+          bookingId: bId || (targetJob?.bookingId?._id || targetJob?.bookingId),
+          jobId: jId || targetJob?._id,
+          attemptedCode: inputCode,
+          status,
+          failureReason,
+          timestamp: new Date()
+        });
+      } catch (logErr) {}
+    };
+
+    if (!targetJob) {
+      const reason = "Verification Failed: Invalid Customer Verification Code. No matching job found.";
+      await logAttempt("FAILED", reason);
+      throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    const booking = await BookingModel.findById(targetJob.bookingId?._id || targetJob.bookingId);
+    if (!booking) {
+      const reason = "Associated booking not found";
+      await logAttempt("FAILED", reason, null, targetJob._id);
+      throw new NotFoundError(reason);
+    }
+
+    // 1. Check if CANCELLED
+    if (booking.status === BOOKING_STATUS.CANCELLED) {
+      const reason = "Verification Failed: This booking has been CANCELLED by the customer. Service work cannot be started.";
+      await logAttempt("FAILED", reason, booking._id, targetJob._id);
+      throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    // 2. Check if ALREADY COMPLETED (USED)
+    if (booking.status === BOOKING_STATUS.COMPLETED || targetJob.status === "COMPLETED") {
+      const reason = "Verification Failed: This Verification PIN has ALREADY BEEN USED for a completed service job.";
+      await logAttempt("FAILED", reason, booking._id, targetJob._id);
+      throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    // 3. Check PIN correctness
+    if (!booking.verificationCode) {
+      booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+      await booking.save();
+    }
+
+    const expectedCode = String(booking.verificationCode || "").trim().toUpperCase();
+    if (!expectedCode || inputCode !== expectedCode) {
+      const reason = "Verification Failed: Invalid Customer Verification Code. Please check code with customer.";
+      await logAttempt("FAILED", reason, booking._id, targetJob._id);
+      throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    // Step 1: Mark booking & job as VERIFIED & Work Ready
+    booking.isVerifiedByPartner = true;
+    booking.verifiedAt = new Date();
+    booking.status = "VERIFIED" as any;
+    await booking.save();
+
+    targetJob.status = "VERIFIED" as any;
+    await targetJob.save();
+
+    // Log SUCCESS attempt
+    await logAttempt("SUCCESS", undefined, booking._id, targetJob._id);
+
+    // Broadcast real-time "VERIFIED" socket event to Customer, Executive & Partner
+    try {
+      const partnerName = partner.businessName || (partner as any).name || "Workshop Partner";
+      const verifiedTimestamp = booking.verifiedAt ? new Date(booking.verifiedAt).toISOString() : new Date().toISOString();
+
+      const verificationPayload = {
+        bookingId: booking._id.toString(),
+        bookingReference: booking._id.toString(),
+        jobId: targetJob._id.toString(),
+        status: "VERIFIED",
+        displayStatus: "Verified / Work Ready",
+        verifiedAt: verifiedTimestamp,
+        partnerName,
+        isVerifiedByPartner: true,
+      };
+
+      // Emit to Customer
+      emitToUser(booking.customerId.toString(), "booking_status_update", verificationPayload);
+
+      // Emit to assigned Executive
+      if (booking.assignedExecutiveId) {
+        try {
+          const { notificationService } = require("../../../notification/notification.service");
+          const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require("../../../notification/notification.model");
+
+          await notificationService.sendNotification(
+            booking.assignedExecutiveId.toString(),
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.JOB_STATUS,
+            "Customer Verified",
+            `Customer Verification Completed for Booking #${booking._id} by ${partnerName} at ${new Date(verifiedTimestamp).toLocaleTimeString()}. Status: Verified / Work Ready.`,
+            verificationPayload
+          );
+        } catch (e) {}
+
+        emitToUser(booking.assignedExecutiveId.toString(), "job_verified", verificationPayload);
+        emitToUser(booking.assignedExecutiveId.toString(), "booking_status_update", verificationPayload);
+      }
+
+      // Emit to Partner
+      emitToUser(userId, "job_verified", verificationPayload);
+    } catch (notifErr: any) {
+      // Ignore notification failures
+    }
+
+    return {
+      job: targetJob,
+      booking,
+      message: `✓ Customer verified successfully! Booking status updated to "Verified / Work Ready". Click "Start Work" to begin service.`
+    };
+  }
+
+  public static async startJob(
+    userId: string,
+    jobId: string,
+    verificationCode?: string
+  ): Promise<IJob> {
     const partner = await PartnerModel.findOne({ userId });
     if (!partner) {
       throw new NotFoundError("Partner profile not found");
@@ -105,61 +262,61 @@ export class JobService {
       throw new UnauthorizedError("You are not authorized to start this job");
     }
 
-    if (job.status !== "NOT_STARTED") {
-      throw new ApiError(
-        400,
-        `Cannot start job in ${job.status} status`,
-        ERROR_CODES.VALIDATION_ERROR,
-      );
+    const booking = await BookingModel.findById(job.bookingId);
+    if (!booking) {
+      throw new NotFoundError("Associated booking not found");
     }
 
-    // Update Job status
+    // MANDATORY GATE: Check if customer verification has occurred
+    if (!booking.isVerifiedByPartner && (job.status as string) !== "VERIFIED") {
+      if (verificationCode) {
+        await this.verifyCustomerCode(userId, { jobId, verificationCode });
+      } else {
+        throw new ApiError(
+          400,
+          "Mandatory Verification Gate: Verification is required before starting work. Please enter and verify the Customer Verification PIN first.",
+          ERROR_CODES.VALIDATION_ERROR
+        );
+      }
+    }
+
+    // Step 2: Transition to IN_PROGRESS / Work Started
+    booking.status = BOOKING_STATUS.IN_PROGRESS;
+    await booking.save();
+
     job.status = "IN_PROGRESS";
-    job.startedAt = new Date();
+    job.startedAt = job.startedAt || new Date();
     await job.save();
 
-    // Sync status with Booking
-    await BookingModel.findByIdAndUpdate(job.bookingId, {
-      $set: { status: BOOKING_STATUS.IN_PROGRESS },
-    });
-
-    // Notify customer that service has started
+    // Real-time notification & Socket broadcast to Customer and Executive
     try {
-      const booking = await BookingModel.findById(job.bookingId);
-      if (booking) {
-        const {
-          notificationService,
-        } = require("../../../notification/notification.service");
-        const {
-          NOTIFICATION_TYPE,
-          NOTIFICATION_CATEGORY,
-        } = require("../../../notification/notification.model");
-        const { logger } = require("../../../../config/logger.config");
+      const { notificationService } = require("../../../notification/notification.service");
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require("../../../notification/notification.model");
 
-        await notificationService.sendNotification(
-          booking.customerId.toString(),
-          NOTIFICATION_TYPE.SMS,
-          NOTIFICATION_CATEGORY.JOB_STATUS,
-          "Service Started",
-          `Your car service has been started by the partner.`,
-          { bookingId: booking._id.toString(), jobId: job._id.toString() },
-        );
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_CATEGORY.JOB_STATUS,
+        "Work Started",
+        `Your car service has officially started! Live status: Work Started.`,
+        { bookingId: booking._id.toString(), jobId: job._id.toString() },
+      );
 
-        // Emit live socket event to customer
-        emitToUser(booking.customerId.toString(), "booking_status_update", {
-          bookingId: booking._id.toString(),
-          status: BOOKING_STATUS.IN_PROGRESS,
-        });
+      // Emit live socket event to customer & executive
+      emitToUser(booking.customerId.toString(), "booking_status_update", {
+        bookingId: booking._id.toString(),
+        status: BOOKING_STATUS.IN_PROGRESS,
+        displayStatus: "Work Started"
+      });
 
-        // Emit to partner so their dashboard updates in real-time (no page refresh needed)
-        emitToUser(userId, "job_started", {
-          jobId: job._id.toString(),
-          bookingId: booking._id.toString(),
-        });
-      }
+      // Emit to partner dashboard
+      emitToUser(userId, "job_started", {
+        jobId: job._id.toString(),
+        bookingId: booking._id.toString(),
+        status: "IN_PROGRESS"
+      });
     } catch (notifErr: any) {
-      const { logger } = require("../../../../config/logger.config");
-      logger.warn("Failed to send job start notification:", notifErr);
+      // Ignore notification failures
     }
 
     return job;

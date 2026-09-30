@@ -111,7 +111,43 @@ export class LeadService {
       logger.warn('Failed to send lead creation notification:', err);
     }
     
-    return lead;
+    let tokens: any = null;
+    let authUser: any = null;
+
+    if (data.customerId) {
+      try {
+        const { UserModel } = require('../../../../modules/user/user.model');
+        const { generateAccessToken, generateRefreshToken } = require('../../../auth/strategies/jwt.strategy');
+        const userObj = await UserModel.findById(data.customerId);
+        if (userObj) {
+          userObj.isPhoneVerified = true;
+          await userObj.save();
+          const tokenPayload = {
+            userId: userObj._id.toString(),
+            role: userObj.role,
+            email: userObj.email,
+            phone: userObj.phone,
+          };
+          const accessToken = generateAccessToken(tokenPayload);
+          const refreshToken = generateRefreshToken(tokenPayload);
+          tokens = { accessToken, refreshToken };
+          authUser = {
+            _id: userObj._id.toString(),
+            fullName: userObj.fullName,
+            phone: userObj.phone,
+            email: userObj.email,
+            role: userObj.role
+          };
+        }
+      } catch (tokErr) {}
+    }
+
+    return {
+      ...(lead.toObject ? lead.toObject() : lead),
+      lead,
+      user: authUser,
+      tokens
+    } as any;
   }
 
   public static async getLeads(query: any): Promise<IPaginatedResult<ILead>> {

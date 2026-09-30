@@ -18,7 +18,7 @@ const DEFAULT_LOCATION_COORDINATES_MAP: Record<string, [number, number]> = {
   "agar": [76.0167, 23.7167],
 };
 
-function autoResolvePartnerLocation(addressStr: string): [number, number] | null {
+export function autoResolvePartnerLocation(addressStr: string): [number, number] | null {
   if (!addressStr) return null;
   const lower = addressStr.toLowerCase();
   for (const [key, coords] of Object.entries(DEFAULT_LOCATION_COORDINATES_MAP)) {
@@ -60,10 +60,40 @@ export class PartnerService {
       ...data,
       userId,
       isVerified: false,
+      executiveVerificationStatus: 'PENDING',
       verificationStatus: 'PENDING',
       rating: 0,
       totalReviews: 0,
     });
+
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+      const { emitToRole } = require('../../sockets');
+
+      await notificationService.sendToRole(
+        'EXECUTIVE',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.SYSTEM,
+        'New Partner Registered',
+        `New Workshop Partner "${partner.businessName || 'Workshop'}" (${partner.ownerName || 'Partner'}) has registered. Verification Pending.`,
+        { partnerId: partner._id.toString(), userId: String(userId) }
+      );
+
+      await notificationService.sendToRole(
+        'SUPER_ADMIN',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.SYSTEM,
+        'New Partner Registered',
+        `New Workshop Partner "${partner.businessName || 'Workshop'}" (${partner.ownerName || 'Partner'}) has registered. Verification Pending.`,
+        { partnerId: partner._id.toString(), userId: String(userId) }
+      );
+
+      emitToRole('EXECUTIVE', 'partner_registered', { partner });
+      emitToRole('SUPER_ADMIN', 'partner_registered', { partner });
+      emitToRole('EXECUTIVE', 'partner_status_updated', { partnerId: partner._id, status: 'PENDING', executiveVerificationStatus: 'PENDING' });
+      emitToRole('SUPER_ADMIN', 'partner_status_updated', { partnerId: partner._id, status: 'PENDING', executiveVerificationStatus: 'PENDING' });
+    } catch (e) {}
 
     return partner;
   }

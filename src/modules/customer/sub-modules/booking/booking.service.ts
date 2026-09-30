@@ -66,6 +66,7 @@ export class BookingService {
       paymentMode: (data as any).paymentMode || 'ONLINE',
       address: (data as any).address,
       landmark: (data as any).landmark,
+      verificationCode: Math.floor(1000 + Math.random() * 9000).toString(),
       status: BOOKING_STATUS.PENDING,
     };
 
@@ -187,26 +188,34 @@ export class BookingService {
       Object.assign(filter, userFilter);
     }
 
+    require('../../../master-data/models/city.model');
+    require('../../../master-data/models/service.model');
+    require('../garage/garage.model');
+    require('../../../partner/sub-modules/bidding/bid.model');
+    require('../../../partner/partner.model');
+    require('../../../user/user.model');
+
     const [bookingsRaw, total] = await Promise.all([
       BookingModel.find(filter)
         .populate('vehicleId')
         .populate('serviceId')
         .populate('cityId')
         .populate({
-        path: 'assignedPartnerId',
-        model: 'Partner',
-        populate: { path: 'userId', select: 'fullName email phone profileImage' }
-      })
-      .populate({
-        path: 'acceptedBidId',
-        model: 'Bid',
-        populate: {
-          path: 'partnerId',
+          path: 'assignedPartnerId',
           model: 'Partner',
           populate: { path: 'userId', select: 'fullName email phone profileImage' }
-        }
-      })
+        })
+        .populate({
+          path: 'acceptedBidId',
+          model: 'Bid',
+          populate: {
+            path: 'partnerId',
+            model: 'Partner',
+            populate: { path: 'userId', select: 'fullName email phone profileImage' }
+          }
+        })
         .populate('assignedExecutiveId', 'fullName email phone')
+        .setOptions({ strictPopulate: false })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -251,12 +260,16 @@ export class BookingService {
     const bookings = bookingsRaw.map(b => {
       const bKey = String(b._id);
       const jDetails = jobsMap.get(bKey) || null;
+      const bPayments = paymentsMap.get(bKey) || [];
+      const hasPaidAdvance = (b as any).hasPaidAdvance || bPayments.some((p: any) => p.status === 'SUCCESS' && p.amount > 0);
+      const isUnlocked = hasPaidAdvance || (b.status !== 'PENDING' && b.status !== 'QUOTED' && b.status !== 'CANCELLED');
       return {
         ...b,
+        verificationCode: isUnlocked ? b.verificationCode : null,
         jobDetails: jDetails,
         jobExtensions: jDetails?.jobExtensions || [],
         additionalParts: jDetails?.jobExtensions || [],
-        payments: paymentsMap.get(bKey) || []
+        payments: bPayments
       };
     });
 
@@ -285,6 +298,12 @@ export class BookingService {
       throw new NotFoundError('Booking not found');
     }
 
+    if (!booking.verificationCode) {
+      const generatedCode = Math.floor(1000 + Math.random() * 9000).toString();
+      await BookingModel.findByIdAndUpdate(bookingId, { verificationCode: generatedCode });
+      (booking as any).verificationCode = generatedCode;
+    }
+
     if (!(await BookingService.verifyBookingCustomerAccess(booking, customerId))) {
       throw new UnauthorizedError('You are not authorized to view this booking');
     }
@@ -296,8 +315,8 @@ export class BookingService {
     // PaymentModel imported at top
     const payments = await PaymentModel.find({ bookingId }).lean();
 
-    const hasPaid15PercentAdvance = payments && payments.some((p) => p.status === 'SUCCESS' && p.amount > 0);
-    const isUnlocked = hasPaid15PercentAdvance || ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
+    const hasPaid15PercentAdvance = (booking as any).hasPaidAdvance || (payments && payments.some((p) => p.status === 'SUCCESS' && p.amount > 0));
+    const isUnlocked = hasPaid15PercentAdvance;
 
     let rawPartner: any = (booking as any).assignedPartnerId || (booking.acceptedBidId as any)?.partnerId || null;
 
@@ -363,6 +382,7 @@ export class BookingService {
     return {
       ...booking,
       assignedPartnerId: assignedPartner,
+      verificationCode: isUnlocked ? booking.verificationCode : null,
       jobDetails: jobDetails || null,
       payments: payments || []
     };
@@ -442,16 +462,31 @@ export class BookingService {
       throw new UnauthorizedError('You are not authorized to view quotes for this booking');
     }
 
-    // 2. Fetch the forwarded bids (if they exist)
-    if (!booking.forwardedBidIds || booking.forwardedBidIds.length === 0) {
-      return [];
+    require('../../../partner/sub-modules/bidding/bid.model');
+    require('../../../partner/partner.model');
+    require('../../../user/user.model');
+
+    // 2. Fetch bids for this booking (either via forwardedBidIds or directly by bookingId)
+    let bidQuery: any = { status: { $ne: 'WITHDRAWN' } };
+    if (booking.forwardedBidIds && booking.forwardedBidIds.length > 0) {
+      bidQuery.$or = [
+        { _id: { $in: booking.forwardedBidIds } },
+        { bookingId: booking._id },
+        { bookingId: booking._id.toString() }
+      ];
+    } else {
+      bidQuery.$or = [
+        { bookingId: booking._id },
+        { bookingId: booking._id.toString() }
+      ];
     }
 
-    const bids = await BidModel.find({ _id: { $in: booking.forwardedBidIds }, status: { $ne: 'WITHDRAWN' } })
+    const bids = await BidModel.find(bidQuery)
       .populate({
         path: 'partnerId',
         populate: { path: 'userId', select: 'fullName email phone' }
       })
+      .setOptions({ strictPopulate: false })
       .lean();
 
     // MASKING PRIVACY: Mask partner name & contact details if customer has not accepted/paid for booking yet
@@ -563,12 +598,36 @@ export class BookingService {
 
       await notificationService.sendNotification(
         booking.customerId.toString(),
-        NOTIFICATION_TYPE.EMAIL,
+        NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
         'Quote Selection Received',
-        `You have selected the quote for booking #${booking._id.toString().slice(-8).toUpperCase()}. Our executive will confirm and assign the partner shortly.`,
+        `You have selected the quote of ₹${selectedBid.quotedAmount} for booking #${booking._id.toString().slice(-8).toUpperCase()}. Please confirm booking with 15% advance to unlock partner address and Handover PIN.`,
         { bookingId: booking._id.toString() }
       );
+
+      // WhatsApp to Customer requesting 15% Advance / Confirmation
+      try {
+        const { whatsappProvider } = require('../../../notification/providers/whatsapp.provider');
+        const UserModel = mongoose.model('User');
+        const customerUser = await UserModel.findById(booking.customerId);
+        if (customerUser && customerUser.phone) {
+          const advanceAmt = Math.round(Number(selectedBid.quotedAmount) * 0.15);
+          const bookingRef = booking._id.toString().slice(-8).toUpperCase();
+          const waMsg = '🚘 *[CARBLINK - QUOTE ACCEPTED]*\n\n' +
+            'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
+            'You have successfully selected the quote of *₹' + selectedBid.quotedAmount.toLocaleString() + '* for booking #' + bookingRef + '.\n\n' +
+            '💳 *Next Step (Advance Confirmation):*\nPlease confirm your booking by paying the 15% advance token (*₹' + advanceAmt.toLocaleString() + '*) or select Pay at Workshop (Cash).\n\n' +
+            '🔒 *Security Note:* Your 4-digit Workshop Handover PIN & workshop address will unlock immediately upon confirmation.\n\n' +
+            '👉 *Confirm Booking & Pay Advance:*\nhttps://dashboard.carblink.in/customer/bookings/' + booking._id + '\n\n' +
+            'Thank you for choosing CarBlink!';
+
+          await whatsappProvider.sendWhatsAppText(customerUser.phone, waMsg).catch((err: any) => {
+            console.warn('Failed to send quote selection WhatsApp:', err?.message || err);
+          });
+        }
+      } catch (waCustErr: any) {
+        console.warn('Failed to dispatch customer quote selection WhatsApp:', waCustErr?.message || waCustErr);
+      }
     } catch (notifErr: any) {
       const { logger } = require('../../../../config/logger.config');
       logger.warn('Failed to send quote selection notifications:', notifErr);

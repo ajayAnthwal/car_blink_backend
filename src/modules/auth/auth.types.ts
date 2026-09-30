@@ -2,11 +2,20 @@ import { ROLES } from '../../common/constants/roles.constant';
 
 export interface RegisterInput {
   fullName: string;
-  email: string;
+  email?: string;
   phone: string;
   password?: string;
   otp?: string;
   role: ROLES.CUSTOMER | ROLES.PARTNER;
+  businessName?: string;
+  ownerName?: string;
+  gstNumber?: string;
+  msmeNumber?: string;
+  address?: string;
+  businessAddress?: string;
+  longitude?: number;
+  latitude?: number;
+  cityId?: string;
 }
 
 export interface LoginInput {

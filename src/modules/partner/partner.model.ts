@@ -3,12 +3,19 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IPartner extends Document {
   userId: mongoose.Types.ObjectId;
   businessName: string;
+  ownerName?: string;
   businessAddress: string;
   cityId?: mongoose.Types.ObjectId;
   servicesOffered: mongoose.Types.ObjectId[];
   gstNumber?: string;
+  msmeNumber?: string;
   isVerified: boolean;
   verificationStatus: "PENDING" | "UNDER_REVIEW" | "APPROVED" | "REJECTED";
+  executiveVerificationStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  executiveVerifiedBy?: mongoose.Types.ObjectId;
+  executiveVerifiedAt?: Date;
+  adminApprovedBy?: mongoose.Types.ObjectId;
+  adminApprovedAt?: Date;
   rejectionReason?: string;
   rating: number;
   totalReviews: number;
@@ -42,6 +49,10 @@ const PartnerSchema = new Schema<IPartner>(
       required: [true, "Business name is required"],
       trim: true,
     },
+    ownerName: {
+      type: String,
+      trim: true,
+    },
     businessAddress: {
       type: String,
       required: [true, "Business address is required"],
@@ -61,6 +72,10 @@ const PartnerSchema = new Schema<IPartner>(
       type: String,
       trim: true,
     },
+    msmeNumber: {
+      type: String,
+      trim: true,
+    },
     isVerified: {
       type: Boolean,
       default: false,
@@ -70,6 +85,25 @@ const PartnerSchema = new Schema<IPartner>(
       enum: ["PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED"],
       default: "PENDING",
       required: true,
+    },
+    executiveVerificationStatus: {
+      type: String,
+      enum: ["PENDING", "APPROVED", "REJECTED"],
+      default: "PENDING",
+    },
+    executiveVerifiedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    executiveVerifiedAt: {
+      type: Date,
+    },
+    adminApprovedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    adminApprovedAt: {
+      type: Date,
     },
     rejectionReason: {
       type: String,
@@ -110,9 +144,11 @@ const PartnerSchema = new Schema<IPartner>(
       type: {
         type: String,
         enum: ["Point"],
+        default: "Point",
       },
       coordinates: {
         type: [Number],
+        default: [77.2090, 28.6139],
       },
     },
   },

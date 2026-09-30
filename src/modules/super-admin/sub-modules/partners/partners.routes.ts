@@ -6,5 +6,6 @@ const router = Router();
 router.get('/', SuperAdminPartnersController.getAllPartners);
 router.get('/:id', SuperAdminPartnersController.getPartnerDetails);
 router.put('/:id/kyc', SuperAdminPartnersController.updateKycStatus);
+router.patch('/:id/kyc', SuperAdminPartnersController.updateKycStatus);
 
 export default router;

@@ -333,45 +333,99 @@ export class ExecutiveService {
   /**
    * Verify a partner
    */
-  async verifyPartner(id: string, status: 'APPROVED' | 'REJECTED' = 'APPROVED', reason?: string): Promise<any> {
-    const updateData: any = { verificationStatus: status };
-    if (status === 'APPROVED') {
-      updateData.isVerified = true;
-    }
-    if (reason) {
-      updateData.rejectionReason = reason;
+  async verifyPartner(id: string, status: 'APPROVED' | 'REJECTED' = 'APPROVED', reason?: string, executiveUserId?: string): Promise<any> {
+    const partner = await PartnerModel.findById(id);
+    if (!partner) {
+      throw new Error('Partner not found');
     }
 
-    const partner = await PartnerModel.findByIdAndUpdate(
+    const updateData: any = {};
+    if (executiveUserId && mongoose.Types.ObjectId.isValid(executiveUserId)) {
+      updateData.executiveVerifiedBy = new mongoose.Types.ObjectId(executiveUserId);
+    }
+
+    if (status === 'APPROVED') {
+      // Stage 1 Clearance: Executive Approved -> Moves to UNDER_REVIEW (Pending Super Admin Stage 2 Approval)
+      updateData.executiveVerificationStatus = 'APPROVED';
+      updateData.verificationStatus = 'UNDER_REVIEW';
+      updateData.isVerified = false; // Restricted until Super Admin Final Approval
+      updateData.executiveVerifiedAt = new Date();
+      updateData.rejectionReason = undefined;
+    } else {
+      updateData.executiveVerificationStatus = 'REJECTED';
+      updateData.verificationStatus = 'REJECTED';
+      updateData.isVerified = false;
+      if (reason) updateData.rejectionReason = reason;
+    }
+
+    const updatedPartner = await PartnerModel.findByIdAndUpdate(
       id,
       updateData,
       { new: true }
     );
-    if (!partner) {
-      throw new Error('Partner not found');
-    }
+
+    const { notificationService } = require('../notification/notification.service');
+    const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
     if (status === 'APPROVED') {
-      await UserModel.findByIdAndUpdate(partner.userId, { isActive: true });
-      await KycDocumentModel.updateMany({ partnerId: id }, { status: 'APPROVED' });
+      await KycDocumentModel.updateMany({ partnerId: id }, { status: 'UNDER_REVIEW' });
+      try {
+        // 1. Notify Partner about Stage 1 Verification
+        await notificationService.sendNotification(
+          partner.userId.toString(),
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.SYSTEM,
+          'Stage 1 Verification Passed',
+          `Field Executive has verified your workshop details for "${partner.businessName}". Your application has been forwarded to Super Admin for Final Approval.`,
+          { partnerId: partner._id.toString(), status: 'UNDER_REVIEW', stage: 1 }
+        );
+
+        // 2. Notify Super Admin about Executive Clearance
+        await notificationService.sendToRole(
+          'SUPER_ADMIN',
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.SYSTEM,
+          'Executive Approved Partner (Awaiting Final Clearance)',
+          `Executive has verified & recommended Partner "${partner.businessName}". Pending Super Admin Final Activation.`,
+          { partnerId: partner._id.toString(), userId: partner.userId.toString() }
+        );
+      } catch (e) {}
     } else {
       await KycDocumentModel.updateMany({ partnerId: id }, { status: 'REJECTED' });
+      try {
+        await notificationService.sendNotification(
+          partner.userId.toString(),
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.SYSTEM,
+          'Partner Verification Update',
+          `Your workshop application was not approved during Executive review. Reason: "${reason || 'Requirements not met'}".`,
+          { partnerId: partner._id.toString(), status: 'REJECTED', reason }
+        );
+      } catch (e) {}
     }
 
     try {
-      emitToUser(partner.userId.toString(), 'kyc_status_changed', { 
-        status, 
+      const payload = { 
+        partnerId: partner._id, 
+        userId: partner.userId,
+        status: updatedPartner?.verificationStatus || status, 
+        executiveVerificationStatus: updatedPartner?.executiveVerificationStatus || status,
+        isVerified: false,
         reason,
-        message: `Your KYC verification has been ${status.toLowerCase()}.` 
-      });
-      emitToRole('EXECUTIVE', 'partner_status_updated', {
-        partnerId: partner._id,
-        status
-      });
+        message: status === 'APPROVED' 
+          ? 'Executive verified your profile. Pending Super Admin Final Approval.'
+          : `Your verification has been ${status.toLowerCase()}.` 
+      };
+
+      emitToUser(partner.userId.toString(), 'partner_status_updated', payload);
+      emitToUser(partner.userId.toString(), 'kyc_status_changed', payload);
+      emitToRole('EXECUTIVE', 'partner_status_updated', payload);
+      emitToRole('SUPER_ADMIN', 'partner_status_updated', payload);
     } catch (err) {
       // ignore
     }
 
-    return partner;
+    return updatedPartner;
   }
 }
 

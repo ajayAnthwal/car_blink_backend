@@ -45,7 +45,7 @@ export class ExecutiveController {
   public static verifyPartner = asyncHandler(async (req: IRequest, res: Response) => {
     const { id } = req.params;
     const { status = 'APPROVED', reason } = req.body;
-    const result = await executiveService.verifyPartner(id, status, reason);
+    const result = await executiveService.verifyPartner(id, status, reason, req.user?.userId);
     return successResponse(res, result, `Partner ${status.toLowerCase()} successfully`);
   });
 }
