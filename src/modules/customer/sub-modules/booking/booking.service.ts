@@ -287,7 +287,6 @@ export class BookingService {
     require('../../../user/user.model');
 
     const booking = await BookingModel.findById(bookingId)
-      .populate('customerId', 'fullName email phone')
       .populate('vehicleId')
       .populate('serviceId')
       .populate({ path: 'cityId', model: 'City' })
