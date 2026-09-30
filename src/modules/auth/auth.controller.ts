@@ -107,6 +107,13 @@ export class AuthController {
     return successResponse(res, result, 'User profile retrieved successfully');
   });
 
+  public static updateMe = asyncHandler(async (req: IRequest, res: Response) => {
+    const userId = req.user?.userId;
+    const { UserService } = require('../user/user.service');
+    const result = await UserService.updateUserProfile(String(userId), req.body);
+    return successResponse(res, result, 'User profile updated successfully');
+  });
+
   public static googleLogin = asyncHandler(async (req: Request, res: Response) => {
     const result = await AuthService.googleAuth(req.body);
     if (result.tokens) {

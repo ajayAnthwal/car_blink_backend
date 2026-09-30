@@ -531,6 +531,10 @@ export class PaymentService {
       paidAt: isPartner ? new Date() : undefined,
     });
 
+    // Ensure booking paymentMode is marked as CASH
+    booking.paymentMode = 'CASH';
+    await booking.save();
+
     // Update Partner Dues if payment is SUCCESS
     if (finalStatus === PAYMENT_STATUS.SUCCESS) {
       const job = await JobModel.findOne({ bookingId });
@@ -667,7 +671,14 @@ export class PaymentService {
     }
 
     const job = await JobModel.findOne({ bookingId: payment.bookingId });
-    if (!job || job.partnerId?.toString() !== partnerId) {
+    const partner = await PartnerModel.findOne({
+      $or: [
+        { userId: partnerId },
+        ...(mongoose.isValidObjectId(partnerId) ? [{ _id: partnerId }] : [])
+      ]
+    });
+    const partnerDocId = partner ? partner._id.toString() : partnerId;
+    if (!job || (job.partnerId?.toString() !== partnerDocId && job.partnerId?.toString() !== partnerId)) {
       throw new UnauthorizedError(
         "You are not authorized to verify this payment",
       );
@@ -676,6 +687,9 @@ export class PaymentService {
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.paidAt = new Date();
     await payment.save();
+
+    booking.paymentMode = 'CASH';
+    await booking.save();
 
     // Deduct commission as outstanding dues, adjusted for any discount borne by the platform
     const baseAmount = payment.baseAmount || payment.amount;

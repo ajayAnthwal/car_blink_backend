@@ -82,5 +82,13 @@ export class BookingController {
     const booking = await BookingService.respondSatisfactionTemplate(String(customerId), id, req.body);
     return successResponse(res, booking, 'Satisfaction feedback submitted successfully');
   });
+
+  public static updatePaymentMode = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = req.user?.userId;
+    const { id } = req.params;
+    const { paymentMode } = req.body;
+    const booking = await BookingService.updatePaymentMode(String(customerId), id, paymentMode);
+    return successResponse(res, booking, 'Payment mode updated successfully');
+  });
 }
 export default BookingController;

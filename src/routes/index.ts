@@ -37,6 +37,7 @@ router.use('/blogs', blogRouter);
 router.use('/partner', partnerRouter);
 router.use('/executive', executiveRouter);
 router.use('/payment', paymentRouter);
+router.use('/payments', paymentRouter);
 router.use('/notifications', notificationRouter);
 router.use('/webhook/whatsapp', whatsappWebhookRouter);
 router.use('/reviews', reviewRouter);

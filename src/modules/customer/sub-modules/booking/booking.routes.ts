@@ -32,4 +32,7 @@ router.get('/:id/tracking', BookingController.getTracking);
 router.post('/:id/satisfaction/send', BookingController.sendSatisfactionTemplate);
 router.post('/:id/satisfaction/respond', BookingController.respondSatisfactionTemplate);
 
+// Payment mode preference update
+router.patch('/:id/payment-mode', BookingController.updatePaymentMode);
+
 export default router;

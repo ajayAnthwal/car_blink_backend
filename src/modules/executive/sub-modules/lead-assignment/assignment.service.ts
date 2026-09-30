@@ -4,6 +4,8 @@ import { BookingModel } from '../../../customer/sub-modules/booking/booking.mode
 import { PartnerModel } from '../../../partner/partner.model';
 import { BidModel } from '../../../partner/sub-modules/bidding/bid.model';
 import { AssignmentModel } from './assignment.model';
+import { PaymentModel } from '../../../payment/payment.model';
+import { JobModel } from '../../../partner/sub-modules/jobs/job.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { BadRequestError } from '../../../../common/errors/BadRequestError';
 import { ASSIGNMENT_TYPE, BOOKING_STATUS } from '../../../../common/constants/status.constant';
@@ -72,6 +74,8 @@ export class AssignmentService {
         .populate('serviceId', 'name description basePrice')
         .populate('cityId', 'name state')
         .populate('assignedExecutiveId', 'fullName email')
+        .populate('assignedPartnerId', 'businessName phone rating address')
+        .populate({ path: 'acceptedBidId', populate: { path: 'partnerId', select: 'businessName phone rating address' } })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -80,17 +84,22 @@ export class AssignmentService {
     ]);
 
     const bookingIds = bookings.map((b: any) => b._id);
-    const assignments = await AssignmentModel.find({ bookingId: { $in: bookingIds } })
-      .populate('assignedExecutiveId', 'fullName email')
-      .populate('assignedPartnerIds', 'businessName isVerified')
-      .lean();
-
-    const bids = await BidModel.find({ bookingId: { $in: bookingIds } })
-      .populate({
-        path: 'partnerId',
-        select: 'businessName isVerified rating'
-      })
-      .lean();
+    const [assignments, bids, payments, jobs] = await Promise.all([
+      AssignmentModel.find({ bookingId: { $in: bookingIds } })
+        .populate('assignedExecutiveId', 'fullName email')
+        .populate('assignedPartnerIds', 'businessName isVerified')
+        .lean(),
+      BidModel.find({ bookingId: { $in: bookingIds } })
+        .populate({
+          path: 'partnerId',
+          select: 'businessName isVerified rating'
+        })
+        .lean(),
+      PaymentModel.find({ bookingId: { $in: bookingIds } }).lean(),
+      JobModel.find({ bookingId: { $in: bookingIds } })
+        .populate('partnerId', 'businessName phone rating address')
+        .lean()
+    ]);
 
     const assignmentMap = new Map();
     assignments.forEach((a: any) => assignmentMap.set(a.bookingId.toString(), a));
@@ -102,10 +111,24 @@ export class AssignmentService {
       bidsMap.set(b.bookingId.toString(), bidList);
     });
 
+    const paymentsMap = new Map();
+    payments.forEach((p: any) => {
+      const payList = paymentsMap.get(p.bookingId.toString()) || [];
+      payList.push(p);
+      paymentsMap.set(p.bookingId.toString(), payList);
+    });
+
+    const jobsMap = new Map();
+    jobs.forEach((j: any) => {
+      jobsMap.set(j.bookingId.toString(), j);
+    });
+
     const leads = bookings.map((booking: any) => ({
       ...booking,
       assignment: assignmentMap.get(booking._id.toString()) || null,
       bids: bidsMap.get(booking._id.toString()) || [],
+      payments: paymentsMap.get(booking._id.toString()) || [],
+      job: jobsMap.get(booking._id.toString()) || null,
     }));
 
     return { leads, total, page, limit };
@@ -121,33 +144,42 @@ export class AssignmentService {
       .populate('serviceId', 'name description basePrice')
       .populate('cityId', 'name state')
       .populate('assignedExecutiveId', 'fullName email')
+      .populate('assignedPartnerId', 'businessName phone rating address')
+      .populate({ path: 'acceptedBidId', populate: { path: 'partnerId', select: 'businessName phone rating address' } })
       .lean();
 
     if (!booking) {
       throw new NotFoundError('Booking not found');
     }
 
-    const assignment = await AssignmentModel.findOne({ bookingId })
-      .populate('assignedExecutiveId', 'fullName email')
-      .populate('assignedPartnerIds', 'businessName isVerified')
-      .lean();
-
-    const bids = await BidModel.find({ bookingId })
-      .populate({
-        path: 'partnerId',
-        select: 'businessName isVerified rating userId',
-        populate: {
-          path: 'userId',
-          select: 'fullName email phone',
-        },
-      })
-      .sort({ createdAt: -1 })
-      .lean();
+    const [assignment, bids, payments, job] = await Promise.all([
+      AssignmentModel.findOne({ bookingId })
+        .populate('assignedExecutiveId', 'fullName email')
+        .populate('assignedPartnerIds', 'businessName isVerified')
+        .lean(),
+      BidModel.find({ bookingId })
+        .populate({
+          path: 'partnerId',
+          select: 'businessName isVerified rating userId',
+          populate: {
+            path: 'userId',
+            select: 'fullName email phone',
+          },
+        })
+        .sort({ createdAt: -1 })
+        .lean(),
+      PaymentModel.find({ bookingId }).sort({ createdAt: -1 }).lean(),
+      JobModel.findOne({ bookingId })
+        .populate('partnerId', 'businessName phone rating address')
+        .lean()
+    ]);
 
     return {
       ...booking,
       assignment: assignment || null,
       bids,
+      payments: payments || [],
+      job: job || null,
     };
   }
 

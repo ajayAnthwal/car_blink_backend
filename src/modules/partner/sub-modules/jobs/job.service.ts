@@ -37,8 +37,10 @@ export class JobService {
             { path: "vehicleId" },
             { path: "serviceId" },
             { path: "cityId" },
+            { path: "acceptedBidId", select: "quotedAmount notes status" }
           ],
         })
+        .populate("bidId", "quotedAmount notes status")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -168,8 +170,9 @@ export class JobService {
 
     // 3. Check PIN correctness
     if (!booking.verificationCode) {
-      booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
-      await booking.save();
+      const reason = "Verification Failed: Customer Handover PIN has not been generated yet. Booking advance payment must be completed first.";
+      await logAttempt("FAILED", reason, booking._id, targetJob._id);
+      throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
     }
 
     const expectedCode = String(booking.verificationCode || "").trim().toUpperCase();

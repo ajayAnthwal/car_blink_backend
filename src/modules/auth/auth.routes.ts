@@ -26,6 +26,7 @@ router.post('/forgot-password', rateLimiter, validate({ body: forgotPasswordSche
 router.post('/reset-password', validate({ body: resetPasswordSchema }), AuthController.resetPassword);
 router.post('/google', rateLimiter, AuthController.googleLogin);
 router.get('/me', authMiddleware as any, AuthController.getMe);
+router.patch('/me', authMiddleware as any, AuthController.updateMe);
 router.delete('/users/:id', authMiddleware as any, roleMiddleware([ROLES.SUPER_ADMIN, ROLES.ADMIN]) as any, AuthController.deleteUser);
 
 export default router;

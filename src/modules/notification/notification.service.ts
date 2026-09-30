@@ -76,7 +76,7 @@ export class NotificationService {
         if (user.role === 'EXECUTIVE') portalUrl = 'https://dashboard.carblink.in/executive/leads';
         if (user.role === 'CUSTOMER') portalUrl = 'https://dashboard.carblink.in/customer/dashboard';
         if (user.role === 'ACCOUNTS') portalUrl = 'https://dashboard.carblink.in/accounts/dashboard';
-        if (user.role === 'SUPER_ADMIN') portalUrl = 'https://dashboard.carblink.in/admin/dashboard';
+        if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') portalUrl = 'https://dashboard.carblink.in/admin/dashboard';
 
         const waMessage = `${title}: ${message}. Login to Dashboard: ${portalUrl}`;
         await whatsappProvider.sendWhatsAppTemplate(
@@ -156,7 +156,7 @@ export class NotificationService {
       const adminWhatsAppPhone = env.ADMIN_WHATSAPP_NUMBER || process.env.ADMIN_WHATSAPP_NUMBER;
 
       // 1. Send WhatsApp alert to central configured Admin/Management phone
-      if (adminWhatsAppPhone && ['SUPER_ADMIN', 'EXECUTIVE', 'ACCOUNTS'].includes(role)) {
+      if (adminWhatsAppPhone && ['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE', 'ACCOUNTS'].includes(role)) {
         await whatsappProvider.sendWhatsAppText(adminWhatsAppPhone, `🚨 *[${role} ALERT]*\n*${title}*\n${message}`);
       }
 
@@ -174,7 +174,7 @@ export class NotificationService {
           } else if (role === 'ACCOUNTS') {
             roleTag = 'FINANCE & ACCOUNTS';
             dashboardLink = 'https://dashboard.carblink.in/accounts/dashboard';
-          } else if (role === 'SUPER_ADMIN') {
+          } else if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
             roleTag = 'SUPER ADMIN';
             dashboardLink = 'https://dashboard.carblink.in/admin/dashboard';
           }

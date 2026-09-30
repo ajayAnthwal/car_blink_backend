@@ -287,6 +287,7 @@ export class BookingService {
     require('../../../user/user.model');
 
     const booking = await BookingModel.findById(bookingId)
+      .populate('customerId', 'fullName email phone')
       .populate('vehicleId')
       .populate('serviceId')
       .populate({ path: 'cityId', model: 'City' })
@@ -919,6 +920,20 @@ export class BookingService {
     }
 
     return false;
+  }
+
+  public static async updatePaymentMode(customerId: string, bookingId: string, paymentMode: 'CASH' | 'ONLINE') {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+    const hasAccess = await this.verifyBookingCustomerAccess(booking, customerId);
+    if (!hasAccess && booking.customerId?.toString() !== customerId) {
+      throw new UnauthorizedError('Unauthorized to update this booking');
+    }
+    booking.paymentMode = paymentMode;
+    await booking.save();
+    return booking;
   }
 
 }
