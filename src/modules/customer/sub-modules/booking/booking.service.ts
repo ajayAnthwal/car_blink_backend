@@ -29,7 +29,7 @@ export class BookingService {
     }
   ): Promise<IBooking> {
     // 1. Verify vehicle ownership
-    const vehicle = await GarageModel.findOne({ _id: data.vehicleId, isActive: true });
+    const vehicle = await GarageModel.findOne({ _id: data.vehicleId, isActive: { $ne: false } });
     if (!vehicle) {
       throw new NotFoundError('Vehicle not found in garage');
     }
@@ -43,7 +43,7 @@ export class BookingService {
     }
 
     // 2. Verify service exists
-    const service = await ServiceModel.findOne({ _id: data.serviceId, isActive: true });
+    const service = await ServiceModel.findOne({ _id: data.serviceId, isActive: { $ne: false } });
     if (!service) {
       throw new NotFoundError('Service category not found or inactive');
     }
