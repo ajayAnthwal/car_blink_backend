@@ -291,6 +291,12 @@ export class BookingService {
       .populate('serviceId')
       .populate({ path: 'cityId', model: 'City' })
       .populate('acceptedBidId')
+      .populate({
+        path: 'assignedPartnerId',
+        model: 'Partner',
+        populate: { path: 'userId', select: 'fullName email phone profileImage' }
+      })
+      .populate('assignedExecutiveId', 'fullName email phone')
       .setOptions({ strictPopulate: false })
       .lean();
 
