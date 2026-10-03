@@ -185,7 +185,35 @@ export class ExecutiveInvoiceService {
       InvoiceModel.countDocuments(filter)
     ]);
 
-    return { invoices, total, page, limit };
+    const { PaymentModel } = require('../../../payment/payment.model');
+    const bookingIds = invoices.map((i: any) => i.bookingId?._id || i.bookingId).filter(Boolean);
+    const payments = await PaymentModel.find({ bookingId: { $in: bookingIds }, status: 'SUCCESS' }).sort({ createdAt: -1 }).lean().catch(() => []);
+
+    const paymentMap = new Map();
+    if (Array.isArray(payments)) {
+      payments.forEach((p: any) => {
+        const bKey = p.bookingId ? p.bookingId.toString() : null;
+        if (bKey && !paymentMap.has(bKey)) {
+          paymentMap.set(bKey, p);
+        }
+      });
+    }
+
+    const enrichedInvoices = invoices.map((inv: any) => {
+      const bId = (inv.bookingId?._id || inv.bookingId)?.toString();
+      const p = bId ? paymentMap.get(bId) : null;
+      const isCash = p?.provider === 'CASH' || inv.bookingId?.paymentMode === 'CASH';
+      const paymentMode = isCash ? 'CASH' : (p?.provider === 'RAZORPAY' ? 'ONLINE' : (inv.bookingId?.paymentMode || 'ONLINE'));
+      const invObj = inv.toObject ? inv.toObject() : inv;
+      return {
+        ...invObj,
+        payment: p || null,
+        paymentMode: paymentMode,
+        transactionRef: p?.providerPaymentId || p?.providerOrderId || (isCash ? 'CASH-SETTLEMENT' : null)
+      };
+    });
+
+    return { invoices: enrichedInvoices as any, total, page, limit };
   }
 
   /**

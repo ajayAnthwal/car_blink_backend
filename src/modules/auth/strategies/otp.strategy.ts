@@ -7,7 +7,7 @@ import { notificationService } from '../../notification/notification.service';
 import { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } from '../../notification/notification.model';
 
 // In-memory store: key is identifier (email/phone), value is object with otp and expiry timestamp
-const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
+export const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
 const otpCooldownMap = new Map<string, number>();
 
 export const storeOtpOnly = (identifier: string, otp: string): void => {

@@ -7,6 +7,7 @@ const router = Router();
 
 router.post('/', validate({ body: createBookingSchema }), BookingController.createBooking);
 router.get('/', BookingController.getMyBookings);
+router.get('/my-bookings', BookingController.getMyBookings);
 router.get('/:id', BookingController.getBookingById);
 router.patch('/:id/cancel', validate({ body: cancelBookingSchema }), BookingController.cancelBooking);
 router.get('/:id/quotes', BookingController.getQuotes);

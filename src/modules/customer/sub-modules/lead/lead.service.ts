@@ -34,7 +34,9 @@ export class LeadService {
     const { UserModel } = require('../../../../modules/user/user.model');
     const { ROLES } = require('../../../../common/constants/roles.constant');
 
-    if (data.phone && !data.customerId) {
+    let customerUser: any = null;
+
+    if (data.phone && data.source !== 'WORKSHOP_PARTNER') {
       try {
         const cleanPhone = data.phone.trim();
         let user = await UserModel.findOne({ phone: cleanPhone });
@@ -50,16 +52,113 @@ export class LeadService {
             email: data.email ? data.email.trim().toLowerCase() : undefined,
             password: 'CarBlink@123',
             role: ROLES.CUSTOMER,
-            isPhoneVerified: false,
+            isPhoneVerified: true,
             isEmailVerified: false,
           });
+        } else if (user.role === ROLES.CUSTOMER) {
+          user.isPhoneVerified = true;
+          if (data.name && (!user.fullName || user.fullName === 'Valued Customer')) {
+            user.fullName = data.name;
+          }
+          if (data.email && !user.email) {
+            user.email = data.email.trim().toLowerCase();
+          }
+          await user.save();
         }
 
         if (user) {
           data.customerId = user._id;
+          if (user.role === ROLES.CUSTOMER) {
+            customerUser = user;
+          }
         }
       } catch (userErr) {
         console.error('[LeadService] Auto customer user creation warning:', userErr);
+      }
+    }
+
+    // 1.5 Auto-create Garage Vehicle and Booking for Customer Dashboard synchronization
+    if (customerUser && customerUser.role === ROLES.CUSTOMER && data.vehicleBrand && (data.source === 'WEBSITE_QUOTE' || data.source === 'QUICK_CALLBACK')) {
+      try {
+        const { GarageModel } = require('../garage/garage.model');
+        const { BookingModel } = require('../booking/booking.model');
+        const { ServiceModel } = require('../../../master-data/models/service.model');
+        const { CityModel } = require('../../../master-data/models/city.model');
+        const { BOOKING_STATUS } = require('../../../../common/constants/status.constant');
+
+        const cleanBrand = data.vehicleBrand.trim();
+        const cleanModel = (data.vehicleModel || 'Standard').trim();
+        const cleanReg = ((data as any).vehicleNumber || `DL-${Math.floor(1000 + Math.random() * 9000)}`).toUpperCase().trim();
+        const fuel = ((data as any).fuelType || 'PETROL').toUpperCase().trim();
+
+        let vehicle = await GarageModel.findOne({
+          customerId: customerUser._id,
+          brand: new RegExp(`^${cleanBrand}$`, 'i'),
+          model: new RegExp(`^${cleanModel}$`, 'i'),
+          isActive: true
+        });
+
+        if (!vehicle) {
+          vehicle = await GarageModel.create({
+            customerId: customerUser._id,
+            brand: cleanBrand,
+            model: cleanModel,
+            registrationNumber: cleanReg,
+            fuelType: fuel,
+            isActive: true,
+          });
+        }
+
+        // Resolve service
+        let serviceId: any = null;
+        if ((data as any).services && Array.isArray((data as any).services) && (data as any).services.length > 0) {
+          const firstServiceName = (data as any).services[0];
+          const matchedService = await ServiceModel.findOne({
+            name: new RegExp(`^${firstServiceName.trim()}$`, 'i'),
+            isActive: true
+          });
+          if (matchedService) serviceId = matchedService._id;
+        }
+        if (!serviceId) {
+          const defService = await ServiceModel.findOne({ isActive: true });
+          if (defService) serviceId = defService._id;
+        }
+
+        // Resolve city
+        let cityId: any = null;
+        if (data.city) {
+          const cityQuery = data.city.split(',')[0].trim();
+          const matchedCity = await CityModel.findOne({
+            name: new RegExp(cityQuery, 'i'),
+            isActive: true
+          });
+          if (matchedCity) cityId = matchedCity._id;
+        }
+        if (!cityId) {
+          const defCity = await CityModel.findOne({ isActive: true });
+          if (defCity) cityId = defCity._id;
+        }
+
+        if (vehicle && serviceId && cityId) {
+          const bookingDesc = data.message || `Website Quote for ${cleanBrand} ${cleanModel}`;
+          const newBooking = await BookingModel.create({
+            customerId: customerUser._id,
+            vehicleId: vehicle._id,
+            serviceId: serviceId,
+            cityId: cityId,
+            description: bookingDesc,
+            status: BOOKING_STATUS.PENDING,
+            address: data.city || '',
+          });
+
+          try {
+            const { emitToRole } = require('../../../../sockets');
+            emitToRole('SUPER_ADMIN', 'new_booking', { bookingId: newBooking._id.toString() });
+            emitToRole('EXECUTIVE', 'new_booking', { bookingId: newBooking._id.toString() });
+          } catch (sockErr) {}
+        }
+      } catch (syncErr) {
+        console.warn('[LeadService] Vehicle / Booking sync warning:', syncErr);
       }
     }
 

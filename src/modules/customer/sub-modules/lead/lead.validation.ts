@@ -12,9 +12,12 @@ export const createLeadSchema = z.object({
   email: emailSchema.optional().or(z.literal('')),
   source: z.nativeEnum(LEAD_SOURCE),
   serviceIds: z.array(z.string()).optional(),
+  services: z.array(z.string()).optional(),
   vehicleBrand: z.string().optional(),
   vehicleModel: z.string().optional(),
+  vehicleNumber: z.string().optional(),
+  fuelType: z.string().optional(),
   city: z.string().optional(),
   message: z.string().optional(),
   otp: z.string().optional(),
-});
+}).passthrough();

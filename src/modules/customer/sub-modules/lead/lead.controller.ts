@@ -16,7 +16,25 @@ export class LeadController {
       ...req.body,
       customerId: req.user?.userId || undefined, // Attach logged-in user if available
     };
-    const result = await LeadService.createLead(data);
+    const result: any = await LeadService.createLead(data);
+
+    if (result.tokens) {
+      const isProd = process.env.NODE_ENV === 'production';
+      const domain = isProd ? '.carblink.in' : undefined;
+      const cookieOpts = {
+        secure: isProd,
+        sameSite: (isProd ? 'none' : 'lax') as any,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+        ...(domain ? { domain } : {})
+      };
+      res.cookie('accessToken', result.tokens.accessToken, { ...cookieOpts, httpOnly: true });
+      res.cookie('car_blink_access_token', result.tokens.accessToken, { ...cookieOpts, httpOnly: false });
+      res.cookie('refreshToken', result.tokens.refreshToken, { ...cookieOpts, httpOnly: true });
+      res.cookie('role', result.user?.role || 'CUSTOMER', { ...cookieOpts, httpOnly: false });
+      res.cookie('user_role', result.user?.role || 'CUSTOMER', { ...cookieOpts, httpOnly: false });
+    }
+
     return successResponse(res, result, 'Lead created successfully', 201);
   });
 
