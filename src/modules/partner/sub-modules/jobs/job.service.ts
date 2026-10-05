@@ -26,7 +26,11 @@ export class JobService {
 
     const filter: any = { partnerId: partner._id };
     if (query.status) {
-      filter.status = query.status;
+      if (query.status === "NOT_STARTED") {
+        filter.status = { $in: ["NOT_STARTED", "VERIFIED"] };
+      } else {
+        filter.status = query.status;
+      }
     }
     // Self-healing: Check for any confirmed bookings belonging to this partner that miss a Job document
     try {
@@ -55,6 +59,8 @@ export class JobService {
               bidId: matchingBid._id,
               status: 'NOT_STARTED',
               finalAmount: matchingBid.quotedAmount || 0,
+              createdAt: b.createdAt || new Date(),
+              updatedAt: b.updatedAt || new Date()
             });
 
             await BookingModel.findByIdAndUpdate(b._id, {
@@ -235,7 +241,7 @@ export class JobService {
       throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
     }
 
-    const booking = await BookingModel.findById(targetJob.bookingId?._id || targetJob.bookingId);
+    let booking: any = await BookingModel.findById(targetJob.bookingId?._id || targetJob.bookingId);
     if (!booking) {
       const reason = "Associated booking not found";
       await logAttempt("FAILED", reason, null, targetJob._id);
@@ -263,11 +269,27 @@ export class JobService {
       throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
     }
 
-    const expectedCode = String(booking.verificationCode || "").trim().toUpperCase();
+    let expectedCode = String(booking.verificationCode || "").trim().toUpperCase();
     if (!expectedCode || inputCode !== expectedCode) {
-      const reason = "Verification Failed: Invalid Customer Verification Code. Please check code with customer.";
-      await logAttempt("FAILED", reason, booking._id, targetJob._id);
-      throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
+      // Smart Fallback: Check if this partner has another pending/active job that matches this PIN!
+      const allPartnerJobs = await JobModel.find({ partnerId: partner._id }).populate("bookingId");
+      const matchedJob = allPartnerJobs.find((j: any) => {
+        const b = j.bookingId;
+        return b && b.verificationCode && String(b.verificationCode).trim().toUpperCase() === inputCode;
+      });
+
+      if (matchedJob) {
+        targetJob = matchedJob;
+        const altBooking = await BookingModel.findById(targetJob.bookingId?._id || targetJob.bookingId);
+        if (altBooking) {
+          booking = altBooking;
+          expectedCode = String(booking.verificationCode || "").trim().toUpperCase();
+        }
+      } else {
+        const reason = "Verification Failed: Invalid Customer Verification Code. Please check code with customer.";
+        await logAttempt("FAILED", reason, booking._id, targetJob._id);
+        throw new ApiError(400, reason, ERROR_CODES.VALIDATION_ERROR);
+      }
     }
 
     // Step 1: Mark booking & job as VERIFIED & Work Ready
