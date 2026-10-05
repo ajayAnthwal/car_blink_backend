@@ -146,6 +146,125 @@ export class PaymentService {
   }
 
   /**
+   * Helper to auto-confirm booking, assign partner, create job & notify partner on advance payment success
+   */
+  public static async autoConfirmBookingOnPayment(payment: any): Promise<void> {
+    try {
+      if (payment.paymentType === PAYMENT_TYPE.ADVANCE || payment.paymentType === PAYMENT_TYPE.FULL) {
+        const booking: any = await BookingModel.findById(payment.bookingId);
+        if (booking) {
+          if (!booking.verificationCode) {
+            booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+          }
+          booking.hasPaidAdvance = true;
+          if (
+            booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED ||
+            booking.status === BOOKING_STATUS.QUOTED ||
+            booking.status === BOOKING_STATUS.PENDING
+          ) {
+            booking.status = BOOKING_STATUS.ACCEPTED;
+          }
+
+          const BidModel = mongoose.model('Bid');
+          const JobModel = mongoose.model('Job');
+          const PartnerModel = mongoose.model('Partner');
+
+          let selectedBid: any = null;
+          if (booking.acceptedBidId) {
+            selectedBid = await BidModel.findById(booking.acceptedBidId);
+          }
+          if (!selectedBid) {
+            selectedBid = await BidModel.findOne({
+              bookingId: booking._id,
+              status: { $in: ['ACCEPTED', 'CUSTOMER_ACCEPTED', 'WON'] }
+            });
+          }
+          if (!selectedBid && booking.forwardedBidIds && booking.forwardedBidIds.length > 0) {
+            selectedBid = await BidModel.findOne({
+              _id: { $in: booking.forwardedBidIds }
+            }).sort({ createdAt: -1 });
+          }
+          if (!selectedBid && booking.assignedPartnerId) {
+            selectedBid = await BidModel.findOne({
+              bookingId: booking._id,
+              partnerId: booking.assignedPartnerId
+            }).sort({ createdAt: -1 });
+          }
+          if (!selectedBid) {
+            selectedBid = await BidModel.findOne({
+              bookingId: booking._id
+            }).sort({ createdAt: -1 });
+          }
+
+          const partnerIdToAssign = selectedBid
+            ? (selectedBid.partnerId?._id || selectedBid.partnerId)
+            : booking.assignedPartnerId;
+
+          if (partnerIdToAssign) {
+            booking.assignedPartnerId = partnerIdToAssign;
+
+            if (selectedBid) {
+              booking.acceptedBidId = selectedBid._id;
+              selectedBid.status = 'ACCEPTED';
+              await selectedBid.save();
+            }
+
+            let job: any = await JobModel.findOne({ bookingId: booking._id });
+            if (!job) {
+              job = await JobModel.create({
+                bookingId: booking._id,
+                partnerId: partnerIdToAssign,
+                bidId: selectedBid?._id || new mongoose.Types.ObjectId(),
+                status: booking.isVerifiedByPartner ? 'VERIFIED' : 'NOT_STARTED',
+                finalAmount: selectedBid?.quotedAmount || payment.amount || 0,
+              });
+            }
+
+            // Notify the Partner via Socket & In-app Notification
+            try {
+              const partnerDoc: any = await PartnerModel.findById(partnerIdToAssign);
+              const partnerUserId = partnerDoc?.userId?.toString();
+              if (partnerUserId) {
+                const { emitToUser } = require('../../../sockets');
+                const { notificationService } = require('../notification/notification.service');
+                const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+                const jobNotifPayload = {
+                  bookingId: booking._id.toString(),
+                  jobId: job._id.toString(),
+                  status: job.status,
+                  amount: selectedBid?.quotedAmount || payment.amount || 0,
+                  advanceAmount: payment.amount,
+                  message: 'New job assigned! Customer paid advance. Ready to start upon vehicle arrival.'
+                };
+
+                emitToUser(partnerUserId, 'new_job_assigned', jobNotifPayload);
+                emitToUser(partnerUserId, 'booking_confirmed', { bookingId: booking._id.toString() });
+                emitToUser(partnerUserId, 'job_created', { jobId: job._id.toString(), bookingId: booking._id.toString() });
+
+                await notificationService.sendNotification(
+                  partnerUserId,
+                  NOTIFICATION_TYPE.IN_APP,
+                  NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+                  '🚗 New Service Job Assigned!',
+                  `Booking #${booking._id.toString().slice(-8).toUpperCase()} is confirmed with ₹${payment.amount} advance payment. Service work is authorized under PIN ${booking.verificationCode}.`,
+                  jobNotifPayload
+                );
+              }
+            } catch (pNotifErr) {
+              logger.warn("Partner notification warning:", pNotifErr);
+            }
+          }
+
+          await booking.save();
+        }
+      }
+    } catch (confirmErr) {
+      logger.warn("Failed to auto-confirm booking on payment success:", confirmErr);
+    }
+  }
+
+  /**
    * Verify payment signature and capture payment
    */
   async verifyAndCapturePayment(
@@ -182,110 +301,7 @@ export class PaymentService {
       await payment.save();
 
       // Automatically confirm booking & assign partner on successful 15% Advance / Full Payment
-      try {
-        if (payment.paymentType === PAYMENT_TYPE.ADVANCE || payment.paymentType === PAYMENT_TYPE.FULL) {
-          const booking: any = await BookingModel.findById(payment.bookingId);
-          if (booking) {
-            if (!booking.verificationCode) {
-              booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
-            }
-            booking.hasPaidAdvance = true;
-            if (booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED || booking.status === BOOKING_STATUS.QUOTED || booking.status === BOOKING_STATUS.PENDING) {
-              booking.status = BOOKING_STATUS.ACCEPTED;
-            }
-
-            const BidModel = mongoose.model('Bid');
-            const JobModel = mongoose.model('Job');
-            const PartnerModel = mongoose.model('Partner');
-
-            let selectedBid: any = null;
-            if (booking.acceptedBidId) {
-              selectedBid = await BidModel.findById(booking.acceptedBidId);
-            }
-            if (!selectedBid) {
-              selectedBid = await BidModel.findOne({
-                bookingId: booking._id,
-                status: { $in: ['ACCEPTED', 'CUSTOMER_ACCEPTED', 'WON'] }
-              });
-            }
-            if (!selectedBid && booking.forwardedBidIds && booking.forwardedBidIds.length > 0) {
-              selectedBid = await BidModel.findOne({
-                _id: { $in: booking.forwardedBidIds }
-              }).sort({ createdAt: -1 });
-            }
-            if (!selectedBid && booking.assignedPartnerId) {
-              selectedBid = await BidModel.findOne({
-                bookingId: booking._id,
-                partnerId: booking.assignedPartnerId
-              }).sort({ createdAt: -1 });
-            }
-            if (!selectedBid) {
-              selectedBid = await BidModel.findOne({
-                bookingId: booking._id
-              }).sort({ createdAt: -1 });
-            }
-
-            if (selectedBid) {
-              booking.acceptedBidId = selectedBid._id;
-              const partnerIdToAssign = selectedBid.partnerId?._id || selectedBid.partnerId;
-              booking.assignedPartnerId = partnerIdToAssign;
-
-              selectedBid.status = 'ACCEPTED';
-              await selectedBid.save();
-
-              let job: any = await JobModel.findOne({ bookingId: booking._id });
-              if (!job) {
-                job = await JobModel.create({
-                  bookingId: booking._id,
-                  partnerId: partnerIdToAssign,
-                  bidId: selectedBid._id,
-                  status: 'NOT_STARTED',
-                  finalAmount: selectedBid.quotedAmount,
-                });
-              }
-
-              // Notify the Partner via Socket & In-app Notification
-              try {
-                const partnerDoc: any = await PartnerModel.findById(partnerIdToAssign);
-                const partnerUserId = partnerDoc?.userId?.toString();
-                if (partnerUserId) {
-                  const { emitToUser } = require('../../../sockets');
-                  const { notificationService } = require('../notification/notification.service');
-                  const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
-
-                  const jobNotifPayload = {
-                    bookingId: booking._id.toString(),
-                    jobId: job._id.toString(),
-                    status: 'NOT_STARTED',
-                    amount: selectedBid.quotedAmount,
-                    advanceAmount: payment.amount,
-                    message: 'New job assigned! Customer paid advance. Ready to start upon vehicle arrival.'
-                  };
-
-                  emitToUser(partnerUserId, 'new_job_assigned', jobNotifPayload);
-                  emitToUser(partnerUserId, 'booking_confirmed', { bookingId: booking._id.toString() });
-                  emitToUser(partnerUserId, 'job_created', { jobId: job._id.toString(), bookingId: booking._id.toString() });
-
-                  await notificationService.sendNotification(
-                    partnerUserId,
-                    NOTIFICATION_TYPE.IN_APP,
-                    NOTIFICATION_CATEGORY.BOOKING_UPDATE,
-                    '🚗 New Service Job Assigned!',
-                    `Booking #${booking._id.toString().slice(-8).toUpperCase()} is confirmed with ₹${payment.amount} advance payment. Service work is authorized under PIN ${booking.verificationCode}.`,
-                    jobNotifPayload
-                  );
-                }
-              } catch (pNotifErr) {
-                logger.warn("Partner notification warning:", pNotifErr);
-              }
-            }
-
-            await booking.save();
-          }
-        }
-      } catch (confirmErr) {
-        logger.warn("Failed to auto-confirm booking on payment success:", confirmErr);
-      }
+      await PaymentService.autoConfirmBookingOnPayment(payment);
 
       if (payment.couponCode) {
         const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");
@@ -894,14 +910,8 @@ export class PaymentService {
           payment.paidAt = new Date();
           await payment.save();
 
-          // Update associated Booking status if PENDING
-          if (payment.bookingId) {
-            const booking = await BookingModel.findById(payment.bookingId);
-            if (booking && booking.status === BOOKING_STATUS.PENDING) {
-              booking.status = BOOKING_STATUS.ACCEPTED;
-              await booking.save();
-            }
-          }
+          // Automatically confirm booking, assign partner, create job & notify partner
+          await PaymentService.autoConfirmBookingOnPayment(payment);
 
           if (payment.couponCode) {
             const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");

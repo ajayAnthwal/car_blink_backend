@@ -40,38 +40,52 @@ export class JobService {
       const partnerBookingIds = partnerBids.map((b: any) => b.bookingId);
 
       const confirmedBookings = await BookingModel.find({
-        $or: [
-          { assignedPartnerId: partner._id },
-          { acceptedBidId: { $in: partnerBidIds } },
-          { _id: { $in: partnerBookingIds } }
-        ],
-        status: { $in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.IN_PROGRESS, 'CUSTOMER_ACCEPTED'] }
+        $and: [
+          {
+            $or: [
+              { assignedPartnerId: partner._id },
+              { acceptedBidId: { $in: partnerBidIds } },
+              { _id: { $in: partnerBookingIds } }
+            ]
+          },
+          {
+            $or: [
+              { status: { $in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.IN_PROGRESS, 'CUSTOMER_ACCEPTED', 'VERIFIED', 'CONFIRMED', 'ASSIGNED'] } },
+              { hasPaidAdvance: true },
+              { isVerifiedByPartner: true }
+            ]
+          }
+        ]
       }).lean();
 
       for (const b of confirmedBookings) {
         const existingJob = await JobModel.findOne({ bookingId: b._id });
         if (!existingJob) {
           let matchingBid = partnerBids.find((pb: any) => pb.bookingId.toString() === b._id.toString());
-          if (matchingBid) {
-            await JobModel.create({
-              bookingId: b._id,
-              partnerId: partner._id,
-              bidId: matchingBid._id,
-              status: 'NOT_STARTED',
-              finalAmount: matchingBid.quotedAmount || 0,
-              createdAt: b.createdAt || new Date(),
-              updatedAt: b.updatedAt || new Date()
-            });
+          if (!matchingBid && b.acceptedBidId) {
+            matchingBid = await BidModel.findById(b.acceptedBidId);
+          }
+          const bidIdToUse = matchingBid?._id || b.acceptedBidId || new mongoose.Types.ObjectId();
+          const finalAmount = matchingBid?.quotedAmount || 0;
 
-            await BookingModel.findByIdAndUpdate(b._id, {
-              assignedPartnerId: partner._id,
-              acceptedBidId: matchingBid._id,
-              hasPaidAdvance: true
-            });
+          await JobModel.create({
+            bookingId: b._id,
+            partnerId: partner._id,
+            bidId: bidIdToUse,
+            status: b.isVerifiedByPartner ? 'VERIFIED' : 'NOT_STARTED',
+            finalAmount,
+            createdAt: b.createdAt || new Date(),
+            updatedAt: b.updatedAt || new Date()
+          });
 
-            if (matchingBid.status !== 'ACCEPTED') {
-              await BidModel.findByIdAndUpdate(matchingBid._id, { status: 'ACCEPTED' });
-            }
+          await BookingModel.findByIdAndUpdate(b._id, {
+            assignedPartnerId: partner._id,
+            acceptedBidId: bidIdToUse,
+            hasPaidAdvance: true
+          });
+
+          if (matchingBid && matchingBid.status !== 'ACCEPTED') {
+            await BidModel.findByIdAndUpdate(matchingBid._id, { status: 'ACCEPTED' });
           }
         }
       }
