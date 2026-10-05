@@ -233,8 +233,8 @@ export class SuperAdminBookingsService {
             if (bidObj?.quotedAmount) resolvedAmount = bidObj.quotedAmount;
           } catch (e) {}
         }
-        if (!resolvedAmount && booking.finalAmount) resolvedAmount = booking.finalAmount;
-        if (!resolvedAmount && booking.estimatedAmount) resolvedAmount = booking.estimatedAmount;
+        if (!resolvedAmount && (booking as any).finalAmount) resolvedAmount = (booking as any).finalAmount;
+        if (!resolvedAmount && (booking as any).estimatedAmount) resolvedAmount = (booking as any).estimatedAmount;
 
         const advanceAmt = Math.round((resolvedAmount || 0) * 0.15);
 
