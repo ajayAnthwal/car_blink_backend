@@ -174,8 +174,13 @@ export class AssignmentService {
         .lean()
     ]);
 
+    const acceptedBidDoc = (booking.acceptedBidId as any)?.quotedAmount ? booking.acceptedBidId : (bids.find((b: any) => b.status === 'ACCEPTED' || b.status === 'CUSTOMER_ACCEPTED') || null);
+    const acceptedQuoteAmount = (acceptedBidDoc as any)?.quotedAmount || 0;
+
     return {
       ...booking,
+      acceptedBidId: acceptedBidDoc || booking.acceptedBidId,
+      acceptedQuoteAmount,
       assignment: assignment || null,
       bids,
       payments: payments || [],

@@ -265,6 +265,7 @@ export class BookingService {
       const isUnlocked = hasPaidAdvance || (b.status !== 'PENDING' && b.status !== 'QUOTED' && b.status !== 'CANCELLED');
       return {
         ...b,
+        acceptedQuoteAmount: (b.acceptedBidId as any)?.quotedAmount || 0,
         verificationCode: isUnlocked ? b.verificationCode : null,
         jobDetails: jDetails,
         jobExtensions: jDetails?.jobExtensions || [],

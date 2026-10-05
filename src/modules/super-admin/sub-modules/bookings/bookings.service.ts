@@ -46,6 +46,11 @@ export class SuperAdminBookingsService {
       .populate('serviceId', 'name basePrice')
       .populate('cityId', 'name state')
       .populate('assignedExecutiveId', 'fullName phone')
+      .populate({
+        path: 'acceptedBidId',
+        select: 'quotedAmount status partnerId',
+        populate: { path: 'partnerId', select: 'businessName' }
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
