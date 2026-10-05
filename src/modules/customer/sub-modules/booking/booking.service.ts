@@ -385,8 +385,34 @@ export class BookingService {
 
     let assignedPartner = rawPartner;
 
+    let acceptedBidDoc: any = booking.acceptedBidId;
+    if (booking.acceptedBidId) {
+      if (!acceptedBidDoc?.quotedAmount || typeof acceptedBidDoc === 'string' || acceptedBidDoc instanceof mongoose.Types.ObjectId) {
+        try {
+          const { BidModel } = require('../../../partner/sub-modules/bidding/bid.model');
+          const bidObj = await BidModel.findById(booking.acceptedBidId).lean();
+          if (bidObj) {
+            acceptedBidDoc = bidObj;
+          }
+        } catch (bErr) {}
+      }
+    } else {
+      try {
+        const { BidModel } = require('../../../partner/sub-modules/bidding/bid.model');
+        const acceptedBid = await BidModel.findOne({
+          bookingId: booking._id,
+          status: { $in: ['ACCEPTED', 'CUSTOMER_ACCEPTED', 'CONFIRMED'] }
+        }).lean();
+        if (acceptedBid) {
+          acceptedBidDoc = acceptedBid;
+        }
+      } catch (bErr) {}
+    }
+
     return {
       ...booking,
+      acceptedBidId: acceptedBidDoc || booking.acceptedBidId,
+      acceptedQuoteAmount: acceptedBidDoc?.quotedAmount || 0,
       assignedPartnerId: assignedPartner,
       verificationCode: isUnlocked ? booking.verificationCode : null,
       jobDetails: jobDetails || null,
