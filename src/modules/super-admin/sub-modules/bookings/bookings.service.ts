@@ -220,10 +220,23 @@ export class SuperAdminBookingsService {
       const { PaymentModel } = require('../../../payment/payment.model');
       const existingSuccessPayment = await PaymentModel.findOne({ bookingId: booking._id, status: 'SUCCESS' });
       if (!existingSuccessPayment) {
+        let resolvedAmount = quotedAmount;
+        if (!resolvedAmount && booking.acceptedBidId) {
+          try {
+            const { BidModel } = require('../../../partner/sub-modules/bidding/bid.model');
+            const bidObj = await BidModel.findById(booking.acceptedBidId).lean();
+            if (bidObj?.quotedAmount) resolvedAmount = bidObj.quotedAmount;
+          } catch (e) {}
+        }
+        if (!resolvedAmount && booking.finalAmount) resolvedAmount = booking.finalAmount;
+        if (!resolvedAmount && booking.estimatedAmount) resolvedAmount = booking.estimatedAmount;
+
+        const advanceAmt = Math.round((resolvedAmount || 0) * 0.15);
+
         await PaymentModel.create({
           bookingId: booking._id,
           customerId: booking.customerId,
-          amount: quotedAmount || 500,
+          amount: advanceAmt > 0 ? advanceAmt : (resolvedAmount || 0),
           paymentType: 'ADVANCE',
           status: 'SUCCESS',
           provider: 'SUPER_ADMIN_BYPASS',
