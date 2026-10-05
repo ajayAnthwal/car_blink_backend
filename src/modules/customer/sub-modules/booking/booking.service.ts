@@ -28,6 +28,18 @@ export class BookingService {
       longitude?: number;
     }
   ): Promise<IBooking> {
+    // 0. Debounce & duplicate prevention (within last 15 seconds for same customer, vehicle & service)
+    const recentBooking = await BookingModel.findOne({
+      customerId,
+      vehicleId: data.vehicleId,
+      serviceId: data.serviceId,
+      createdAt: { $gte: new Date(Date.now() - 15000) }
+    });
+    if (recentBooking) {
+      console.log(`[DEBOUNCE] Returning existing recent booking ${recentBooking._id} to prevent duplicate`);
+      return recentBooking;
+    }
+
     // 1. Verify vehicle ownership
     const vehicle = await GarageModel.findOne({ _id: data.vehicleId, isActive: { $ne: false } });
     if (!vehicle) {
