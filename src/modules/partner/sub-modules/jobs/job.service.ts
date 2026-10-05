@@ -28,6 +28,50 @@ export class JobService {
     if (query.status) {
       filter.status = query.status;
     }
+    // Self-healing: Check for any confirmed bookings belonging to this partner that miss a Job document
+    try {
+      const { BidModel } = require("../bidding/bid.model");
+      const partnerBids = await BidModel.find({ partnerId: partner._id }).lean();
+      const partnerBidIds = partnerBids.map((b: any) => b._id);
+      const partnerBookingIds = partnerBids.map((b: any) => b.bookingId);
+
+      const confirmedBookings = await BookingModel.find({
+        $or: [
+          { assignedPartnerId: partner._id },
+          { acceptedBidId: { $in: partnerBidIds } },
+          { _id: { $in: partnerBookingIds } }
+        ],
+        status: { $in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.IN_PROGRESS, 'CUSTOMER_ACCEPTED'] }
+      }).lean();
+
+      for (const b of confirmedBookings) {
+        const existingJob = await JobModel.findOne({ bookingId: b._id });
+        if (!existingJob) {
+          let matchingBid = partnerBids.find((pb: any) => pb.bookingId.toString() === b._id.toString());
+          if (matchingBid) {
+            await JobModel.create({
+              bookingId: b._id,
+              partnerId: partner._id,
+              bidId: matchingBid._id,
+              status: 'NOT_STARTED',
+              finalAmount: matchingBid.quotedAmount || 0,
+            });
+
+            await BookingModel.findByIdAndUpdate(b._id, {
+              assignedPartnerId: partner._id,
+              acceptedBidId: matchingBid._id,
+              hasPaidAdvance: true
+            });
+
+            if (matchingBid.status !== 'ACCEPTED') {
+              await BidModel.findByIdAndUpdate(matchingBid._id, { status: 'ACCEPTED' });
+            }
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.warn("[JobService.getMyJobs] Sync error:", syncErr);
+    }
 
     const [jobs, total] = await Promise.all([
       JobModel.find(filter)
@@ -123,6 +167,50 @@ export class JobService {
         const b = j.bookingId;
         return b && b.verificationCode && String(b.verificationCode).trim().toUpperCase() === inputCode;
       });
+
+      if (!targetJob) {
+        // Fallback: Check if there is a matching booking for this partner with this PIN
+        const { BidModel } = require("../bidding/bid.model");
+        const partnerBids = await BidModel.find({ partnerId: partner._id }).lean();
+        const partnerBidIds = partnerBids.map((b: any) => b._id);
+        const partnerBookingIds = partnerBids.map((b: any) => b.bookingId);
+
+        const matchingBooking: any = await BookingModel.findOne({
+          verificationCode: inputCode,
+          $or: [
+            { assignedPartnerId: partner._id },
+            { acceptedBidId: { $in: partnerBidIds } },
+            { forwardedBidIds: { $in: partnerBidIds } },
+            { _id: { $in: partnerBookingIds } }
+          ]
+        });
+
+        if (matchingBooking) {
+          const matchingBid = partnerBids.find((pb: any) => pb.bookingId.toString() === matchingBooking._id.toString());
+          if (matchingBid) {
+            targetJob = await JobModel.create({
+              bookingId: matchingBooking._id,
+              partnerId: partner._id,
+              bidId: matchingBid._id,
+              status: 'NOT_STARTED',
+              finalAmount: matchingBid.quotedAmount || 0,
+            });
+
+            await BookingModel.findByIdAndUpdate(matchingBooking._id, {
+              assignedPartnerId: partner._id,
+              acceptedBidId: matchingBid._id,
+              status: BOOKING_STATUS.ACCEPTED,
+              hasPaidAdvance: true
+            });
+
+            if (matchingBid.status !== 'ACCEPTED') {
+              await BidModel.findByIdAndUpdate(matchingBid._id, { status: 'ACCEPTED' });
+            }
+
+            targetJob = await JobModel.findById(targetJob._id).populate("bookingId");
+          }
+        }
+      }
     }
 
     const logAttempt = async (status: "SUCCESS" | "FAILED", failureReason?: string, bId?: any, jId?: any) => {
