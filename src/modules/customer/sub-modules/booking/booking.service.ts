@@ -943,6 +943,10 @@ export class BookingService {
 
       emitToRole('EXECUTIVE', 'satisfaction_response', payload);
       emitToRole('SUPER_ADMIN', 'satisfaction_response', payload);
+      emitToRole('EXECUTIVE', 'booking_updated', { bookingId: booking._id.toString() });
+      const { emitToUser } = require('../../../../sockets');
+      emitToUser(customerId, 'satisfaction_response', payload);
+      emitToUser(customerId, 'booking_updated', { bookingId: booking._id.toString() });
 
       const { notificationService } = require('../../../notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
