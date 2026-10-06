@@ -152,6 +152,12 @@ export class AssignmentService {
       throw new NotFoundError('Booking not found');
     }
 
+    // Auto-reconcile any pending online payments with payment gateway
+    try {
+      const { PaymentService } = require('../../../payment/payment.service');
+      await PaymentService.reconcileBookingPayments(bookingId);
+    } catch (recErr) {}
+
     const [assignment, bids, payments, job] = await Promise.all([
       AssignmentModel.findOne({ bookingId })
         .populate('assignedExecutiveId', 'fullName email')
@@ -501,19 +507,47 @@ export class AssignmentService {
       });
     }
 
-    // 3. Create Booking
-    const booking = await BookingModel.create({
-      customerId: user._id,
-      vehicleId: vehicle._id,
-      serviceId: serviceId,
-      cityId: cityId,
-      description: lead.message || 'Created from Website Lead',
-      status: BOOKING_STATUS.PENDING
-    });
+    // 3. Link or Reuse Existing Booking (prevent duplicate bookings for the same lead)
+    let booking: any = null;
 
-    // 4. Update Lead Status
+    if (lead.bookingId) {
+      booking = await BookingModel.findById(lead.bookingId);
+    }
+
+    // Fallback: search for recent PENDING booking for this user and vehicle
+    if (!booking) {
+      booking = await BookingModel.findOne({
+        customerId: user._id,
+        vehicleId: vehicle._id,
+        status: BOOKING_STATUS.PENDING
+      }).sort({ createdAt: -1 });
+    }
+
+    if (booking) {
+      // Update existing booking with converted details rather than creating a duplicate
+      booking.serviceId = serviceId;
+      booking.cityId = cityId;
+      booking.vehicleId = vehicle._id;
+      if (lead.message) {
+        booking.description = lead.message;
+      }
+      await booking.save();
+    } else {
+      // Create only if no existing booking found
+      booking = await BookingModel.create({
+        customerId: user._id,
+        vehicleId: vehicle._id,
+        serviceId: serviceId,
+        cityId: cityId,
+        description: lead.message || 'Created from Website Lead',
+        status: BOOKING_STATUS.PENDING
+      });
+    }
+
+    // 4. Update Lead Status and link bookingId
     lead.status = 'CONVERTED';
     lead.customerId = user._id;
+    lead.bookingId = booking._id;
     await lead.save();
 
     return booking;

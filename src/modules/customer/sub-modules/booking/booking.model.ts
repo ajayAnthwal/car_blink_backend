@@ -14,6 +14,7 @@ export interface IBooking extends Document {
   assignedPartnerId?: mongoose.Types.ObjectId;
   assignedExecutiveId?: mongoose.Types.ObjectId;
   hasPaidAdvance?: boolean;
+  isAdvancePaid?: boolean;
   beforePhotos: string[];
   afterPhotos: string[];
   cancellationReason?: string;
@@ -158,6 +159,14 @@ const BookingSchema = new Schema<IBooking>(
       trim: true,
     },
     isVerifiedByPartner: {
+      type: Boolean,
+      default: false,
+    },
+    hasPaidAdvance: {
+      type: Boolean,
+      default: false,
+    },
+    isAdvancePaid: {
       type: Boolean,
       default: false,
     },

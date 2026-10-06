@@ -1,5 +1,10 @@
 export interface IPaginatedResult<T> {
   data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+  totalPages: number;
   pagination: {
     total: number;
     page: number;
@@ -25,6 +30,11 @@ export const formatPaginatedResponse = <T>(
   const pages = Math.ceil(total / limit);
   return {
     data,
+    total,
+    page,
+    limit,
+    pages,
+    totalPages: pages,
     pagination: {
       total,
       page,

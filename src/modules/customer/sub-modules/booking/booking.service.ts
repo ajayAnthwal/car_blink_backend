@@ -28,15 +28,26 @@ export class BookingService {
       longitude?: number;
     }
   ): Promise<IBooking> {
-    // 0. Debounce & duplicate prevention (within last 15 seconds for same customer, vehicle & service)
+    // 0. Debounce & duplicate prevention (within last 3 minutes for same customer & vehicle in PENDING status)
     const recentBooking = await BookingModel.findOne({
       customerId,
       vehicleId: data.vehicleId,
-      serviceId: data.serviceId,
-      createdAt: { $gte: new Date(Date.now() - 15000) }
-    });
+      status: BOOKING_STATUS.PENDING,
+      createdAt: { $gte: new Date(Date.now() - 3 * 60 * 1000) }
+    }).sort({ createdAt: -1 });
     if (recentBooking) {
-      console.log(`[DEBOUNCE] Returning existing recent booking ${recentBooking._id} to prevent duplicate`);
+      recentBooking.serviceId = data.serviceId as any;
+      recentBooking.cityId = data.cityId as any;
+      if (data.description) recentBooking.description = data.description;
+      if (data.preferredDate) recentBooking.preferredDate = data.preferredDate as any;
+      if (data.latitude !== undefined && data.longitude !== undefined) {
+        recentBooking.location = {
+          type: 'Point',
+          coordinates: [data.longitude, data.latitude]
+        };
+      }
+      await recentBooking.save();
+      console.log(`[DEBOUNCE] Reused & updated existing pending booking ${recentBooking._id} to prevent duplicate`);
       return recentBooking;
     }
 
@@ -273,10 +284,17 @@ export class BookingService {
       const bKey = String(b._id);
       const jDetails = jobsMap.get(bKey) || null;
       const bPayments = paymentsMap.get(bKey) || [];
-      const hasPaidAdvance = (b as any).hasPaidAdvance || bPayments.some((p: any) => p.status === 'SUCCESS' && p.amount > 0);
+      const hasPaidAdvance = Boolean(
+        (b as any).hasPaidAdvance ||
+        (b as any).isAdvancePaid ||
+        bPayments.some((p: any) => (p.status === 'SUCCESS' && p.amount > 0) || (p.provider === 'CASH' && p.paymentType === 'ADVANCE')) ||
+        ['ACCEPTED', 'CONFIRMED', 'VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(b.status)
+      );
       const isUnlocked = hasPaidAdvance || (b.status !== 'PENDING' && b.status !== 'QUOTED' && b.status !== 'CANCELLED');
       return {
         ...b,
+        hasPaidAdvance,
+        isAdvancePaid: hasPaidAdvance,
         acceptedQuoteAmount: (b.acceptedBidId as any)?.quotedAmount || 0,
         verificationCode: isUnlocked ? b.verificationCode : null,
         jobDetails: jDetails,
@@ -334,7 +352,12 @@ export class BookingService {
     // PaymentModel imported at top
     const payments = await PaymentModel.find({ bookingId }).lean();
 
-    const hasPaid15PercentAdvance = (booking as any).hasPaidAdvance || (payments && payments.some((p) => p.status === 'SUCCESS' && p.amount > 0));
+    const hasPaid15PercentAdvance = Boolean(
+      (booking as any).hasPaidAdvance ||
+      (booking as any).isAdvancePaid ||
+      ['ACCEPTED', 'CONFIRMED', 'VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(booking.status) ||
+      (payments && payments.some((p: any) => (p.status === 'SUCCESS' && p.amount > 0) || (p.provider === 'CASH' && p.paymentType === 'ADVANCE')))
+    );
     const isUnlocked = hasPaid15PercentAdvance;
 
     let rawPartner: any = (booking as any).assignedPartnerId || (booking.acceptedBidId as any)?.partnerId || null;
@@ -424,6 +447,8 @@ export class BookingService {
 
     return {
       ...booking,
+      hasPaidAdvance: hasPaid15PercentAdvance,
+      isAdvancePaid: hasPaid15PercentAdvance,
       acceptedBidId: acceptedBidDoc || booking.acceptedBidId,
       acceptedQuoteAmount: acceptedBidDoc?.quotedAmount || 0,
       assignedPartnerId: assignedPartner,

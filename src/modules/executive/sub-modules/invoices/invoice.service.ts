@@ -168,14 +168,19 @@ export class ExecutiveInvoiceService {
 
     const [invoices, total] = await Promise.all([
       InvoiceModel.find(filter)
-        .populate({ path: 'partnerId', select: 'businessName businessAddress phone userId' })
+        .populate({
+          path: 'partnerId',
+          select: 'businessName businessAddress phone userId',
+          populate: { path: 'userId', select: 'phone fullName email' }
+        })
         .populate({ path: 'customerId', select: 'fullName phone email' })
         .populate({
           path: 'bookingId',
           populate: [
             { path: 'vehicleId', select: 'brand model registrationNumber year' },
             { path: 'serviceId', select: 'name price' },
-            { path: 'cityId', select: 'name' }
+            { path: 'cityId', select: 'name' },
+            { path: 'customerId', select: 'fullName phone email' }
           ]
         })
         .populate('reviewedByExecutiveId', 'fullName email')
@@ -205,6 +210,12 @@ export class ExecutiveInvoiceService {
       const isCash = p?.provider === 'CASH' || inv.bookingId?.paymentMode === 'CASH';
       const paymentMode = isCash ? 'CASH' : (p?.provider === 'RAZORPAY' ? 'ONLINE' : (inv.bookingId?.paymentMode || 'ONLINE'));
       const invObj = inv.toObject ? inv.toObject() : inv;
+      if (invObj.partnerId && typeof invObj.partnerId === 'object') {
+        invObj.partnerId.phone = invObj.partnerId.phone || invObj.partnerId.userId?.phone || null;
+      }
+      if (!invObj.customerId && invObj.bookingId && typeof invObj.bookingId === 'object' && invObj.bookingId.customerId) {
+        invObj.customerId = invObj.bookingId.customerId;
+      }
       return {
         ...invObj,
         payment: p || null,

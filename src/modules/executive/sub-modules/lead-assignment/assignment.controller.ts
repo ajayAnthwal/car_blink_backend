@@ -62,4 +62,11 @@ export class AssignmentController {
     return successResponse(res, result, 'Customer quote selection confirmed and assigned to partner successfully');
   });
 
+  public static syncLeadPayments = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { PaymentService } = require('../../../payment/payment.service');
+    await PaymentService.reconcileBookingPayments(id);
+    const lead = await assignmentService.getLeadById(id);
+    return successResponse(res, lead, 'Payments synchronized with gateway successfully');
+  });
 }

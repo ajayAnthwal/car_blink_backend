@@ -21,6 +21,7 @@ export interface ILead extends Document {
   source: LEAD_SOURCE;
   status: LEAD_STATUS;
   customerId?: mongoose.Types.ObjectId;
+  bookingId?: mongoose.Types.ObjectId;
   serviceIds?: mongoose.Types.ObjectId[];
   vehicleBrand?: string;
   vehicleModel?: string;
@@ -47,6 +48,7 @@ const LeadSchema = new Schema<ILead>(
       default: LEAD_STATUS.NEW 
     },
     customerId: { type: Schema.Types.ObjectId, ref: 'User' },
+    bookingId: { type: Schema.Types.ObjectId, ref: 'Booking' },
     serviceIds: [{ type: Schema.Types.ObjectId, ref: 'Service' }],
     vehicleBrand: { type: String, trim: true },
     vehicleModel: { type: String, trim: true },
@@ -61,6 +63,7 @@ const LeadSchema = new Schema<ILead>(
 LeadSchema.index({ phone: 1 });
 LeadSchema.index({ status: 1 });
 LeadSchema.index({ source: 1 });
+LeadSchema.index({ bookingId: 1 });
 
 export const LeadModel = mongoose.model<ILead>('Lead', LeadSchema);
 export default LeadModel;

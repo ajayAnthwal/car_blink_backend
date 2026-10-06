@@ -157,6 +157,7 @@ export class PaymentService {
             booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
           }
           booking.hasPaidAdvance = true;
+          booking.isAdvancePaid = true;
           if (
             booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED ||
             booking.status === BOOKING_STATUS.QUOTED ||
@@ -254,6 +255,16 @@ export class PaymentService {
             } catch (pNotifErr) {
               logger.warn("Partner notification warning:", pNotifErr);
             }
+          }
+
+          if (booking.customerId) {
+            try {
+              const { emitToUser } = require('../../../sockets');
+              const custIdStr = booking.customerId.toString();
+              emitToUser(custIdStr, 'booking_confirmed', { bookingId: booking._id.toString(), status: booking.status });
+              emitToUser(custIdStr, 'booking_updated', { bookingId: booking._id.toString(), status: booking.status });
+              emitToUser(custIdStr, 'payment_success', { bookingId: booking._id.toString(), amount: payment.amount });
+            } catch (cErr) {}
           }
 
           await booking.save();
@@ -973,6 +984,75 @@ export class PaymentService {
     }
 
     return { success: true };
+  }
+
+  /**
+   * Reconcile any unconfirmed Razorpay payments directly with the Razorpay API
+   */
+  public static async reconcileBookingPayments(bookingId: string): Promise<void> {
+    try {
+      const pendingPayments = await PaymentModel.find({
+        bookingId,
+        provider: PAYMENT_PROVIDER.RAZORPAY,
+        status: { $in: [PAYMENT_STATUS.CREATED, PAYMENT_STATUS.PENDING] }
+      });
+
+      for (const payment of pendingPayments) {
+        if (!payment.providerOrderId || payment.providerOrderId.startsWith('mock_')) {
+          continue;
+        }
+
+        try {
+          const paymentsRes = await razorpayProvider.fetchOrderPayments(payment.providerOrderId);
+          const items = paymentsRes?.items || [];
+          const capturedPayment = items.find((p: any) => p.status === 'captured');
+
+          if (capturedPayment) {
+            payment.status = PAYMENT_STATUS.SUCCESS;
+            payment.providerPaymentId = capturedPayment.id;
+            payment.paidAt = new Date(capturedPayment.created_at * 1000);
+            await payment.save();
+
+            // Automatically confirm booking & assign partner & update job
+            await PaymentService.autoConfirmBookingOnPayment(payment);
+
+            // Live Socket Notifications
+            try {
+              if (payment.customerId) {
+                emitToUser(payment.customerId.toString(), 'payment_status_update', {
+                  bookingId: payment.bookingId,
+                  paymentId: payment._id,
+                  status: payment.status,
+                  amount: payment.amount,
+                  type: payment.paymentType,
+                  method: payment.provider,
+                });
+              }
+              emitToRole('EXECUTIVE', 'payment_status_update', {
+                bookingId: payment.bookingId.toString(),
+                paymentId: payment._id.toString(),
+                status: payment.status,
+                amount: payment.amount,
+              });
+              emitToRole('SUPER_ADMIN', 'payment_status_update', {
+                bookingId: payment.bookingId.toString(),
+                paymentId: payment._id.toString(),
+                status: payment.status,
+                amount: payment.amount,
+              });
+            } catch (sockErr) {
+              logger.warn('Socket broadcast warning on payment reconcile:', sockErr);
+            }
+
+            logger.info(`Auto-reconciled Razorpay payment ${payment._id} (${payment.providerOrderId}) -> SUCCESS`);
+          }
+        } catch (itemErr: any) {
+          logger.warn(`Failed to reconcile payment ${payment._id}:`, itemErr?.message || itemErr);
+        }
+      }
+    } catch (err: any) {
+      logger.warn(`Error during reconcileBookingPayments for ${bookingId}:`, err?.message || err);
+    }
   }
 }
 

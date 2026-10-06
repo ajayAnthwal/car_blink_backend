@@ -84,6 +84,30 @@ export class RazorpayProvider implements IPaymentProvider {
     }
   }
 
+  async fetchOrder(orderId: string): Promise<any> {
+    if (isMockMode || !orderId || orderId.startsWith('mock_')) {
+      return null;
+    }
+    try {
+      return await this.client.orders.fetch(orderId);
+    } catch (error: any) {
+      logger.warn('Razorpay fetchOrder error:', error?.message || error);
+      return null;
+    }
+  }
+
+  async fetchOrderPayments(orderId: string): Promise<any> {
+    if (isMockMode || !orderId || orderId.startsWith('mock_')) {
+      return null;
+    }
+    try {
+      return await this.client.orders.fetchPayments(orderId);
+    } catch (error: any) {
+      logger.warn('Razorpay fetchOrderPayments error:', error?.message || error);
+      return null;
+    }
+  }
+
   async issueRefund(paymentId: string, amount: number, notes?: any): Promise<string> {
     if (isMockMode || !paymentId || paymentId.startsWith('mock_') || paymentId.startsWith('pay_mock_')) {
       return `mock_refund_${crypto.randomUUID().replace(/-/g, '')}`;

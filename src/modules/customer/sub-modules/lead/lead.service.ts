@@ -141,21 +141,42 @@ export class LeadService {
 
         if (vehicle && serviceId && cityId) {
           const bookingDesc = data.message || `Website Quote for ${cleanBrand} ${cleanModel}`;
-          const newBooking = await BookingModel.create({
+
+          // Check if an existing PENDING booking already exists for this customer & vehicle in the last 5 minutes
+          let bookingDoc = await BookingModel.findOne({
             customerId: customerUser._id,
             vehicleId: vehicle._id,
-            serviceId: serviceId,
-            cityId: cityId,
-            description: bookingDesc,
             status: BOOKING_STATUS.PENDING,
-            address: data.city || '',
-          });
+            createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
+          }).sort({ createdAt: -1 });
 
-          try {
-            const { emitToRole } = require('../../../../sockets');
-            emitToRole('SUPER_ADMIN', 'new_booking', { bookingId: newBooking._id.toString() });
-            emitToRole('EXECUTIVE', 'new_booking', { bookingId: newBooking._id.toString() });
-          } catch (sockErr) {}
+          if (bookingDoc) {
+            // Update existing booking instead of creating a duplicate
+            bookingDoc.serviceId = serviceId;
+            bookingDoc.cityId = cityId;
+            bookingDoc.description = bookingDesc;
+            if (data.city) bookingDoc.address = data.city;
+            await bookingDoc.save();
+            data.bookingId = bookingDoc._id;
+            console.log(`[LeadService] Reused existing pending booking ${bookingDoc._id} for customer ${customerUser._id}`);
+          } else {
+            bookingDoc = await BookingModel.create({
+              customerId: customerUser._id,
+              vehicleId: vehicle._id,
+              serviceId: serviceId,
+              cityId: cityId,
+              description: bookingDesc,
+              status: BOOKING_STATUS.PENDING,
+              address: data.city || '',
+            });
+            data.bookingId = bookingDoc._id;
+
+            try {
+              const { emitToRole } = require('../../../../sockets');
+              emitToRole('SUPER_ADMIN', 'new_booking', { bookingId: bookingDoc._id.toString() });
+              emitToRole('EXECUTIVE', 'new_booking', { bookingId: bookingDoc._id.toString() });
+            } catch (sockErr) {}
+          }
         }
       } catch (syncErr) {
         console.warn('[LeadService] Vehicle / Booking sync warning:', syncErr);

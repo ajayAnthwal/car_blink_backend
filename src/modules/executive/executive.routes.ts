@@ -24,6 +24,7 @@ router.use(roleMiddleware([ROLES.EXECUTIVE, ROLES.SUPER_ADMIN, ROLES.ADMIN]) as 
 // SUB-MODULE 1: Lead Assignment
 router.get('/leads', AssignmentController.getAllLeads);
 router.get('/leads/:id', AssignmentController.getLeadById);
+router.post('/leads/:id/sync-payments', AssignmentController.syncLeadPayments);
 router.patch('/leads/:id', AssignmentController.updateLead);
 router.patch('/leads/:id/assign-partner', AssignmentController.assignPartnerToLead);
 router.post('/leads/:id/convert', AssignmentController.convertWebsiteLeadToBooking);
