@@ -63,6 +63,44 @@ export class PaymentService {
           "Cannot pay final amount for cancelled booking",
         );
       }
+
+      // Safety guard: ensure final payment accounts for any successful advance payments
+      const priorAdvancePayments = await PaymentModel.find({
+        bookingId,
+        paymentType: PAYMENT_TYPE.ADVANCE,
+        status: PAYMENT_STATUS.SUCCESS,
+      });
+
+      const totalAdvancePaid = priorAdvancePayments.reduce(
+        (sum, p) => sum + (Number(p.amount) || 0),
+        0,
+      );
+
+      if (totalAdvancePaid > 0) {
+        const job = await JobModel.findOne({ bookingId });
+        let totalJobPayable = Number(job?.finalAmount || 0);
+
+        if (!totalJobPayable && booking.acceptedBidId) {
+          const { BidModel } = require("../customer/sub-modules/bids/bid.model");
+          const bid = await BidModel.findById(booking.acceptedBidId);
+          if (bid) {
+            totalJobPayable = Number(bid.quotedAmount || 0);
+          }
+        }
+
+        if (totalJobPayable > 0) {
+          const remainingDue = Math.max(0, totalJobPayable - totalAdvancePaid);
+          if (remainingDue <= 0) {
+            throw new BadRequestError("This booking has already been fully paid via advance payment.");
+          }
+          if (amount > remainingDue) {
+            logger.warn(
+              `[PaymentService] Capping online FINAL payment from ₹${amount} to remaining due ₹${remainingDue} (Total: ₹${totalJobPayable}, Advance: ₹${totalAdvancePaid})`,
+            );
+            amount = remainingDue;
+          }
+        }
+      }
     } else if (paymentType === PAYMENT_TYPE.FULL) {
       if (!allowedAdvanceStatuses.includes(booking.status as string)) {
         throw new BadRequestError(
@@ -574,6 +612,46 @@ export class PaymentService {
       throw new ConflictError(
         `A ${paymentType} payment already exists or is pending for this booking.`,
       );
+    }
+
+    // Safety guard for FINAL offline payment: deduct any successful advance payments
+    if (paymentType === PAYMENT_TYPE.FINAL) {
+      const priorAdvancePayments = await PaymentModel.find({
+        bookingId,
+        paymentType: PAYMENT_TYPE.ADVANCE,
+        status: PAYMENT_STATUS.SUCCESS,
+      });
+
+      const totalAdvancePaid = priorAdvancePayments.reduce(
+        (sum, p) => sum + (Number(p.amount) || 0),
+        0,
+      );
+
+      if (totalAdvancePaid > 0) {
+        const job = await JobModel.findOne({ bookingId });
+        let totalJobPayable = Number(job?.finalAmount || 0);
+
+        if (!totalJobPayable && booking.acceptedBidId) {
+          const { BidModel } = require("../customer/sub-modules/bids/bid.model");
+          const bid = await BidModel.findById(booking.acceptedBidId);
+          if (bid) {
+            totalJobPayable = Number(bid.quotedAmount || 0);
+          }
+        }
+
+        if (totalJobPayable > 0) {
+          const remainingDue = Math.max(0, totalJobPayable - totalAdvancePaid);
+          if (remainingDue <= 0) {
+            throw new BadRequestError("This booking has already been fully paid via advance payment.");
+          }
+          if (amount > remainingDue) {
+            logger.warn(
+              `[PaymentService] Capping offline FINAL payment from ₹${amount} to remaining due ₹${remainingDue} (Total: ₹${totalJobPayable}, Advance Paid: ₹${totalAdvancePaid})`,
+            );
+            amount = remainingDue;
+          }
+        }
+      }
     }
 
     let baseAmount = amount;
