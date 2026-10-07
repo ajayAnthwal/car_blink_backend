@@ -10,6 +10,7 @@ export interface ISupportMessage {
 export interface ISupportTicket extends Document {
   customerId: mongoose.Types.ObjectId;
   bookingId?: mongoose.Types.ObjectId;
+  category?: string;
   subject: string;
   description: string;
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
@@ -51,6 +52,11 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
       type: Schema.Types.ObjectId,
       ref: 'Booking',
       default: null,
+    },
+    category: {
+      type: String,
+      default: 'General Inquiry',
+      trim: true,
     },
     subject: {
       type: String,

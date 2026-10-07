@@ -10,19 +10,23 @@ import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATI
 export class TicketService {
   public static async createTicket(
     customerId: string,
-    data: { bookingId?: string; subject: string; description: string; priority?: 'LOW' | 'MEDIUM' | 'HIGH' }
+    data: { bookingId?: string; category?: string; subject: string; description: string; priority?: 'LOW' | 'MEDIUM' | 'HIGH' }
   ): Promise<ISupportTicket> {
     // Optional: verify booking ownership if bookingId is provided
     if (data.bookingId && mongoose.Types.ObjectId.isValid(data.bookingId)) {
       const booking = await BookingModel.findById(data.bookingId);
-      if (booking && booking.customerId.toString() !== customerId) {
-        throw new UnauthorizedError('You do not own this booking');
+      if (booking) {
+        const bookingCustId = String((booking.customerId as any)?._id || booking.customerId);
+        if (bookingCustId !== String(customerId)) {
+          throw new UnauthorizedError('You do not own this booking');
+        }
       }
     }
 
     const ticket = await SupportTicketModel.create({
-      customerId,
+      customerId: new mongoose.Types.ObjectId(customerId),
       bookingId: data.bookingId || undefined,
+      category: data.category || 'General Inquiry',
       subject: data.subject,
       description: data.description,
       priority: data.priority || 'MEDIUM',
@@ -31,24 +35,28 @@ export class TicketService {
     });
 
     // Notify Super Admins and Executives
-    const notifService = require('../../../notification/notification.service').notificationService;
-    const notifModel = require('../../../notification/notification.model');
-    await notifService.sendToRole(
-      'SUPER_ADMIN',
-      notifModel.NOTIFICATION_TYPE.IN_APP,
-      notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
-      'New Support Ticket Created',
-      `A customer has created a new support ticket: ${data.subject}`,
-      { ticketId: ticket._id }
-    );
-    await notifService.sendToRole(
-      'EXECUTIVE',
-      notifModel.NOTIFICATION_TYPE.IN_APP,
-      notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
-      'New Support Ticket Created',
-      `A customer has created a new support ticket: ${data.subject}`,
-      { ticketId: ticket._id }
-    );
+    try {
+      const notifService = require('../../../notification/notification.service').notificationService;
+      const notifModel = require('../../../notification/notification.model');
+      await notifService.sendToRole(
+        'SUPER_ADMIN',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+        'New Support Ticket Created',
+        `A customer has created a new support ticket: ${data.subject}`,
+        { ticketId: ticket._id }
+      );
+      await notifService.sendToRole(
+        'EXECUTIVE',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.SUPPORT_TICKET,
+        'New Support Ticket Created',
+        `A customer has created a new support ticket: ${data.subject}`,
+        { ticketId: ticket._id }
+      );
+    } catch (notifErr) {
+      console.warn('[TicketService] Failed to dispatch support ticket notifications:', notifErr);
+    }
 
     return ticket;
   }
@@ -61,23 +69,35 @@ export class TicketService {
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
     const skip = (page - 1) * limit;
 
-    const filter: any = { customerId };
+    const customerObjId = mongoose.Types.ObjectId.isValid(customerId)
+      ? new mongoose.Types.ObjectId(customerId)
+      : null;
+
+    const customerCondition = customerObjId
+      ? { $or: [{ customerId: customerObjId }, { customerId: String(customerId) }] }
+      : { customerId: String(customerId) };
+
+    const filter: any = { ...customerCondition };
+
     if (query.search) {
       const searchRegex = new RegExp(query.search, 'i');
       const searchConditions: any[] = [
         { subject: searchRegex },
-        { status: searchRegex }
+        { status: searchRegex },
+        { category: searchRegex },
+        { description: searchRegex }
       ];
       
       if (mongoose.Types.ObjectId.isValid(query.search)) {
-        searchConditions.push({ _id: query.search });
+        searchConditions.push({ _id: new mongoose.Types.ObjectId(query.search) });
       }
       
       filter.$and = [
-        { customerId },
+        customerCondition,
         { $or: searchConditions }
       ];
       delete filter.customerId;
+      delete filter.$or;
     }
     
     const [tickets, total] = await Promise.all([

@@ -128,14 +128,11 @@ export class BidService {
         message: `${partnerName} placed a bid of ₹${data.quotedAmount}`
       };
 
-      // Live socket events
+      // Live socket events (Notify Super Admin and Executive ONLY; Customer receives quotes only after Executive forwards them)
       emitToRole('SUPER_ADMIN', 'quote_received', payload);
       emitToRole('EXECUTIVE', 'quote_received', payload);
       emitToRole('SUPER_ADMIN', 'new_bid', payload);
       emitToRole('EXECUTIVE', 'new_bid', payload);
-      if (booking.customerId) {
-        emitToUser(booking.customerId.toString(), 'quote_received', payload);
-      }
       
       const title = 'New Partner Bid Received';
       const msg = `${partnerName} has submitted a bid of INR ${data.quotedAmount}.`;

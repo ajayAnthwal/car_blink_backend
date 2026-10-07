@@ -284,19 +284,60 @@ export class BookingService {
       const bKey = String(b._id);
       const jDetails = jobsMap.get(bKey) || null;
       const bPayments = paymentsMap.get(bKey) || [];
-      const hasPaidAdvance = Boolean(
-        (b as any).hasPaidAdvance ||
-        (b as any).isAdvancePaid ||
-        bPayments.some((p: any) => (p.status === 'SUCCESS' && p.amount > 0) || (p.provider === 'CASH' && p.paymentType === 'ADVANCE')) ||
-        ['ACCEPTED', 'CONFIRMED', 'VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(b.status)
+
+      // Strict server-side verification: advance is only paid if SUCCESS online payment exists,
+      // or both DB flags are set, or service has already started at verified workshop
+      const hasOnlineAdvancePaid = Array.isArray(bPayments) && bPayments.some(
+        (p: any) => p.status === 'SUCCESS' && p.amount > 0 && (p.paymentType === 'ADVANCE' || p.paymentType === 'FULL')
       );
-      const isUnlocked = hasPaidAdvance || (b.status !== 'PENDING' && b.status !== 'QUOTED' && b.status !== 'CANCELLED');
+      const hasVerifiedWorkStarted = ['VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(b.status);
+      const isDbFlaggedAdvancePaid = Boolean((b as any).hasPaidAdvance && (b as any).isAdvancePaid);
+
+      const hasPaidAdvanceStrict = hasOnlineAdvancePaid || isDbFlaggedAdvancePaid || hasVerifiedWorkStarted;
+
+      // Sanitize assigned partner details if 15% advance has NOT been verified
+      let sanitizedAssignedPartner: any = b.assignedPartnerId;
+      if (sanitizedAssignedPartner && typeof sanitizedAssignedPartner === 'object') {
+        if (!hasPaidAdvanceStrict) {
+          const rawP = sanitizedAssignedPartner;
+          sanitizedAssignedPartner = {
+            _id: rawP._id,
+            businessName: rawP.businessName ? `${rawP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+            businessAddress: 'Unlocked after 15% advance payment',
+            rating: rawP.rating || 4.8,
+            totalReviews: rawP.totalReviews || 0,
+            isVerified: true
+          };
+        }
+      }
+
+      // Sanitize accepted bid partner details if 15% advance has NOT been verified
+      let sanitizedAcceptedBid: any = b.acceptedBidId;
+      if (sanitizedAcceptedBid && typeof sanitizedAcceptedBid === 'object' && sanitizedAcceptedBid.partnerId) {
+        if (!hasPaidAdvanceStrict) {
+          const rawBidP = sanitizedAcceptedBid.partnerId;
+          sanitizedAcceptedBid = {
+            ...sanitizedAcceptedBid,
+            partnerId: {
+              _id: rawBidP._id,
+              businessName: rawBidP.businessName ? `${rawBidP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+              businessAddress: 'Unlocked after 15% advance payment',
+              rating: rawBidP.rating || 4.8,
+              totalReviews: rawBidP.totalReviews || 0,
+              isVerified: true
+            }
+          };
+        }
+      }
+
       return {
         ...b,
-        hasPaidAdvance,
-        isAdvancePaid: hasPaidAdvance,
+        assignedPartnerId: sanitizedAssignedPartner,
+        acceptedBidId: sanitizedAcceptedBid,
+        hasPaidAdvance: hasPaidAdvanceStrict,
+        isAdvancePaid: hasPaidAdvanceStrict,
         acceptedQuoteAmount: (b.acceptedBidId as any)?.quotedAmount || 0,
-        verificationCode: isUnlocked ? b.verificationCode : null,
+        verificationCode: hasPaidAdvanceStrict ? b.verificationCode : null,
         jobDetails: jDetails,
         jobExtensions: jDetails?.jobExtensions || [],
         additionalParts: jDetails?.jobExtensions || [],
@@ -352,12 +393,13 @@ export class BookingService {
     // PaymentModel imported at top
     const payments = await PaymentModel.find({ bookingId }).lean();
 
-    const hasPaid15PercentAdvance = Boolean(
-      (booking as any).hasPaidAdvance ||
-      (booking as any).isAdvancePaid ||
-      ['ACCEPTED', 'CONFIRMED', 'VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(booking.status) ||
-      (payments && payments.some((p: any) => (p.status === 'SUCCESS' && p.amount > 0) || (p.provider === 'CASH' && p.paymentType === 'ADVANCE')))
+    const hasOnlineAdvancePaid = Array.isArray(payments) && payments.some(
+      (p: any) => p.status === 'SUCCESS' && p.amount > 0 && (p.paymentType === 'ADVANCE' || p.paymentType === 'FULL')
     );
+    const hasVerifiedWorkStarted = ['VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(booking.status);
+    const isDbFlaggedAdvancePaid = Boolean((booking as any).hasPaidAdvance && (booking as any).isAdvancePaid);
+
+    const hasPaid15PercentAdvance = hasOnlineAdvancePaid || isDbFlaggedAdvancePaid || hasVerifiedWorkStarted;
     const isUnlocked = hasPaid15PercentAdvance;
 
     let rawPartner: any = (booking as any).assignedPartnerId || (booking.acceptedBidId as any)?.partnerId || null;
@@ -392,15 +434,12 @@ export class BookingService {
       if (!isUnlocked) {
         rawPartner = {
           _id: rawPartner._id,
-          businessName: 'Verified CarBlink Workshop',
+          businessName: rawPartner?.businessName ? `${rawPartner.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
           businessAddress: 'Unlocked after 15% advance payment',
-          phone: '+91 XXXXX XXXXX',
+          phone: '',
           rating: rawPartner?.rating || 4.8,
-          userId: {
-            fullName: 'CarBlink Certified Partner',
-            email: 'unlocked_after_payment@carblink.in',
-            phone: '+91 XXXXX XXXXX'
-          }
+          totalReviews: rawPartner?.totalReviews || 0,
+          isVerified: true
         };
       } else {
         const userObj = rawPartner?.userId && typeof rawPartner.userId === 'object' ? rawPartner.userId : null;
@@ -445,6 +484,24 @@ export class BookingService {
       } catch (bErr) {}
     }
 
+    // Sanitize accepted bid partner if not unlocked
+    if (acceptedBidDoc && typeof acceptedBidDoc === 'object' && acceptedBidDoc.partnerId) {
+      if (!isUnlocked) {
+        const rawBP = typeof acceptedBidDoc.partnerId === 'object' ? acceptedBidDoc.partnerId : null;
+        acceptedBidDoc = {
+          ...acceptedBidDoc,
+          partnerId: rawBP ? {
+            _id: rawBP._id,
+            businessName: rawBP.businessName ? `${rawBP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+            businessAddress: 'Unlocked after 15% advance payment',
+            rating: rawBP.rating || 4.8,
+            totalReviews: rawBP.totalReviews || 0,
+            isVerified: true
+          } : acceptedBidDoc.partnerId
+        };
+      }
+    }
+
     return {
       ...booking,
       hasPaidAdvance: hasPaid15PercentAdvance,
@@ -454,6 +511,8 @@ export class BookingService {
       assignedPartnerId: assignedPartner,
       verificationCode: isUnlocked ? booking.verificationCode : null,
       jobDetails: jobDetails || null,
+      jobExtensions: jobDetails?.jobExtensions || [],
+      additionalParts: jobDetails?.jobExtensions || [],
       payments: payments || []
     };
   }
@@ -536,20 +595,23 @@ export class BookingService {
     require('../../../partner/partner.model');
     require('../../../user/user.model');
 
-    // 2. Fetch bids for this booking (either via forwardedBidIds or directly by bookingId)
-    let bidQuery: any = { status: { $ne: 'WITHDRAWN' } };
+    // 2. Fetch bids for this booking ONLY if forwarded by executive or already accepted
+    const allowedBidIds: any[] = [];
     if (booking.forwardedBidIds && booking.forwardedBidIds.length > 0) {
-      bidQuery.$or = [
-        { _id: { $in: booking.forwardedBidIds } },
-        { bookingId: booking._id },
-        { bookingId: booking._id.toString() }
-      ];
-    } else {
-      bidQuery.$or = [
-        { bookingId: booking._id },
-        { bookingId: booking._id.toString() }
-      ];
+      allowedBidIds.push(...booking.forwardedBidIds);
     }
+    if (booking.acceptedBidId) {
+      allowedBidIds.push(booking.acceptedBidId);
+    }
+
+    if (allowedBidIds.length === 0) {
+      return [];
+    }
+
+    const bidQuery: any = {
+      _id: { $in: allowedBidIds },
+      status: { $ne: 'WITHDRAWN' }
+    };
 
     const bids = await BidModel.find(bidQuery)
       .populate({
@@ -559,16 +621,30 @@ export class BookingService {
       .setOptions({ strictPopulate: false })
       .lean();
 
-    // MASKING PRIVACY: Mask partner name & contact details if customer has not accepted/paid for booking yet
-    const isPaidOrAccepted = ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status);
+    // Check if advance is strictly paid for this booking
+    const hasPaidAdvanceStrict = Boolean(
+      ((booking as any).hasPaidAdvance && ((booking as any).isAdvancePaid || ((booking as any).paidAmount || 0) > 0)) ||
+      (booking as any).isAdvancePaid ||
+      (booking as any).paymentStatus === 'PAID' ||
+      (booking as any).paymentStatus === 'PARTIALLY_PAID' ||
+      ['VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(booking.status)
+    );
 
     const processedBids = bids.map((bid: any) => {
-      if (isPaidOrAccepted || !bid.partnerId) {
-        return bid;
+      const p = bid.partnerId;
+      if (!p) return bid;
+
+      const rawName = p.businessName || p.userId?.fullName || 'Partner Garage';
+      const isAcceptedAndPaid = hasPaidAdvanceStrict && booking.acceptedBidId && (
+        booking.acceptedBidId.toString() === bid._id.toString() ||
+        (booking.acceptedBidId._id && booking.acceptedBidId._id.toString() === bid._id.toString())
+      );
+
+      if (isAcceptedAndPaid) {
+        return bid; // Allowed to see verified partner details for their accepted & paid bid
       }
 
-      const p = bid.partnerId;
-      const rawName = p.businessName || p.userId?.fullName || 'Partner Garage';
+      // Redact sensitive contact & GPS details for unaccepted or unpaid bids
       const nameParts = rawName.split(' ');
       const maskedName = nameParts.length > 1
         ? `${nameParts[0]} ***** (Verified Partner)`
@@ -579,7 +655,8 @@ export class BookingService {
         partnerId: {
           ...p,
           businessName: maskedName,
-          businessAddress: p.businessAddress ? `${p.cityId || 'Verified Location'} (Address details unlocked after booking)` : 'Verified Location',
+          businessAddress: p.businessAddress ? `${p.cityId || 'Verified Location'} (Address unlocked after booking)` : 'Verified Location',
+          location: undefined, // Strip raw coordinates
           userId: {
             fullName: 'CarBlink Certified Partner',
             email: 'unlocked_after_payment@carblink.in',

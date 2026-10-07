@@ -545,16 +545,32 @@ export class PaymentService {
     const limit = Math.max(1, parseInt(query.limit || "10", 10));
     const skip = (page - 1) * limit;
 
+    const customerObjId = mongoose.Types.ObjectId.isValid(customerId)
+      ? new mongoose.Types.ObjectId(customerId)
+      : null;
+
+    const filter: any = customerObjId
+      ? { $or: [{ customerId: customerObjId }, { customerId: String(customerId) }] }
+      : { customerId };
+
     const [payments, total] = await Promise.all([
-      PaymentModel.find({ customerId })
-        .populate("bookingId", "status description")
+      PaymentModel.find(filter)
+        .populate({
+          path: "bookingId",
+          select: "status description vehicleId serviceId preferredDate",
+          populate: [
+            { path: "serviceId", select: "name" },
+            { path: "vehicleId", select: "brand model registrationNumber" }
+          ]
+        })
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
-      PaymentModel.countDocuments({ customerId }),
+        .limit(limit)
+        .lean(),
+      PaymentModel.countDocuments(filter),
     ]);
 
-    return { payments, total, page, limit };
+    return { payments: payments as unknown as IPayment[], total, page, limit };
   }
 
   /**
