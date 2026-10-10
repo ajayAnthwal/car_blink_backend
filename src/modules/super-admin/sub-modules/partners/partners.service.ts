@@ -1,4 +1,7 @@
 import mongoose from 'mongoose';
+import '../../../user/user.model';
+import '../../../master-data/models/city.model';
+import '../../../master-data/models/service.model';
 import { PartnerModel } from '../../../partner/partner.model';
 import { KycDocumentModel } from '../../../partner/sub-modules/kyc/kyc.model';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
@@ -49,11 +52,23 @@ export class SuperAdminPartnersService {
    * Get specific partner details including KYC documents
    */
   async getPartnerDetails(partnerId: string): Promise<any> {
-    const partner = await PartnerModel.findById(partnerId)
+    if (!partnerId || !mongoose.Types.ObjectId.isValid(partnerId)) {
+      throw new NotFoundError('Partner not found: invalid ID');
+    }
+
+    let partner = await PartnerModel.findById(partnerId)
       .populate('userId', 'fullName email phone')
       .populate('cityId', 'name state')
       .populate('servicesOffered', 'name category')
       .lean();
+
+    if (!partner) {
+      partner = await PartnerModel.findOne({ userId: partnerId })
+        .populate('userId', 'fullName email phone')
+        .populate('cityId', 'name state')
+        .populate('servicesOffered', 'name category')
+        .lean();
+    }
 
     if (!partner) {
       throw new NotFoundError('Partner not found');

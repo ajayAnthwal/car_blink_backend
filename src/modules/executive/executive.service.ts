@@ -390,14 +390,16 @@ export class ExecutiveService {
       await KycDocumentModel.updateMany({ partnerId: id }, { status: 'UNDER_REVIEW' });
       try {
         // 1. Notify Partner about Stage 1 Verification
-        await notificationService.sendNotification(
-          partner.userId.toString(),
-          NOTIFICATION_TYPE.IN_APP,
-          NOTIFICATION_CATEGORY.SYSTEM,
-          'Stage 1 Verification Passed',
-          `Field Executive has verified your workshop details for "${partner.businessName}". Your application has been forwarded to Super Admin for Final Approval.`,
-          { partnerId: partner._id.toString(), status: 'UNDER_REVIEW', stage: 1 }
-        );
+        if (partner.userId) {
+          await notificationService.sendNotification(
+            partner.userId.toString(),
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.SYSTEM,
+            'Stage 1 Verification Passed',
+            `Field Executive has verified your workshop details for "${partner.businessName}". Your application has been forwarded to Super Admin for Final Approval.`,
+            { partnerId: partner._id.toString(), status: 'UNDER_REVIEW', stage: 1 }
+          );
+        }
 
         // 2. Notify Super Admin about Executive Clearance
         await notificationService.sendToRole(
@@ -406,20 +408,22 @@ export class ExecutiveService {
           NOTIFICATION_CATEGORY.SYSTEM,
           'Executive Approved Partner (Awaiting Final Clearance)',
           `Executive has verified & recommended Partner "${partner.businessName}". Pending Super Admin Final Activation.`,
-          { partnerId: partner._id.toString(), userId: partner.userId.toString() }
+          { partnerId: partner._id.toString(), userId: partner.userId?.toString() }
         );
       } catch (e) {}
     } else {
       await KycDocumentModel.updateMany({ partnerId: id }, { status: 'REJECTED' });
       try {
-        await notificationService.sendNotification(
-          partner.userId.toString(),
-          NOTIFICATION_TYPE.IN_APP,
-          NOTIFICATION_CATEGORY.SYSTEM,
-          'Partner Verification Update',
-          `Your workshop application was not approved during Executive review. Reason: "${reason || 'Requirements not met'}".`,
-          { partnerId: partner._id.toString(), status: 'REJECTED', reason }
-        );
+        if (partner.userId) {
+          await notificationService.sendNotification(
+            partner.userId.toString(),
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.SYSTEM,
+            'Partner Verification Update',
+            `Your workshop application was not approved during Executive review. Reason: "${reason || 'Requirements not met'}".`,
+            { partnerId: partner._id.toString(), status: 'REJECTED', reason }
+          );
+        }
       } catch (e) {}
     }
 
@@ -436,8 +440,10 @@ export class ExecutiveService {
           : `Your verification has been ${status.toLowerCase()}.` 
       };
 
-      emitToUser(partner.userId.toString(), 'partner_status_updated', payload);
-      emitToUser(partner.userId.toString(), 'kyc_status_changed', payload);
+      if (partner.userId) {
+        emitToUser(partner.userId.toString(), 'partner_status_updated', payload);
+        emitToUser(partner.userId.toString(), 'kyc_status_changed', payload);
+      }
       emitToRole('EXECUTIVE', 'partner_status_updated', payload);
       emitToRole('SUPER_ADMIN', 'partner_status_updated', payload);
     } catch (err) {

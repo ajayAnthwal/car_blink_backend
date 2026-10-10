@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import '../user/user.model';
+import '../master-data/models/city.model';
 import { PartnerModel, IPartner } from './partner.model';
 import { PartnerVerificationLogModel } from './partner-verification-log.model';
 import { BookingModel } from '../customer/sub-modules/booking/booking.model';
@@ -125,13 +127,27 @@ export class PartnerReviewService {
    * Retrieves complete partner details, comparison proofs, masked bank info, checklist, and audit logs.
    */
   public static async getPartnerReviewDetails(partnerId: string): Promise<any> {
-    const partner = await PartnerModel.findById(partnerId)
+    if (!partnerId || !mongoose.Types.ObjectId.isValid(partnerId)) {
+      throw new NotFoundError('Partner profile not found: invalid ID');
+    }
+
+    let partner = await PartnerModel.findById(partnerId)
       .populate('userId', 'fullName email phone isPhoneVerified isEmailVerified')
       .populate('cityId', 'name state')
       .populate('executiveVerifiedBy', 'fullName email role')
       .populate('adminApprovedBy', 'fullName email role')
       .populate('duplicateFlags.matchedPartnerId', 'uniquePartnerId businessName workshopName verificationStatus isActive')
       .lean();
+
+    if (!partner) {
+      partner = await PartnerModel.findOne({ userId: partnerId })
+        .populate('userId', 'fullName email phone isPhoneVerified isEmailVerified')
+        .populate('cityId', 'name state')
+        .populate('executiveVerifiedBy', 'fullName email role')
+        .populate('adminApprovedBy', 'fullName email role')
+        .populate('duplicateFlags.matchedPartnerId', 'uniquePartnerId businessName workshopName verificationStatus isActive')
+        .lean();
+    }
 
     if (!partner) {
       throw new NotFoundError('Partner profile not found');
@@ -178,7 +194,14 @@ export class PartnerReviewService {
     },
     verifier: { userId: string; role: string; fullName?: string }
   ): Promise<any> {
-    const partner = await PartnerModel.findById(partnerId);
+    if (!partnerId || !mongoose.Types.ObjectId.isValid(partnerId)) {
+      throw new NotFoundError('Partner profile not found: invalid ID');
+    }
+
+    let partner = await PartnerModel.findById(partnerId);
+    if (!partner) {
+      partner = await PartnerModel.findOne({ userId: partnerId });
+    }
     if (!partner) {
       throw new NotFoundError('Partner profile not found');
     }
