@@ -27,6 +27,7 @@ router.get('/leads/:id', AssignmentController.getLeadById);
 router.post('/leads/:id/sync-payments', AssignmentController.syncLeadPayments);
 router.patch('/leads/:id', AssignmentController.updateLead);
 router.patch('/leads/:id/assign-partner', AssignmentController.assignPartnerToLead);
+router.get('/leads/:id/eligible-partners', AssignmentController.getEligiblePartners);
 router.post('/leads/:id/convert', AssignmentController.convertWebsiteLeadToBooking);
 router.post('/leads/:id/forward-quote', AssignmentController.forwardQuoteToCustomer);
 router.post('/leads/:id/confirm-quote', AssignmentController.confirmQuoteSelection);
@@ -52,11 +53,17 @@ router.patch('/escalations/:id/resolve', validate({ body: updateEscalationSchema
 router.get('/customer-status', ExecutiveController.getCustomerStatusOverview);
 router.patch('/customer-status/:id/verify', ExecutiveController.verifyCustomer);
 router.get('/partner-status', ExecutiveController.getPartnerStatusOverview);
+router.get('/partner-status/:id/review', ExecutiveController.getPartnerReviewDetails);
+router.post('/partner-status/:id/review-action', ExecutiveController.submitReviewAction);
 router.get('/warranties', ExecutiveController.getAllWarranties);
 router.patch('/partner-status/:id/verify', ExecutiveController.verifyPartner);
 
 // SUB-MODULE 5: Communications
 router.post('/call', ExecutiveController.clickToCall);
+
+// SUB-MODULE 6: Extra Work Review
+router.get('/extra-work/pending', ExecutiveController.getPendingExtraWork);
+router.patch('/extra-work/:jobId/extensions/:extId/review', ExecutiveController.reviewExtraWork);
 
 router.use("/logistics", (logisticsRouter as any).default || logisticsRouter);
 router.use("/tickets", (ticketsRouter as any).default || ticketsRouter);

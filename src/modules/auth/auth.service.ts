@@ -11,7 +11,7 @@ import { env } from '../../config/env.config';
 import { emailProvider } from '../notification/providers/email.provider';
 import { smsProvider } from '../notification/providers/sms.provider';
 import { ROLES } from '../../common/constants/roles.constant';
-
+import { PartnerAntiFakeService } from '../partner/partner-anti-fake.service';
 
 import { OAuth2Client } from 'google-auth-library';
 
@@ -66,6 +66,32 @@ export class AuthService {
       throw new UnauthorizedError('Unauthorized role registration');
     }
 
+    // Partner duplicate email and mobile checks
+    if (requestedRole === ROLES.PARTNER) {
+      const existingPartnerMobile = await UserModel.findOne({
+        $or: [
+          { phone: cleanPhone },
+          { phone: `+91${cleanPhone}` },
+          { phone: `91${cleanPhone}` }
+        ],
+        role: ROLES.PARTNER,
+        isPhoneVerified: true
+      });
+      if (existingPartnerMobile) {
+        throw new ConflictError('A partner account is already registered with this mobile number. Please log in.');
+      }
+
+      if (cleanEmail) {
+        const existingPartnerEmail = await UserModel.findOne({
+          email: cleanEmail,
+          role: ROLES.PARTNER
+        });
+        if (existingPartnerEmail) {
+          throw new ConflictError('A partner account is already registered with this email address. Please log in or use a different email.');
+        }
+      }
+    }
+
     if (existingUser) {
       // Only block if existing user is an already completed, verified registration with a password set
       const isDummyGuest = existingUser.fullName === 'Guest Lead User' || existingUser.email?.includes('@phone.carblink.com');
@@ -83,7 +109,7 @@ export class AuthService {
       fullName: data.fullName.trim(),
       phone: cleanPhone,
       password: data.password,
-      role: data.role || ROLES.CUSTOMER,
+      role: requestedRole,
       isPhoneVerified: true,
     };
 
@@ -92,61 +118,126 @@ export class AuthService {
       userData.isEmailVerified = true;
     }
 
-    // 3. Create or Update the user
-    let newUser;
-    if (existingUser) {
-      existingUser.fullName = data.fullName.trim();
-      existingUser.phone = cleanPhone;
-      if (cleanEmail) existingUser.email = cleanEmail;
-      existingUser.password = data.password;
-      existingUser.role = data.role || ROLES.CUSTOMER;
-      existingUser.isPhoneVerified = true;
-      if (cleanEmail) existingUser.isEmailVerified = true;
-      await existingUser.save();
-      newUser = existingUser;
-    } else {
-      newUser = await UserModel.create(userData);
-    }
+    const { PartnerModel } = require('../partner/partner.model');
+    const { PartnerVerificationLogModel } = require('../partner/partner-verification-log.model');
+    const { autoResolvePartnerLocation } = require('../partner/partner.service');
 
-    // 3b. If registration role is PARTNER, create/update detailed Partner profile
-    if (data.role === ROLES.PARTNER || requestedRole === ROLES.PARTNER) {
-      try {
-        const { PartnerModel } = require('../partner/partner.model');
+    let newUser: any = null;
+    let createdPartner: any = null;
+
+    if (requestedRole === ROLES.PARTNER) {
+      // 1. Prepare partner data
+      const workshopName = (data.workshopName || data.businessName || data.fullName).trim();
+      const normalizedWorkshopName = workshopName.toLowerCase().trim();
+
+      const addressLine = (data.addressLine || data.businessAddress || data.address || '').trim();
+      const city = (data.city || '').trim();
+      const state = (data.state || '').trim();
+      const pincode = (data.pincode || '').trim();
+      const formattedAddress = [addressLine, city, state, pincode].filter(Boolean).join(', ');
+
+      let resolvedCoords: [number, number] = [77.2090, 28.6139]; // Default coordinates
+      if (data.longitude !== undefined && data.latitude !== undefined) {
+        const lng = Number(data.longitude);
+        const lat = Number(data.latitude);
+        if (!isNaN(lng) && !isNaN(lat)) {
+          resolvedCoords = [lng, lat];
+        }
+      } else if (formattedAddress) {
         const { autoResolvePartnerLocation } = require('../partner/partner.service');
-        const rawAddress = (data.businessAddress || data.address || '').trim();
-        
-        let resolvedCoords: [number, number] = [78.0322, 30.3165]; // Dehradun default
-        if (data.longitude && data.latitude) {
-          resolvedCoords = [Number(data.longitude), Number(data.latitude)];
-        } else if (rawAddress) {
-          const autoCoords = autoResolvePartnerLocation(rawAddress);
-          if (autoCoords) resolvedCoords = autoCoords;
+        const autoCoords = autoResolvePartnerLocation(formattedAddress);
+        if (autoCoords) resolvedCoords = autoCoords;
+      }
+
+      // Task 8: Check for duplicates across mobile, workshop name, address, coordinates, GSTIN, Udyam
+      // Flag in duplicateFlags and show to Admin in verification screen (do not silently delete or auto-reject)
+      const duplicateFlags = await PartnerAntiFakeService.runDuplicateDetection(undefined, {
+        mobile: cleanPhone,
+        workshopName,
+        businessName: workshopName,
+        addressLine,
+        businessAddress: formattedAddress,
+        location: { coordinates: resolvedCoords },
+        gstin: data.gstNumber ? data.gstNumber.trim().toUpperCase() : undefined,
+        udyamNumber: data.msmeNumber ? data.msmeNumber.trim().toUpperCase() : undefined,
+      });
+
+      // Task 8: One verified mobile must not create multiple active partner accounts without Admin approval
+      const hasActiveMobileDuplicate = duplicateFlags.some(
+        (f) => f.field === 'MOBILE' && f.reason.includes('already active on partner account')
+      );
+      const initialIsActive = !hasActiveMobileDuplicate;
+
+      const partnerData: any = {
+        businessName: workshopName,
+        workshopName,
+        normalizedWorkshopName,
+        ownerName: (data.ownerName || data.fullName).trim(),
+        mobile: cleanPhone,
+        mobileVerified: true,
+        email: cleanEmail,
+        businessType: data.businessType || 'Proprietorship',
+        addressLine,
+        city,
+        state,
+        pincode,
+        businessAddress: formattedAddress || 'Workshop Address',
+        gstNumber: data.gstNumber ? data.gstNumber.trim().toUpperCase() : undefined,
+        msmeNumber: data.msmeNumber ? data.msmeNumber.trim().toUpperCase() : undefined,
+        verificationStatus: 'REGISTRATION_SUBMITTED',
+        executiveVerificationStatus: 'PENDING',
+        isVerified: false,
+        isActive: initialIsActive,
+        location: {
+          type: 'Point',
+          coordinates: resolvedCoords
+        },
+        duplicateFlags,
+        reVerificationRequired: false
+      };
+      if (data.cityId) partnerData.cityId = data.cityId;
+
+      // 2. Atomic creation of User + Partner + PartnerVerificationLog
+      // Guaranteed compensating rollback if Partner or Log creation fails
+      try {
+        if (existingUser) {
+          existingUser.fullName = data.fullName.trim();
+          existingUser.phone = cleanPhone;
+          if (cleanEmail) existingUser.email = cleanEmail;
+          existingUser.password = data.password;
+          existingUser.role = ROLES.PARTNER;
+          existingUser.isPhoneVerified = true;
+          if (cleanEmail) existingUser.isEmailVerified = true;
+          await existingUser.save();
+          newUser = existingUser;
+        } else {
+          newUser = await UserModel.create(userData);
         }
 
-        const partnerData: any = {
-          userId: newUser._id,
-          businessName: (data.businessName || data.fullName).trim(),
-          ownerName: (data.ownerName || data.fullName).trim(),
-          businessAddress: rawAddress || 'Workshop Address',
-          gstNumber: data.gstNumber ? data.gstNumber.trim().toUpperCase() : undefined,
-          msmeNumber: data.msmeNumber ? data.msmeNumber.trim().toUpperCase() : undefined,
-          executiveVerificationStatus: 'PENDING',
-          verificationStatus: 'PENDING',
-          isVerified: false,
-          location: {
-            type: 'Point',
-            coordinates: resolvedCoords
-          },
-        };
-        if (data.cityId) partnerData.cityId = data.cityId;
-
-        const createdPartner = await PartnerModel.findOneAndUpdate(
+        partnerData.userId = newUser._id;
+        createdPartner = await PartnerModel.findOneAndUpdate(
           { userId: newUser._id },
           { $set: partnerData },
           { upsert: true, new: true }
         );
 
-        // Send In-App Notifications & Real-Time Socket Event to Executive & Super Admin
+        // Create initial append-only audit log entry
+        await PartnerVerificationLogModel.create({
+          partnerId: createdPartner._id,
+          action: 'REGISTRATION_SUBMITTED',
+          fromStatus: 'NONE',
+          toStatus: 'REGISTRATION_SUBMITTED',
+          notes: 'Initial partner registration submitted with verified mobile OTP.',
+          timestamp: new Date(),
+          metadata: {
+            mobile: cleanPhone,
+            workshopName,
+            businessType: partnerData.businessType,
+            duplicateFlagsCount: duplicateFlags.length
+          }
+        });
+
+        // Send notifications to Executive & Super Admin
         try {
           const { notificationService } = require('../notification/notification.service');
           const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
@@ -157,7 +248,7 @@ export class AuthService {
             NOTIFICATION_TYPE.IN_APP,
             NOTIFICATION_CATEGORY.SYSTEM,
             'New Partner Registered',
-            `New Workshop Partner "${partnerData.businessName}" (${partnerData.ownerName}, Ph: ${newUser.phone || data.phone}) has registered. Verification Pending.`,
+            `New Workshop Partner "${partnerData.workshopName}" (${partnerData.ownerName}, Ph: ${newUser.phone}) has registered. Status: REGISTRATION_SUBMITTED.`,
             { partnerId: createdPartner._id.toString(), userId: newUser._id.toString() }
           );
 
@@ -166,19 +257,39 @@ export class AuthService {
             NOTIFICATION_TYPE.IN_APP,
             NOTIFICATION_CATEGORY.SYSTEM,
             'New Partner Registered',
-            `New Workshop Partner "${partnerData.businessName}" (${partnerData.ownerName}, Ph: ${newUser.phone || data.phone}) has registered. Verification Pending.`,
+            `New Workshop Partner "${partnerData.workshopName}" (${partnerData.ownerName}, Ph: ${newUser.phone}) has registered. Status: REGISTRATION_SUBMITTED.`,
             { partnerId: createdPartner._id.toString(), userId: newUser._id.toString() }
           );
 
           emitToRole('EXECUTIVE', 'partner_registered', { partner: createdPartner });
           emitToRole('SUPER_ADMIN', 'partner_registered', { partner: createdPartner });
-          emitToRole('EXECUTIVE', 'partner_status_updated', { partnerId: createdPartner._id, status: 'PENDING', executiveVerificationStatus: 'PENDING' });
-          emitToRole('SUPER_ADMIN', 'partner_status_updated', { partnerId: createdPartner._id, status: 'PENDING', executiveVerificationStatus: 'PENDING' });
         } catch (notifErr) {
           console.error('[AuthService] Error sending partner registration notification:', notifErr);
         }
-      } catch (partnerErr) {
-        console.error('[AuthService] Error creating Partner document during registration:', partnerErr);
+      } catch (atomicErr) {
+        // Compensating rollback: Clean up newly created user to prevent orphans
+        if (newUser && !existingUser) {
+          await UserModel.deleteOne({ _id: newUser._id }).catch(() => {});
+        }
+        if (createdPartner) {
+          await PartnerModel.deleteOne({ _id: createdPartner._id }).catch(() => {});
+        }
+        throw atomicErr;
+      }
+    } else {
+      // Standard Customer registration (100% untouched flow)
+      if (existingUser) {
+        existingUser.fullName = data.fullName.trim();
+        existingUser.phone = cleanPhone;
+        if (cleanEmail) existingUser.email = cleanEmail;
+        existingUser.password = data.password;
+        existingUser.role = ROLES.CUSTOMER;
+        existingUser.isPhoneVerified = true;
+        if (cleanEmail) existingUser.isEmailVerified = true;
+        await existingUser.save();
+        newUser = existingUser;
+      } else {
+        newUser = await UserModel.create(userData);
       }
     }
 
@@ -386,15 +497,27 @@ export class AuthService {
     return { success: true };
   }
 
-            public static async sendSignupOtp(phone: string): Promise<{ message: string }> {
-    const cleanPhone = phone ? phone.trim().replace(/[^0-9]/g, '') : '';
+  public static async sendSignupOtp(phone: string, role?: string): Promise<{ message: string }> {
+    const cleanPhone = phone ? phone.trim().replace(/[^0-9]/g, '').slice(-10) : '';
     if (cleanPhone.length !== 10 || !/^[6-9]\d{9}$/.test(cleanPhone)) {
       throw new ApiError(400, 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9');
     }
 
+    if (role === ROLES.PARTNER) {
+      const existingPartner = await UserModel.findOne({
+        $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }],
+        role: ROLES.PARTNER,
+        isPhoneVerified: true
+      });
+      if (existingPartner) {
+        throw new ConflictError('A partner account is already registered with this mobile number. Please log in instead.');
+      }
+    }
+
     const { generateOtp, storeOtp } = require('./strategies/otp.strategy');
     const otp = generateOtp();
-    await storeOtp(cleanPhone, otp);
+    const purpose = role === ROLES.PARTNER ? 'PARTNER_REGISTER' : 'REGISTER';
+    await storeOtp(cleanPhone, otp, purpose);
 
     return {
       message: `6-Digit verification code sent successfully to +91 ${cleanPhone}`
@@ -696,8 +819,10 @@ export class AuthService {
           userObj.partnerInfo = partner;
           userObj.partnerDetails = partner;
           userObj.isVerified = !!partner.isVerified;
-          userObj.verificationStatus = partner.verificationStatus || 'PENDING';
-          userObj.executiveVerificationStatus = partner.executiveVerificationStatus || 'PENDING';
+          userObj.verificationStatus = partner.verificationStatus || (partner.isVerified ? 'APPROVED' : 'PENDING');
+          userObj.executiveVerificationStatus = partner.executiveVerificationStatus || (partner.isVerified ? 'APPROVED' : 'PENDING');
+          userObj.rejectionReason = partner.rejectionReason;
+          userObj.isActive = partner.isActive !== false;
         }
       } catch (pErr) {
         console.error('[AuthService] Error populating partner details:', pErr);

@@ -46,24 +46,53 @@ export class ExecutiveInvoiceService {
       throw new NotFoundError('Booking not found');
     }
 
-    // Format items and calculate grand total if itemized
-    const rawItems = Array.isArray(data.items) ? data.items : [];
-    const formattedItems: IInvoiceItem[] = rawItems.map((item) => {
-      const qty = Math.max(1, Number(item.quantity) || 1);
-      const price = Math.max(0, Number(item.unitPrice) || 0);
-      return {
-        description: item.description?.trim() || 'Service Item',
-        quantity: qty,
-        unitPrice: price,
-        total: qty * price
-      };
-    });
+    // Fetch Bid and Service for locked base quote
+    const BidModel = mongoose.model('Bid');
+    const bid = (await BidModel.findById(job.bidId)) as any;
+    const ServiceModel = mongoose.model('Service');
+    const serviceDoc = await ServiceModel.findById(booking.serviceId);
 
-    const calculatedSubtotal = formattedItems.reduce((sum, item) => sum + item.total, 0);
-    const subtotal = data.subtotal !== undefined ? Number(data.subtotal) : calculatedSubtotal;
-    const taxAmount = Number(data.taxAmount || 0);
-    const discount = Number(data.discount || 0);
-    const grandTotal = data.grandTotal !== undefined ? Number(data.grandTotal) : Math.max(0, subtotal + taxAmount - discount);
+    // Option A: Base quote is Customer Gross Quote (All-Inclusive of 18% GST)
+    const baseQuoteAmount = Number(
+      booking.pricing?.customerGrossQuote ??
+      bid?.quotedAmount ??
+      job.finalAmount ??
+      booking.pricing?.partnerBaseQuote ??
+      0
+    );
+
+    const baseItemDescription = serviceDoc?.name || bid?.notes || 'Base Periodic Service';
+
+    // 1. Locked Base Quote Line Item (All-Inclusive gross)
+    const lockedBaseItem: IInvoiceItem = {
+      description: baseItemDescription,
+      quantity: 1,
+      unitPrice: baseQuoteAmount,
+      total: baseQuoteAmount,
+    };
+
+    // 2. Customer-Approved Extra Work Line Items ONLY (exclude any unapproved charges)
+    const approvedExtensions = (job.jobExtensions || []).filter((e: any) => e.status === 'APPROVED');
+    const approvedExtraItems: IInvoiceItem[] = approvedExtensions.map((ext: any) => ({
+      description: ext.partName?.trim() || 'Approved Extra Part',
+      quantity: 1,
+      unitPrice: Number(ext.cost) || 0,
+      total: Number(ext.cost) || 0,
+    }));
+
+    // Verified items: strictly base quote + customer-approved extra work
+    const formattedItems: IInvoiceItem[] = [lockedBaseItem, ...approvedExtraItems];
+
+    // Option A: All-Inclusive GST Pricing
+    // Grand Total equals the sum of inclusive line items minus discount
+    const grossItemsTotal = formattedItems.reduce((sum, item) => sum + item.total, 0);
+    const discount = Math.max(0, Number(data.discount || 0));
+    const grandTotal = Math.max(0, grossItemsTotal - discount);
+
+    // Reverse-calculate 18% GST and Taxable Subtotal
+    const gstRate = booking.pricing?.gstRate ?? 0.18;
+    const taxAmount = Number((grandTotal - (grandTotal / (1 + gstRate))).toFixed(2));
+    const subtotal = Number((grandTotal - taxAmount).toFixed(2));
 
     // Upsert invoice for this job with safety check
     let invoice = await InvoiceModel.findOne({
@@ -260,11 +289,28 @@ export class ExecutiveInvoiceService {
       });
     }
 
-    const calculatedSubtotal = invoice.items.reduce((sum, item) => sum + item.total, 0);
-    invoice.subtotal = data.subtotal !== undefined ? Number(data.subtotal) : calculatedSubtotal;
-    invoice.taxAmount = data.taxAmount !== undefined ? Number(data.taxAmount) : invoice.taxAmount;
-    invoice.discount = data.discount !== undefined ? Number(data.discount) : invoice.discount;
-    invoice.grandTotal = data.grandTotal !== undefined ? Number(data.grandTotal) : Math.max(0, invoice.subtotal + invoice.taxAmount - invoice.discount);
+    const calculatedGross = invoice.items.reduce((sum, item) => sum + item.total, 0);
+    const discount = data.discount !== undefined ? Math.max(0, Number(data.discount)) : (invoice.discount || 0);
+
+    // Option A: Grand Total is all-inclusive (gross minus discount)
+    let grandTotal = data.grandTotal !== undefined 
+      ? Math.max(0, Number(data.grandTotal)) 
+      : Math.max(0, calculatedGross - discount);
+
+    let taxAmount: number;
+    let subtotal: number;
+    if (data.taxAmount !== undefined && data.subtotal !== undefined && Math.abs(Number(data.subtotal) + Number(data.taxAmount) - grandTotal) < 0.05) {
+      taxAmount = Number(data.taxAmount);
+      subtotal = Number(data.subtotal);
+    } else {
+      taxAmount = Number((grandTotal - (grandTotal / 1.18)).toFixed(2));
+      subtotal = Number((grandTotal - taxAmount).toFixed(2));
+    }
+
+    invoice.subtotal = subtotal;
+    invoice.taxAmount = taxAmount;
+    invoice.discount = discount;
+    invoice.grandTotal = grandTotal;
     
     if (data.executiveNotes !== undefined) {
       invoice.executiveNotes = data.executiveNotes;

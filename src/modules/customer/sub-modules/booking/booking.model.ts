@@ -38,8 +38,28 @@ export interface IBooking extends Document {
   satisfactionFeedback?: string;
   satisfactionSentAt?: Date;
   satisfactionRespondedAt?: Date;
+  suspendedPartnerFlag?: boolean;
+  partnerSuspendedAt?: Date;
+  adminWorkflowFlag?: string;
+  pricing?: IBookingPricing;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface IBookingPricing {
+  partnerBaseQuote?: number;
+  gstRate?: number;
+  gstAmount?: number;
+  customerGrossQuote?: number;
+  advanceRequired?: number;
+  advancePaid?: number;
+  balanceAmount?: number;
+  approvedExtrasAmount?: number;
+  pendingExtrasAmount?: number;
+  gatewayFeeAmount?: number;
+  rewardAmount?: number;
+  dltCostAmount?: number;
+  companyMarginAmount?: number;
 }
 
 
@@ -192,7 +212,34 @@ const BookingSchema = new Schema<IBooking>(
     },
     satisfactionRespondedAt: {
       type: Date,
-    }
+    },
+    suspendedPartnerFlag: {
+      type: Boolean,
+      default: false,
+    },
+    partnerSuspendedAt: {
+      type: Date,
+    },
+    adminWorkflowFlag: {
+      type: String,
+      trim: true,
+    },
+    pricing: {
+      _id: false,
+      partnerBaseQuote: { type: Number },
+      gstRate: { type: Number },
+      gstAmount: { type: Number },
+      customerGrossQuote: { type: Number },
+      advanceRequired: { type: Number },
+      advancePaid: { type: Number },
+      balanceAmount: { type: Number },
+      approvedExtrasAmount: { type: Number },
+      pendingExtrasAmount: { type: Number },
+      gatewayFeeAmount: { type: Number },
+      rewardAmount: { type: Number },
+      dltCostAmount: { type: Number },
+      companyMarginAmount: { type: Number },
+    },
   },
   {
     timestamps: true,

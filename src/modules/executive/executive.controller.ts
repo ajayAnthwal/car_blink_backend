@@ -48,4 +48,47 @@ export class ExecutiveController {
     const result = await executiveService.verifyPartner(id, status, reason, req.user?.userId);
     return successResponse(res, result, `Partner ${status.toLowerCase()} successfully`);
   });
+
+  public static getPartnerReviewDetails = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { PartnerReviewService } = require('../partner/partner-review.service');
+    const result = await PartnerReviewService.getPartnerReviewDetails(id);
+    return successResponse(res, result, 'Partner review details retrieved successfully');
+  });
+
+  public static submitReviewAction = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const { action, notes } = req.body;
+    const { PartnerReviewService } = require('../partner/partner-review.service');
+    const verifier = {
+      userId: String(req.user?.userId),
+      role: String(req.user?.role),
+      fullName: (req.user as any)?.fullName,
+    };
+    const result = await PartnerReviewService.submitReviewAction(id, { action, notes }, verifier);
+    return successResponse(res, result, result.message);
+  });
+
+  public static getPendingExtraWork = asyncHandler(async (req: IRequest, res: Response) => {
+    const data = await executiveService.getPendingExtraWork(
+      String(req.user?.userId),
+      String(req.user?.role),
+      req.query
+    );
+    return successResponse(res, data, 'Pending extra-work requests retrieved successfully');
+  });
+
+  public static reviewExtraWork = asyncHandler(async (req: IRequest, res: Response) => {
+    const { jobId, extId } = req.params;
+    const { action, note } = req.body;
+    const result = await executiveService.reviewExtraWork(
+      String(req.user?.userId),
+      String(req.user?.role),
+      jobId,
+      extId,
+      action,
+      note
+    );
+    return successResponse(res, result, result.message);
+  });
 }

@@ -33,6 +33,19 @@ export class SuperAdminBookingsController {
     const booking = await superAdminBookingsService.manualAssignAndBypass(adminUserId, adminRole, id, req.body);
     return successResponse(res, booking, 'Manual override/assignment executed successfully');
   });
+
+  public static getEligiblePartners = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const includeAll = req.query.includeAll === 'true';
+    const cityId = req.query.cityId as string;
+    const maxRadiusKm = req.query.maxRadiusKm ? Number(req.query.maxRadiusKm) : undefined;
+    const result = await superAdminBookingsService.getEligiblePartners(id, {
+      includeAll,
+      cityId,
+      maxRadiusKm,
+    });
+    return successResponse(res, result, 'Eligible partners retrieved successfully');
+  });
 }
 
 export default SuperAdminBookingsController;

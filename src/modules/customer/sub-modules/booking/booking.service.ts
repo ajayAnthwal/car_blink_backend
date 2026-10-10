@@ -330,6 +330,25 @@ export class BookingService {
         }
       }
 
+      const bAcceptedAmt = (b.acceptedBidId as any)?.quotedAmount || 0;
+      const bBaseAmt = jDetails?.finalAmount || bAcceptedAmt || ((b as any).serviceId?.basePrice || 0);
+      const bApprovedExtsCost = (jDetails?.jobExtensions || [])
+        .filter((e: any) => e.status === 'APPROVED')
+        .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+      const bCouponDisc = (b as any).couponDiscountAmount || 0;
+      const bResolvedTotal = Math.max(0, bBaseAmt + bApprovedExtsCost - bCouponDisc);
+      const { advanceFor: bAdvanceFor } = require('../../../../common/utils/money.util');
+      const bCalc = bAdvanceFor(bResolvedTotal);
+
+      const bCustomerExts = (jDetails?.jobExtensions || []).filter((e: any) =>
+        ['EXECUTIVE_APPROVED', 'APPROVED', 'REJECTED', 'PENDING'].includes(e.status)
+      );
+      const bSanitizedJobDetails = jDetails ? {
+        ...jDetails,
+        jobExtensions: bCustomerExts,
+      } : null;
+
+      const { sanitizeCustomerPricing } = require('../../../../common/utils/pricing.util');
       return {
         ...b,
         assignedPartnerId: sanitizedAssignedPartner,
@@ -338,10 +357,14 @@ export class BookingService {
         isAdvancePaid: hasPaidAdvanceStrict,
         acceptedQuoteAmount: (b.acceptedBidId as any)?.quotedAmount || 0,
         verificationCode: hasPaidAdvanceStrict ? b.verificationCode : null,
-        jobDetails: jDetails,
-        jobExtensions: jDetails?.jobExtensions || [],
-        additionalParts: jDetails?.jobExtensions || [],
-        payments: bPayments
+        jobDetails: bSanitizedJobDetails,
+        jobExtensions: bCustomerExts,
+        additionalParts: bCustomerExts,
+        payments: bPayments,
+        advanceAmount: (b as any).advanceAmount || (b as any).pricing?.advanceRequired || bCalc.advanceAmount,
+        balance: (b as any).pricing?.balanceAmount ?? bCalc.balanceAmount,
+        balanceAmount: (b as any).pricing?.balanceAmount ?? bCalc.balanceAmount,
+        pricing: sanitizeCustomerPricing((b as any).pricing),
       };
     });
 
@@ -502,6 +525,25 @@ export class BookingService {
       }
     }
 
+    const acceptedAmt = acceptedBidDoc?.quotedAmount || 0;
+    const baseAmt = jobDetails?.finalAmount || acceptedAmt || ((booking as any).serviceId?.basePrice || 0);
+    const approvedExtsCost = (jobDetails?.jobExtensions || [])
+      .filter((e: any) => e.status === 'APPROVED')
+      .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+    const couponDisc = (booking as any).couponDiscountAmount || 0;
+    const resolvedTotal = Math.max(0, baseAmt + approvedExtsCost - couponDisc);
+    const { advanceFor: bIdAdvanceFor } = require('../../../../common/utils/money.util');
+    const bIdCalc = bIdAdvanceFor(resolvedTotal);
+
+    const customerExts = (jobDetails?.jobExtensions || []).filter((e: any) =>
+      ['EXECUTIVE_APPROVED', 'APPROVED', 'REJECTED', 'PENDING'].includes(e.status)
+    );
+    const sanitizedJobDetails = jobDetails ? {
+      ...jobDetails,
+      jobExtensions: customerExts,
+    } : null;
+
+    const { sanitizeCustomerPricing: sanitizeIdPricing } = require('../../../../common/utils/pricing.util');
     return {
       ...booking,
       hasPaidAdvance: hasPaid15PercentAdvance,
@@ -510,10 +552,14 @@ export class BookingService {
       acceptedQuoteAmount: acceptedBidDoc?.quotedAmount || 0,
       assignedPartnerId: assignedPartner,
       verificationCode: isUnlocked ? booking.verificationCode : null,
-      jobDetails: jobDetails || null,
-      jobExtensions: jobDetails?.jobExtensions || [],
-      additionalParts: jobDetails?.jobExtensions || [],
-      payments: payments || []
+      jobDetails: sanitizedJobDetails,
+      jobExtensions: customerExts,
+      additionalParts: customerExts,
+      payments: payments || [],
+      advanceAmount: (booking as any).advanceAmount || (booking as any).pricing?.advanceRequired || bIdCalc.advanceAmount,
+      balance: (booking as any).pricing?.balanceAmount ?? bIdCalc.balanceAmount,
+      balanceAmount: (booking as any).pricing?.balanceAmount ?? bIdCalc.balanceAmount,
+      pricing: sanitizeIdPricing((booking as any).pricing),
     };
   }
 
@@ -705,6 +751,11 @@ export class BookingService {
     booking.status = BOOKING_STATUS.CUSTOMER_ACCEPTED;
     booking.acceptedBidId = selectedBid._id;
     (booking as any).assignedPartnerId = selectedBid.partnerId?._id || selectedBid.partnerId;
+
+    // Server-side pricing calculation and storage
+    const { buildPricing } = require('../../../../common/utils/pricing.util');
+    booking.pricing = buildPricing(Number(selectedBid.quotedAmount));
+
     await booking.save();
 
     // 4. Emit live socket events & Notifications to Executive & Super Admin ONLY
@@ -758,7 +809,8 @@ export class BookingService {
         const UserModel = mongoose.model('User');
         const customerUser = await UserModel.findById(booking.customerId);
         if (customerUser && customerUser.phone) {
-          const advanceAmt = Math.round(Number(selectedBid.quotedAmount) * 0.15);
+          const { advanceFor } = require('../../../../common/utils/money.util');
+          const { advanceAmount: advanceAmt } = advanceFor(Number(selectedBid.quotedAmount));
           const bookingRef = booking._id.toString().slice(-8).toUpperCase();
           const waMsg = '🚘 *[CARBLINK - QUOTE ACCEPTED]*\n\n' +
             'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
@@ -799,12 +851,36 @@ export class BookingService {
 
     const extension = job.jobExtensions.find(e => e._id?.toString() === extId);
     if (!extension) throw new NotFoundError('Extension not found');
-    if (extension.status !== 'PENDING') {
-      throw new ApiError(400, 'Extension is already processed', ERROR_CODES.VALIDATION_ERROR);
+    if (extension.status !== 'EXECUTIVE_APPROVED' && extension.status !== 'PENDING') {
+      throw new ApiError(400, 'Extension is not pending customer approval', ERROR_CODES.VALIDATION_ERROR);
     }
 
+    const oldStatus = extension.status;
     extension.status = status;
     await job.save();
+
+    const { JobExtensionLogModel } = require('../../../partner/sub-modules/jobs/job.model');
+    await JobExtensionLogModel.create({
+      jobId: job._id,
+      extensionId: extension._id,
+      userId: customerId,
+      role: 'CUSTOMER',
+      oldStatus,
+      newStatus: status,
+      oldAmount: extension.cost,
+      newAmount: extension.cost,
+      note: `Customer marked extension as ${status}`,
+      timestamp: new Date(),
+    });
+
+    if (booking) {
+      if (!booking.pricing) booking.pricing = {};
+      if (status === 'APPROVED') {
+        booking.pricing.approvedExtrasAmount = (booking.pricing.approvedExtrasAmount || 0) + Number(extension.cost);
+        booking.pricing.balanceAmount = (booking.pricing.balanceAmount || 0) + Number(extension.cost);
+      }
+      await booking.save();
+    }
 
     // notify partner
     try {

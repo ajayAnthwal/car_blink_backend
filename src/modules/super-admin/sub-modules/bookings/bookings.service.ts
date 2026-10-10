@@ -206,6 +206,8 @@ export class SuperAdminBookingsService {
     const updatesPerformed: string[] = [];
 
     if (partnerId && mongoose.Types.ObjectId.isValid(partnerId)) {
+      const { PartnerEligibilityService } = require('../../../partner/partner-eligibility.service');
+      await PartnerEligibilityService.validatePartnerAssignment(bookingId, partnerId);
       booking.assignedPartnerId = partnerId as any;
       updatesPerformed.push(`Partner assigned (${partnerId})`);
     }
@@ -305,6 +307,11 @@ export class SuperAdminBookingsService {
     }
 
     return booking;
+  }
+
+  async getEligiblePartners(bookingId: string, query: any = {}) {
+    const { PartnerEligibilityService } = require('../../../partner/partner-eligibility.service');
+    return PartnerEligibilityService.getEligiblePartnersForBooking(bookingId, query);
   }
 }
 

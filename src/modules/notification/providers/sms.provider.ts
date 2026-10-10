@@ -47,10 +47,10 @@ export class SmsProvider implements ISmsProvider {
           targetTemplateId = '1557291';
           targetDltContentId = process.env.VISPL_RESET_DLT_ID || '1777178764507236111';
           textToSend = `Your OTP to reset your Carblink account password is ${otpCode}. This OTP is valid for 5 minutes. Please do not share this OTP with anyone.`;
-        } else if (lowerMsg.includes('register') || lowerMsg.includes('signup')) {
+        } else if (lowerMsg.includes('successfully registered') || lowerMsg.includes('welcome to carblink')) {
           // 3. Account Registration Flow (SmartPing 1560212 | DLT 1777178798813648790)
           targetTemplateId = '1560212';
-          targetDltContentId = process.env.VISPL_REGISTER_DLT_ID || '177717898813648790';
+          targetDltContentId = process.env.VISPL_REGISTER_DLT_ID || '1777178798813648790';
           textToSend = `Your Carblink account has been successfully registered with mobile number ${tenDigitPhone}. Welcome to Carblink.`;
         } else if (lowerMsg.includes('login')) {
           // 4. Login OTP Flow (SmartPing 1557713 | DLT 1777178764480007649)

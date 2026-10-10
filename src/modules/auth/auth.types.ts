@@ -7,15 +7,22 @@ export interface RegisterInput {
   password?: string;
   otp?: string;
   role: ROLES.CUSTOMER | ROLES.PARTNER;
-  businessName?: string;
+  // Partner specific structured fields
+  businessName?: string; // Workshop / Garage name
+  workshopName?: string;
   ownerName?: string;
-  gstNumber?: string;
-  msmeNumber?: string;
-  address?: string;
-  businessAddress?: string;
+  businessType?: "Proprietorship" | "Partnership" | "LLP" | "Company" | "Other";
+  addressLine?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  address?: string; // legacy support
+  businessAddress?: string; // legacy support
   longitude?: number;
   latitude?: number;
   cityId?: string;
+  gstNumber?: string;
+  msmeNumber?: string;
 }
 
 export interface LoginInput {

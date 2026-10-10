@@ -9,6 +9,9 @@ import { KycDocumentModel } from '../partner/sub-modules/kyc/kyc.model';
 import { emitToUser, emitToRole } from '../../sockets';
 import { ROLES } from '../../common/constants/roles.constant';
 import { BOOKING_STATUS } from '../../common/constants/status.constant';
+import { NotFoundError } from '../../common/errors/NotFoundError';
+import { ApiError } from '../../common/errors/ApiError';
+import { ERROR_CODES } from '../../common/constants/error-codes.constant';
 
 export class ExecutiveService {
 
@@ -151,7 +154,23 @@ export class ExecutiveService {
     }
 
     if (query.verificationStatus) {
-      partnerFilter.verificationStatus = query.verificationStatus;
+      if (query.verificationStatus === 'PENDING') {
+        partnerFilter.verificationStatus = {
+          $in: [
+            'PENDING',
+            'REGISTRATION_SUBMITTED',
+            'DOCUMENTS_PENDING',
+            'UNDER_REVIEW',
+            'MANUAL_VERIFICATION_REQUIRED',
+          ],
+        };
+      } else if (query.verificationStatus === 'APPROVED') {
+        partnerFilter.verificationStatus = {
+          $in: ['APPROVED', 'APPROVED_VERIFIED'],
+        };
+      } else {
+        partnerFilter.verificationStatus = query.verificationStatus;
+      }
     }
     
     if (query.status) {
@@ -426,6 +445,228 @@ export class ExecutiveService {
     }
 
     return updatedPartner;
+  }
+
+  /**
+   * List pending extra-work requests for the executive's assigned bookings
+   */
+  async getPendingExtraWork(executiveUserId: string, role?: string, query: any = {}): Promise<any> {
+    const bookingFilter: any = {};
+    const isSuperOrAdmin = role === ROLES.SUPER_ADMIN || role === ROLES.ADMIN;
+    if (!isSuperOrAdmin) {
+      bookingFilter.assignedExecutiveId = new mongoose.Types.ObjectId(executiveUserId);
+    } else if (query.executiveId) {
+      bookingFilter.assignedExecutiveId = new mongoose.Types.ObjectId(query.executiveId);
+    }
+
+    const bookings = await BookingModel.find(bookingFilter)
+      .populate('customerId', 'fullName phone email')
+      .populate('vehicleId')
+      .populate('serviceId', 'name')
+      .lean();
+
+    const bookingMap = new Map();
+    bookings.forEach((b: any) => bookingMap.set(b._id.toString(), b));
+
+    const bookingIds = bookings.map((b: any) => b._id);
+    const jobs = await JobModel.find({
+      bookingId: { $in: bookingIds },
+      'jobExtensions.status': 'PENDING_EXECUTIVE_REVIEW',
+    })
+      .populate('partnerId', 'businessName phone')
+      .lean();
+
+    const pendingList: any[] = [];
+    jobs.forEach((job: any) => {
+      const bDoc = bookingMap.get(job.bookingId?.toString()) || {};
+      const partnerDoc = job.partnerId || {};
+      (job.jobExtensions || []).forEach((ext: any) => {
+        if (ext.status === 'PENDING_EXECUTIVE_REVIEW') {
+          pendingList.push({
+            jobId: job._id,
+            extensionId: ext._id,
+            bookingId: bDoc._id,
+            bookingRef: bDoc._id ? bDoc._id.toString().slice(-8).toUpperCase() : '',
+            customer: bDoc.customerId,
+            partner: partnerDoc,
+            vehicle: bDoc.vehicleId,
+            service: bDoc.serviceId,
+            partName: ext.partName,
+            cost: ext.cost,
+            description: ext.description,
+            reason: ext.reason,
+            status: ext.status,
+            createdAt: job.createdAt,
+            updatedAt: job.updatedAt,
+          });
+        }
+      });
+    });
+
+    return {
+      items: pendingList,
+      total: pendingList.length,
+    };
+  }
+
+  /**
+   * Review extra-work extension (APPROVE, REJECT, REQUEST_CLARIFICATION)
+   */
+  async reviewExtraWork(
+    executiveUserId: string,
+    role: string,
+    jobId: string,
+    extId: string,
+    action: 'APPROVE' | 'REJECT' | 'REQUEST_CLARIFICATION',
+    note?: string
+  ): Promise<any> {
+    const job = await JobModel.findById(jobId);
+    if (!job) throw new NotFoundError('Job not found');
+
+    const booking = await BookingModel.findById(job.bookingId);
+    if (!booking) throw new NotFoundError('Booking not found');
+
+    const isPrivileged = role === ROLES.SUPER_ADMIN || role === ROLES.ADMIN;
+    if (!isPrivileged) {
+      if (!booking.assignedExecutiveId || booking.assignedExecutiveId.toString() !== executiveUserId.toString()) {
+        throw new ApiError(403, 'Not authorized to review extra work for this booking', ERROR_CODES.UNAUTHORIZED);
+      }
+    }
+
+    const extension = job.jobExtensions.find((e: any) => e._id?.toString() === extId);
+    if (!extension) throw new NotFoundError('Extension not found');
+    if (extension.status !== 'PENDING_EXECUTIVE_REVIEW') {
+      throw new ApiError(400, 'Extension is not pending executive review', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    const oldStatus = extension.status;
+    const { JobExtensionLogModel } = require('../partner/sub-modules/jobs/job.model');
+    const { notificationService } = require('../notification/notification.service');
+    const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+    const extObjectId = extension._id || new mongoose.Types.ObjectId();
+
+    if (action === 'APPROVE') {
+      extension.status = 'EXECUTIVE_APPROVED';
+      extension.executiveNote = note;
+
+      if (booking.pricing) {
+        booking.pricing.pendingExtrasAmount = Math.max(0, (booking.pricing.pendingExtrasAmount || 0) - extension.cost);
+        await booking.save();
+      }
+
+      await JobExtensionLogModel.create({
+        jobId: job._id,
+        extensionId: extObjectId,
+        userId: new mongoose.Types.ObjectId(executiveUserId),
+        role,
+        oldStatus,
+        newStatus: 'EXECUTIVE_APPROVED',
+        oldAmount: extension.cost,
+        newAmount: extension.cost,
+        note,
+        timestamp: new Date(),
+      });
+
+      await job.save();
+
+      try {
+        await notificationService.sendNotification(
+          booking.customerId.toString(),
+          NOTIFICATION_TYPE.EMAIL,
+          NOTIFICATION_CATEGORY.GENERAL,
+          'Extra Work Approved by Executive',
+          `The executive has approved extra part: ${extension.partName} costing ${extension.cost}. Please approve or reject.`,
+          { bookingId: booking._id.toString(), extensionId: extObjectId.toString() }
+        );
+        emitToUser(booking.customerId.toString(), 'booking_updated', { bookingId: booking._id.toString() });
+      } catch (e) {
+        console.warn('Failed to notify customer about executive approval', e);
+      }
+    } else if (action === 'REJECT') {
+      extension.status = 'EXECUTIVE_REJECTED';
+      extension.executiveNote = note;
+
+      if (booking.pricing) {
+        booking.pricing.pendingExtrasAmount = Math.max(0, (booking.pricing.pendingExtrasAmount || 0) - extension.cost);
+        await booking.save();
+      }
+
+      await JobExtensionLogModel.create({
+        jobId: job._id,
+        extensionId: extObjectId,
+        userId: new mongoose.Types.ObjectId(executiveUserId),
+        role,
+        oldStatus,
+        newStatus: 'EXECUTIVE_REJECTED',
+        oldAmount: extension.cost,
+        newAmount: extension.cost,
+        note,
+        timestamp: new Date(),
+      });
+
+      await job.save();
+
+      try {
+        const partner = await PartnerModel.findById(job.partnerId);
+        if (partner) {
+          await notificationService.sendNotification(
+            partner.userId.toString(),
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.GENERAL,
+            'Extra Work Rejected',
+            `Executive rejected extra part: ${extension.partName}. Note: ${note || 'None'}`,
+            { jobId: job._id.toString() }
+          );
+          emitToUser(partner.userId.toString(), 'job_updated', { jobId: job._id.toString() });
+        }
+      } catch (e) {
+        console.warn('Failed to notify partner about executive rejection', e);
+      }
+    } else if (action === 'REQUEST_CLARIFICATION') {
+      extension.status = 'CLARIFICATION_REQUESTED';
+      extension.executiveNote = note;
+
+      await JobExtensionLogModel.create({
+        jobId: job._id,
+        extensionId: extObjectId,
+        userId: new mongoose.Types.ObjectId(executiveUserId),
+        role,
+        oldStatus,
+        newStatus: 'CLARIFICATION_REQUESTED',
+        oldAmount: extension.cost,
+        newAmount: extension.cost,
+        note,
+        timestamp: new Date(),
+      });
+
+      await job.save();
+
+      try {
+        const partner = await PartnerModel.findById(job.partnerId);
+        if (partner) {
+          await notificationService.sendNotification(
+            partner.userId.toString(),
+            NOTIFICATION_TYPE.IN_APP,
+            NOTIFICATION_CATEGORY.GENERAL,
+            'Clarification Requested for Extra Work',
+            `Executive requested clarification for extra part: ${extension.partName}. Note: ${note || 'Please check and resubmit.'}`,
+            { jobId: job._id.toString() }
+          );
+          emitToUser(partner.userId.toString(), 'job_updated', { jobId: job._id.toString() });
+        }
+      } catch (e) {
+        console.warn('Failed to notify partner about clarification request', e);
+      }
+    } else {
+      throw new ApiError(400, 'Invalid action. Must be APPROVE, REJECT, or REQUEST_CLARIFICATION', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    return {
+      message: `Extra work ${action.toLowerCase()} processed successfully`,
+      extension,
+      job,
+    };
   }
 }
 

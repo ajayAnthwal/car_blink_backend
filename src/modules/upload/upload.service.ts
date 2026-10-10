@@ -34,6 +34,7 @@ export class UploadService {
             folder: `carblink/${folder}`,
             public_id: uniqueFileName,
             resource_type: 'auto',
+            access_mode: 'public',
           },
           (error, result) => {
             if (error) {

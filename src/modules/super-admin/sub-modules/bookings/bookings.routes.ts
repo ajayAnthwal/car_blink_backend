@@ -7,5 +7,6 @@ router.get('/', SuperAdminBookingsController.getAllBookings);
 router.get('/:id', SuperAdminBookingsController.getBookingDetails);
 router.put('/:id/cancel', SuperAdminBookingsController.cancelBooking);
 router.post('/:id/manual-assign', SuperAdminBookingsController.manualAssignAndBypass);
+router.get('/:id/eligible-partners', SuperAdminBookingsController.getEligiblePartners);
 
 export default router;

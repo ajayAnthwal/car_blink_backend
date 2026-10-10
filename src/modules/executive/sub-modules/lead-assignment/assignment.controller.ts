@@ -69,4 +69,18 @@ export class AssignmentController {
     const lead = await assignmentService.getLeadById(id);
     return successResponse(res, lead, 'Payments synchronized with gateway successfully');
   });
+
+  public static getEligiblePartners = asyncHandler(async (req: IRequest, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const { id } = req.params;
+    const includeAll = req.query.includeAll === 'true';
+    const cityId = req.query.cityId as string;
+    const maxRadiusKm = req.query.maxRadiusKm ? Number(req.query.maxRadiusKm) : undefined;
+    const result = await assignmentService.getEligiblePartnersForLead(id, {
+      includeAll,
+      cityId,
+      maxRadiusKm,
+    });
+    return successResponse(res, result, 'Eligible partners retrieved successfully');
+  });
 }

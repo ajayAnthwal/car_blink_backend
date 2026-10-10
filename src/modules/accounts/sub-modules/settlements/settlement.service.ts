@@ -259,6 +259,14 @@ export class SettlementService {
       throw new NotFoundError('Partner record not found');
     }
 
+    if (partner.bankVerificationStatus === 'PENDING' || partner.bankVerificationStatus === 'FAILED') {
+      throw new ApiError(
+        403,
+        'Bank details must be verified by CarBlink before requesting wallet withdrawals or settlements. Please complete bank details verification in KYC.',
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
     let finalTransactionRef = transactionReference || `TXN_${Date.now()}`;
 
     const rzp = getRazorpayInstance();

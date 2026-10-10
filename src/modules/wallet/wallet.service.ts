@@ -266,11 +266,24 @@ export class WalletService {
       $or: [{ userId: partnerId }, { _id: partnerId }]
     });
 
-    const bankDetails = (partner?.bankDetails && partner.bankDetails.accountNumber) ? partner.bankDetails : {
-      accountNumber: "919999999999",
-      ifscCode: "HDFC0000001",
-      accountHolderName: partner?.businessName || "CarBlink Partner"
+    if (!partner) {
+      throw new ApiError(404, 'Partner profile not found');
+    }
+
+    // Strict Security Rule: Block withdrawal only when bankVerificationStatus is explicitly PENDING or FAILED (legacy undefined is allowed)
+    if (partner.bankVerificationStatus === 'PENDING' || partner.bankVerificationStatus === 'FAILED') {
+      throw new ApiError(
+        403,
+        'Bank details must be verified by CarBlink before requesting wallet withdrawals or settlements. Please complete bank details verification in KYC.'
+      );
+    }
+
+    const bankDetails = (partner.bankDetails && partner.bankDetails.accountNumber) ? partner.bankDetails : {
+      accountNumber: partner.accountNumber,
+      ifscCode: partner.ifsc,
+      accountHolderName: partner.accountHolderName || partner.businessName || "CarBlink Partner"
     };
+
 
     // Deduct amount immediately to lock funds
     wallet.balance -= amount;

@@ -34,6 +34,8 @@ export class PaymentService {
     amount: number;
     currency: string;
     key: string;
+    advanceAmount?: number;
+    balance?: number;
   }> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) {
@@ -51,12 +53,60 @@ export class PaymentService {
 
     // Verify booking state depending on paymentType
     const allowedAdvanceStatuses = ['PENDING', 'QUOTED', 'CUSTOMER_ACCEPTED', 'ACCEPTED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED'];
+    let advanceCalc: any = null;
     if (paymentType === PAYMENT_TYPE.ADVANCE) {
       if (!allowedAdvanceStatuses.includes(booking.status as string)) {
         throw new BadRequestError(
           "Advance payment requires valid booking status",
         );
       }
+
+      // Compute total booking amount from DB
+      let totalBookingAmount = 0;
+      if (booking.acceptedBidId) {
+        const { BidModel } = require("../partner/sub-modules/bidding/bid.model");
+        const bid = await BidModel.findById(booking.acceptedBidId);
+        if (bid && bid.quotedAmount) {
+          totalBookingAmount = Number(bid.quotedAmount);
+        }
+      }
+
+      const job = await JobModel.findOne({ bookingId: booking._id });
+      if (!totalBookingAmount && job && job.finalAmount) {
+        totalBookingAmount = Number(job.finalAmount);
+      }
+
+      if (!totalBookingAmount && (booking as any).serviceId) {
+        const ServiceModel = mongoose.model('Service');
+        const svc = await ServiceModel.findById((booking as any).serviceId);
+        if (svc && (svc as any).basePrice) {
+          totalBookingAmount = Number((svc as any).basePrice);
+        }
+      }
+
+      // Include approved extensions
+      if (job && job.jobExtensions && job.jobExtensions.length > 0) {
+        const approvedExts = job.jobExtensions.filter((e: any) => e.status === 'APPROVED');
+        const approvedExtensionsCost = approvedExts.reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+        totalBookingAmount += approvedExtensionsCost;
+      }
+
+      // Deduct booking coupon discount if applied
+      if (booking.couponDiscountAmount) {
+        totalBookingAmount = Math.max(0, totalBookingAmount - Number(booking.couponDiscountAmount));
+      }
+
+      const { advanceFor } = require("../../common/utils/money.util");
+      advanceCalc = advanceFor(totalBookingAmount);
+      const serverAdvanceAmount = advanceCalc.advanceAmount;
+
+      if (typeof amount === 'number' && Math.abs(amount - serverAdvanceAmount) > 0.01) {
+        logger.warn(
+          `[PaymentService] Client advance amount ₹${amount} differs from server calculated advance ₹${serverAdvanceAmount} (Booking: ${bookingId}, Total: ₹${totalBookingAmount}). Overriding with server amount.`
+        );
+      }
+
+      amount = serverAdvanceAmount;
     } else if (paymentType === PAYMENT_TYPE.FINAL) {
       if (booking.status === 'CANCELLED') {
         throw new BadRequestError(
@@ -180,6 +230,8 @@ export class PaymentService {
       amount,
       currency: "INR",
       key: env.RAZORPAY_KEY_ID || "mock_key",
+      advanceAmount: paymentType === PAYMENT_TYPE.ADVANCE ? amount : undefined,
+      balance: paymentType === PAYMENT_TYPE.ADVANCE && advanceCalc ? advanceCalc.balanceAmount : undefined,
     };
   }
 
@@ -196,6 +248,7 @@ export class PaymentService {
           }
           booking.hasPaidAdvance = true;
           booking.isAdvancePaid = true;
+          (booking as any).advanceAmount = payment.amount;
           if (
             booking.status === BOOKING_STATUS.CUSTOMER_ACCEPTED ||
             booking.status === BOOKING_STATUS.QUOTED ||

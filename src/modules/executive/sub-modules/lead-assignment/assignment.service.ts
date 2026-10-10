@@ -10,6 +10,7 @@ import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { BadRequestError } from '../../../../common/errors/BadRequestError';
 import { ASSIGNMENT_TYPE, BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATION_STATUS } from '../../../notification/notification.model';
+import { PartnerEligibilityService } from '../../../partner/partner-eligibility.service';
 
 export class AssignmentService {
   /**
@@ -214,44 +215,9 @@ export class AssignmentService {
     }
 
     if (partnerIds && partnerIds.length > 0) {
-      const partners = await PartnerModel.find({ _id: { $in: partnerIds } });
-      if (partners.length !== partnerIds.length) {
-        throw new NotFoundError('One or more partners not found');
-      }
-
-      const checkDate = booking.preferredDate || new Date();
-      checkDate.setHours(0, 0, 0, 0);
-      const startOfDay = new Date(checkDate);
-      const endOfDay = new Date(checkDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      const { default: Job } = require('../../../partner/sub-modules/jobs/job.model');
-
-      for (const partner of partners) {
-        if (!partner.isVerified) {
-          throw new BadRequestError(`Partner ${partner.businessName || partner._id} is not verified`);
-        }
-
-        // Check blocked dates
-        const isBlocked = partner.blockedDates?.some((blockedDate: Date) => {
-          const bd = new Date(blockedDate);
-          bd.setHours(0, 0, 0, 0);
-          return bd.getTime() === checkDate.getTime();
-        });
-  
-        if (isBlocked) {
-          throw new BadRequestError(`Partner ${partner.businessName} is blocked for date: ${checkDate.toDateString()}`);
-        }
-  
-        // Check daily capacity
-        const activeJobsCount = await Job.countDocuments({
-          partnerId: partner._id,
-          createdAt: { $gte: startOfDay, $lte: endOfDay },
-          status: { $in: ['NOT_STARTED', 'IN_PROGRESS'] }
-        });
-  
-        if (activeJobsCount >= (partner.dailyCapacity || 5)) {
-          throw new BadRequestError(`Partner ${partner.businessName} has reached maximum daily capacity for this date`);
-        }
+      // Strict backend validation: Each partner must be APPROVED_VERIFIED, active, offer the service, and available
+      for (const pId of partnerIds) {
+        await PartnerEligibilityService.validatePartnerAssignment(bookingId, pId);
       }
     }
 
@@ -268,28 +234,38 @@ export class AssignmentService {
       .populate('assignedExecutiveId', 'fullName email')
       .populate('assignedPartnerIds', 'businessName isVerified');
 
+    // Store assignedPartnerId in the booking record
     await BookingModel.findByIdAndUpdate(bookingId, {
       assignedExecutiveId: executiveId,
+      assignedPartnerId: partnerIds && partnerIds.length > 0 ? partnerIds[0] : null,
     });
 
-    // Emit socket event to notify partners (simulate real-time alert)
+    // Notify ONLY the selected partner(s) (do NOT broadcast to all partners)
     try {
-      const { emitToRole } = require('../../../../sockets');
-      emitToRole('PARTNER', 'new_lead', { bookingId }); // Since we do not have specific user socket tracking readily available in emitToUser, we broadcast to PARTNER role.
-      
-      // Create DB notifications for specific partners
       if (partnerIds && partnerIds.length > 0) {
         const targetPartners = await PartnerModel.find({ _id: { $in: partnerIds } });
+        for (const partner of targetPartners) {
+          if (partner.userId) {
+            emitToUser(partner.userId.toString(), 'new_lead', { bookingId });
+          }
+        }
+
         const notificationsToInsert = targetPartners.map((partner: any) => ({
           userId: partner.userId,
           title: 'New Lead Available',
-          message: 'A new lead has been assigned to you. Please check your dashboard.',
+          message: 'A new lead has been assigned to you. Please check your leads and submit your quote.',
           type: NOTIFICATION_TYPE.IN_APP,
           category: NOTIFICATION_CATEGORY.BOOKING_UPDATE,
           status: NOTIFICATION_STATUS.SENT,
+          metadata: { bookingId: booking._id.toString() },
           isRead: false
         }));
-        await NotificationModel.insertMany(notificationsToInsert);
+        const insertedNotifs = await NotificationModel.insertMany(notificationsToInsert);
+        for (const notif of insertedNotifs) {
+          if (notif.userId) {
+            emitToUser(notif.userId.toString(), 'notification:new', notif.toJSON ? notif.toJSON() : notif);
+          }
+        }
       }
       // Notify Customer that executive has assigned partner workshop(s)
       if (booking.customerId) {
@@ -701,6 +677,15 @@ export class AssignmentService {
     return { booking, job };
   }
 
+  /**
+   * Get eligible partners for a lead with distance, quote, availability & performance
+   */
+  async getEligiblePartnersForLead(
+    bookingId: string,
+    query: { includeAll?: boolean; cityId?: string; maxRadiusKm?: number } = {}
+  ): Promise<any> {
+    return PartnerEligibilityService.getEligiblePartnersForBooking(bookingId, query);
+  }
 }
 
 export const assignmentService = new AssignmentService();

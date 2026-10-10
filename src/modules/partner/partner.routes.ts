@@ -15,6 +15,16 @@ import { JobController } from './sub-modules/jobs/job.controller';
 import { EarningsController } from './sub-modules/earnings/earnings.controller';
 
 import { placeBidSchema } from './sub-modules/bidding/bid.validation';
+import {
+  submitBusinessKycSchema,
+  submitWorkshopProofSchema,
+  submitBankDetailsSchema,
+  submitWorkshopCapabilitiesSchema,
+} from './sub-modules/kyc/kyc.validation';
+import {
+  requireApprovedPartner,
+  checkPartnerSuspension,
+} from './middlewares/partner-access.middleware';
 
 const router = Router();
 
@@ -25,42 +35,49 @@ router.get('/public/top-workshops', PartnerController.getTopWorkshops);
 router.use(authMiddleware as any);
 router.use(roleMiddleware([ROLES.PARTNER]) as any);
 
-// 1. Partner Profile
-router.post('/profile', PartnerController.createProfile);
-router.get('/profile', PartnerController.getProfile);
-router.patch('/profile', PartnerController.updateProfile);
-router.patch('/capacity', PartnerController.updateCapacity);
+// 1. Partner Profile & Capacity
+router.post('/profile', checkPartnerSuspension, PartnerController.createProfile);
+router.get('/profile', checkPartnerSuspension, PartnerController.getProfile);
+router.patch('/profile', checkPartnerSuspension, PartnerController.updateProfile);
+router.patch('/capacity', requireApprovedPartner, PartnerController.updateCapacity);
 
-// 2. KYC
-router.post('/kyc', KycController.uploadKycDocument);
-router.get('/kyc', KycController.getMyKycDocuments);
+// 2. KYC & Onboarding Steps (Accessible before approval, blocked if suspended)
+router.post('/kyc', checkPartnerSuspension, KycController.uploadKycDocument);
+router.get('/kyc', checkPartnerSuspension, KycController.getMyKycDocuments);
+router.post('/kyc/business', checkPartnerSuspension, validate({ body: submitBusinessKycSchema }), KycController.submitBusinessKyc);
+router.get('/kyc/business/status', KycController.getBusinessKycStatus);
+router.post('/kyc/workshop-proof', checkPartnerSuspension, validate({ body: submitWorkshopProofSchema }), KycController.submitWorkshopProof);
+router.post('/kyc/bank-details', checkPartnerSuspension, validate({ body: submitBankDetailsSchema }), KycController.submitBankDetails);
+router.post('/kyc/capabilities', checkPartnerSuspension, validate({ body: submitWorkshopCapabilitiesSchema }), KycController.submitCapabilities);
+router.get('/kyc/checklist', KycController.getKycChecklist);
 
-// 3. Bidding / Leads
-router.get('/leads', BidController.getAvailableLeads);
-router.post('/bids', validate({ body: placeBidSchema }), BidController.placeBid);
-router.get('/bids', BidController.getMyBids);
-router.patch('/bids/:id/withdraw', BidController.withdrawBid);
+// 3. Operational Bidding / Leads (GATED: APPROVED_VERIFIED + isActive required)
+router.get('/leads', requireApprovedPartner, BidController.getAvailableLeads);
+router.post('/bids', requireApprovedPartner, validate({ body: placeBidSchema }), BidController.placeBid);
+router.get('/bids', requireApprovedPartner, BidController.getMyBids);
+router.patch('/bids/:id/withdraw', requireApprovedPartner, BidController.withdrawBid);
 
-// 4. Jobs
-router.get('/jobs', JobController.getMyJobs);
-router.post('/verify-customer', JobController.verifyCustomerCode);
-router.patch('/jobs/:id/start', JobController.startJob);
-router.patch('/jobs/:id/complete', JobController.completeJob);
-router.post('/jobs/:id/invoice', JobController.uploadInvoice);
-router.post('/jobs/:id/photos', JobController.uploadPhotos);
-router.delete('/jobs/:id/photos', JobController.deletePhoto);
-router.post('/jobs/:id/warranty', JobController.uploadWarranty);
-router.post('/jobs/:id/extensions', JobController.requestExtension);
-router.patch('/jobs/:id/assign-staff', JobController.assignStaff);
+// 4. Operational Jobs & Customer Data (GATED: APPROVED_VERIFIED + isActive required)
+router.get('/jobs', requireApprovedPartner, JobController.getMyJobs);
+router.post('/verify-customer', requireApprovedPartner, JobController.verifyCustomerCode);
+router.patch('/jobs/:id/start', requireApprovedPartner, JobController.startJob);
+router.patch('/jobs/:id/complete', requireApprovedPartner, JobController.completeJob);
+router.post('/jobs/:id/invoice', requireApprovedPartner, JobController.uploadInvoice);
+router.post('/jobs/:id/photos', requireApprovedPartner, JobController.uploadPhotos);
+router.delete('/jobs/:id/photos', requireApprovedPartner, JobController.deletePhoto);
+router.post('/jobs/:id/warranty', requireApprovedPartner, JobController.uploadWarranty);
+router.post('/jobs/:id/extensions', requireApprovedPartner, JobController.requestExtension);
+router.patch('/jobs/:id/assign-staff', requireApprovedPartner, JobController.assignStaff);
 
-// 5. Earnings
-router.get('/earnings', EarningsController.getMyEarnings);
-router.get('/earnings/summary', EarningsController.getEarningsSummary);
-router.get('/earnings/settlements', EarningsController.getMySettlements);
+// 5. Earnings & Settlements (GATED: APPROVED_VERIFIED + isActive required)
+router.get('/earnings', requireApprovedPartner, EarningsController.getMyEarnings);
+router.get('/earnings/summary', requireApprovedPartner, EarningsController.getEarningsSummary);
+router.get('/earnings/settlements', requireApprovedPartner, EarningsController.getMySettlements);
 
-router.use("/inventory", inventoryRouter);
-router.use("/staff", staffRouter);
-router.use("/pos", posRouter);
-router.use("/warranties", warrantyRouter);
+// 6. Sub-modules (GATED: APPROVED_VERIFIED + isActive required)
+router.use('/inventory', requireApprovedPartner, inventoryRouter);
+router.use('/staff', requireApprovedPartner, staffRouter);
+router.use('/pos', requireApprovedPartner, posRouter);
+router.use('/warranties', requireApprovedPartner, warrantyRouter);
 
 export default router;

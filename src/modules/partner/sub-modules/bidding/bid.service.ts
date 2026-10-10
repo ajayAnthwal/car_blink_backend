@@ -26,24 +26,46 @@ export class BidService {
     const partnerBids = await BidModel.find({ partnerId: partner._id }).select('bookingId');
     const biddedBookingIds = partnerBids.map((b) => b.bookingId);
 
-    // Find explicitly assigned leads
+    // Find leads explicitly assigned to this partner
     const { AssignmentModel } = require('../../../executive/sub-modules/lead-assignment/assignment.model');
-    const assignedLeads = await AssignmentModel.find({ assignedPartnerIds: partner._id }).select('bookingId');
-    const assignedBookingIds = assignedLeads.map((a: any) => a.bookingId);
+    const myAssignments = await AssignmentModel.find({ assignedPartnerIds: partner._id }).select('bookingId');
+    const myAssignedBookingIds = myAssignments.map((a: any) => a.bookingId);
 
-    // Bookings must:
-    // - Be in PENDING status
-    // - NOT be already bidded on by this partner
-    // - EITHER match the partner's city & services OR be explicitly assigned to them
+    // Find leads assigned to other partners (to strictly hide from this partner)
+    const otherAssignments = await AssignmentModel.find({
+      assignedPartnerIds: { $exists: true, $not: { $size: 0 }, $nin: [partner._id] }
+    }).select('bookingId');
+    const otherAssignedBookingIds = otherAssignments.map((a: any) => a.bookingId);
+
+    // Strict Partner Gating:
+    // If a partner is not APPROVED_VERIFIED or not active, return 0 leads immediately
+    const isApproved =
+      (partner.verificationStatus === 'APPROVED_VERIFIED' ||
+        (partner.verificationStatus === 'APPROVED' && partner.isVerified)) &&
+      partner.isActive !== false;
+
+    if (!isApproved) {
+      return { bookings: [], total: 0, page, limit };
+    }
+
+    // Lead Visibility:
+    // - Status is PENDING
+    // - Partner hasn't bidded yet
+    // - NOT assigned to any other partner (neither via assignedPartnerId nor AssignmentModel)
+    // - EITHER explicitly assigned to this partner OR unassigned and matching city & services
     const filter: any = {
       status: BOOKING_STATUS.PENDING,
-      _id: { $nin: biddedBookingIds },
+      _id: { $nin: [...biddedBookingIds, ...otherAssignedBookingIds] },
       $or: [
+        { assignedPartnerId: partner._id },
+        { _id: { $in: myAssignedBookingIds } },
         {
+          assignedPartnerId: { $in: [null, undefined] },
           cityId: partner.cityId,
-          serviceId: { $in: partner.servicesOffered }
-        },
-        { _id: { $in: assignedBookingIds } }
+          $or: [
+            { serviceId: { $in: partner.servicesOffered || [] } }
+          ]
+        }
       ]
     };
 
@@ -213,7 +235,7 @@ export class BidService {
     if (bid.status !== 'PENDING') {
       throw new ApiError(
         400,
-        `Cannot withdraw bid in ${bid.status} status`,
+        `Cannot withdraw bid in ${bid.status} status. Accepted quotes are locked and immutable.`,
         ERROR_CODES.VALIDATION_ERROR
       );
     }

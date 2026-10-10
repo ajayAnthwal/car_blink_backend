@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { JobModel, IJob } from "./job.model";
+import { JobModel, IJob, JobExtensionLogModel } from "./job.model";
 import { PartnerModel } from "../../partner.model";
 import { BookingModel } from "../../../customer/sub-modules/booking/booking.model";
 import { WarrantyModel } from "../../../customer/sub-modules/warranty/warranty.model";
@@ -495,14 +495,20 @@ export class JobService {
       );
     }
 
-    // Calculate Gross Amount (Final Amount)
+    // Calculate Gross Amount (Final Amount) - strictly locked to base quote + approved extras
     const BidModel = mongoose.model("Bid");
     const bid = (await BidModel.findById(job.bidId)) as any;
-    const baseQuotedAmount = bid ? bid.quotedAmount : job.finalAmount || 0;
+    const bookingDoc = await BookingModel.findById(job.bookingId);
+    const baseQuotedAmount = Number(
+      bookingDoc?.pricing?.partnerBaseQuote ??
+      bid?.quotedAmount ??
+      job.finalAmount ??
+      0
+    );
 
     const approvedExtensionsCost = job.jobExtensions
       .filter((ext) => ext.status === "APPROVED")
-      .reduce((sum, ext) => sum + ext.cost, 0);
+      .reduce((sum, ext) => sum + (Number(ext.cost) || 0), 0);
 
     const calculatedFinalAmount = baseQuotedAmount + approvedExtensionsCost;
 
@@ -836,7 +842,7 @@ export class JobService {
   public static async requestJobExtension(
     userId: string,
     jobId: string,
-    data: { partName: string; cost: number },
+    data: { partName: string; cost: number; description?: string; reason?: string; extensionId?: string },
   ): Promise<IJob> {
     const partner = await PartnerModel.findOne({ userId });
     if (!partner) throw new NotFoundError("Partner profile not found");
@@ -847,39 +853,103 @@ export class JobService {
       throw new UnauthorizedError("Not authorized");
     }
 
-    job.jobExtensions.push({
-      partName: data.partName,
-      cost: data.cost,
-      status: "PENDING",
-    });
+    const booking = await BookingModel.findById(job.bookingId);
+    let targetExtId: mongoose.Types.ObjectId;
 
-    await job.save();
+    if (data.extensionId) {
+      // Resubmission of an existing rejected or clarification-requested extension
+      const existingExt = job.jobExtensions.find((e: any) => e._id?.toString() === data.extensionId);
+      if (!existingExt) throw new NotFoundError("Extension not found");
+      if (existingExt.status !== "CLARIFICATION_REQUESTED" && existingExt.status !== "EXECUTIVE_REJECTED") {
+        throw new ApiError(400, "Cannot resubmit extension in its current status", ERROR_CODES.VALIDATION_ERROR);
+      }
 
-    // Notify customer about extension request
-    try {
-      const booking = await BookingModel.findById(job.bookingId);
+      const oldStatus = existingExt.status;
+      const oldAmount = existingExt.cost;
+      const costDiff = (data.cost !== undefined ? Number(data.cost) : oldAmount) - oldAmount;
+
+      existingExt.partName = data.partName || existingExt.partName;
+      existingExt.cost = data.cost !== undefined ? Number(data.cost) : existingExt.cost;
+      if (data.description !== undefined) existingExt.description = data.description;
+      if (data.reason !== undefined) existingExt.reason = data.reason;
+      existingExt.status = "PENDING_EXECUTIVE_REVIEW";
+
+      targetExtId = existingExt._id as mongoose.Types.ObjectId;
+      await job.save();
+
+      await JobExtensionLogModel.create({
+        jobId: job._id,
+        extensionId: targetExtId,
+        userId: partner.userId,
+        role: "PARTNER",
+        oldStatus,
+        newStatus: "PENDING_EXECUTIVE_REVIEW",
+        oldAmount,
+        newAmount: existingExt.cost,
+        note: data.reason || "Resubmitted by partner",
+        timestamp: new Date(),
+      });
+
       if (booking) {
-        const {
-          notificationService,
-        } = require("../../../notification/notification.service");
-        const {
-          NOTIFICATION_TYPE,
-          NOTIFICATION_CATEGORY,
-        } = require("../../../notification/notification.model");
-        await notificationService.sendNotification(
-          booking.customerId.toString(),
-          NOTIFICATION_TYPE.EMAIL,
-          NOTIFICATION_CATEGORY.GENERAL,
-          "Approval Needed for Extra Part",
-          `The garage has requested an extension for part: ${data.partName} costing ${data.cost}. Please approve or reject.`,
-          { bookingId: booking._id.toString() },
-        );
-        emitToUser(booking.customerId.toString(), "booking_updated", {
+        if (!booking.pricing) booking.pricing = {};
+        booking.pricing.pendingExtrasAmount = Math.max(0, (booking.pricing.pendingExtrasAmount || 0) + costDiff);
+        await booking.save();
+      }
+    } else {
+      // New extra work request starts as PENDING_EXECUTIVE_REVIEW
+      targetExtId = new mongoose.Types.ObjectId();
+      job.jobExtensions.push({
+        _id: targetExtId,
+        partName: data.partName,
+        cost: Number(data.cost),
+        description: data.description,
+        reason: data.reason,
+        status: "PENDING_EXECUTIVE_REVIEW",
+      });
+
+      await job.save();
+
+      await JobExtensionLogModel.create({
+        jobId: job._id,
+        extensionId: targetExtId,
+        userId: partner.userId,
+        role: "PARTNER",
+        oldStatus: undefined,
+        newStatus: "PENDING_EXECUTIVE_REVIEW",
+        oldAmount: undefined,
+        newAmount: Number(data.cost),
+        note: data.reason,
+        timestamp: new Date(),
+      });
+
+      if (booking) {
+        if (!booking.pricing) booking.pricing = {};
+        booking.pricing.pendingExtrasAmount = (booking.pricing.pendingExtrasAmount || 0) + Number(data.cost);
+        await booking.save();
+      }
+    }
+
+    // Notify executive team (NOT customer)
+    try {
+      const { emitToRole } = require("../../../../sockets");
+      emitToRole("EXECUTIVE", "extra_work_requested", {
+        jobId: job._id.toString(),
+        bookingId: job.bookingId?.toString(),
+        extensionId: targetExtId.toString(),
+        partName: data.partName,
+        cost: data.cost,
+      });
+      if (booking?.assignedExecutiveId) {
+        emitToUser(booking.assignedExecutiveId.toString(), "extra_work_requested", {
+          jobId: job._id.toString(),
           bookingId: booking._id.toString(),
+          extensionId: targetExtId.toString(),
+          partName: data.partName,
+          cost: data.cost,
         });
       }
     } catch (e) {
-      console.warn("Failed to send extension notification", e);
+      console.warn("Failed to notify executive about extra work", e);
     }
 
     return job;
