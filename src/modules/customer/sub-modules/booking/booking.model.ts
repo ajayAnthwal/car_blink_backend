@@ -1,6 +1,22 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 
+export interface IBookingCancellationDetails {
+  reasons?: string[];
+  customerRemarks?: string;
+  requestedAt?: Date;
+  executiveStatus?: 'PENDING_REVIEW' | 'CALL_CONNECTED' | 'CALL_NO_ANSWER' | 'RETAINED' | 'FORWARDED_TO_ACCOUNTS' | 'REJECTED';
+  executiveId?: mongoose.Types.ObjectId;
+  executiveNotes?: string;
+  callAttempts?: number;
+  lastCallAt?: Date;
+  refundAmount?: number;
+  deductionAmount?: number;
+  deductionReason?: string;
+  accountsStatus?: 'NOT_FORWARDED' | 'PENDING_ACCOUNTS' | 'PROCESSED' | 'REJECTED';
+  accountsProcessedAt?: Date;
+}
+
 export interface IBooking extends Document {
   customerId: mongoose.Types.ObjectId;
   vehicleId: mongoose.Types.ObjectId;
@@ -18,6 +34,7 @@ export interface IBooking extends Document {
   beforePhotos: string[];
   afterPhotos: string[];
   cancellationReason?: string;
+  cancellationDetails?: IBookingCancellationDetails;
   location?: {
     type: string;
     coordinates: number[];
@@ -131,6 +148,29 @@ const BookingSchema = new Schema<IBooking>(
     cancellationReason: {
       type: String,
       trim: true,
+    },
+    cancellationDetails: {
+      reasons: { type: [String], default: [] },
+      customerRemarks: { type: String, trim: true },
+      requestedAt: { type: Date },
+      executiveStatus: {
+        type: String,
+        enum: ['PENDING_REVIEW', 'CALL_CONNECTED', 'CALL_NO_ANSWER', 'RETAINED', 'FORWARDED_TO_ACCOUNTS', 'REJECTED'],
+        default: 'PENDING_REVIEW',
+      },
+      executiveId: { type: Schema.Types.ObjectId, ref: 'User' },
+      executiveNotes: { type: String, trim: true },
+      callAttempts: { type: Number, default: 0 },
+      lastCallAt: { type: Date },
+      refundAmount: { type: Number, default: 0 },
+      deductionAmount: { type: Number, default: 0 },
+      deductionReason: { type: String, trim: true },
+      accountsStatus: {
+        type: String,
+        enum: ['NOT_FORWARDED', 'PENDING_ACCOUNTS', 'PROCESSED', 'REJECTED'],
+        default: 'NOT_FORWARDED',
+      },
+      accountsProcessedAt: { type: Date },
     },
     location: {
       type: {

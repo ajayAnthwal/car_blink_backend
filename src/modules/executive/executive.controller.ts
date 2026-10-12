@@ -91,4 +91,39 @@ export class ExecutiveController {
     );
     return successResponse(res, result, result.message);
   });
+
+  public static getCancellationRequests = asyncHandler(async (req: IRequest, res: Response) => {
+    const data = await executiveService.getCancellationRequests(req.query);
+    return successResponse(res, data, 'Cancellation requests retrieved successfully');
+  });
+
+  public static logCancellationCall = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const result = await executiveService.logCancellationCall(
+      id,
+      String(req.user?.userId),
+      req.body
+    );
+    return successResponse(res, result, result.message);
+  });
+
+  public static retainCustomer = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const result = await executiveService.retainCustomer(
+      id,
+      String(req.user?.userId),
+      req.body
+    );
+    return successResponse(res, result, result.message);
+  });
+
+  public static forwardCancellationToAccounts = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const result = await executiveService.forwardCancellationToAccounts(
+      id,
+      String(req.user?.userId),
+      req.body
+    );
+    return successResponse(res, result, result.message);
+  });
 }

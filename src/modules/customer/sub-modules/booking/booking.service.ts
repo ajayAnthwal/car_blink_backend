@@ -98,6 +98,15 @@ export class BookingService {
         type: 'Point',
         coordinates: [data.longitude, data.latitude] // GeoJSON is [lng, lat]
       };
+    } else {
+      // Graceful fallback to customer's saved profile location if available
+      try {
+        const { UserModel } = require('../../../user/user.model');
+        const cust = await UserModel.findById(customerId).select('location').lean();
+        if (cust?.location?.coordinates && cust.location.coordinates.length === 2) {
+          bookingData.location = cust.location;
+        }
+      } catch (e) {}
     }
 
     const booking = await BookingModel.create(bookingData);
@@ -341,7 +350,7 @@ export class BookingService {
       const bCalc = bAdvanceFor(bResolvedTotal);
 
       const bCustomerExts = (jDetails?.jobExtensions || []).filter((e: any) =>
-        ['EXECUTIVE_APPROVED', 'APPROVED', 'REJECTED', 'PENDING'].includes(e.status)
+        ['EXECUTIVE_APPROVED', 'APPROVED', 'REJECTED', 'PENDING', 'PENDING_EXECUTIVE_REVIEW', 'PENDING_CUSTOMER_APPROVAL'].includes(e.status)
       );
       const bSanitizedJobDetails = jDetails ? {
         ...jDetails,
@@ -536,7 +545,7 @@ export class BookingService {
     const bIdCalc = bIdAdvanceFor(resolvedTotal);
 
     const customerExts = (jobDetails?.jobExtensions || []).filter((e: any) =>
-      ['EXECUTIVE_APPROVED', 'APPROVED', 'REJECTED', 'PENDING'].includes(e.status)
+      ['EXECUTIVE_APPROVED', 'APPROVED', 'REJECTED', 'PENDING', 'PENDING_EXECUTIVE_REVIEW', 'PENDING_CUSTOMER_APPROVAL'].includes(e.status)
     );
     const sanitizedJobDetails = jobDetails ? {
       ...jobDetails,
@@ -566,7 +575,7 @@ export class BookingService {
   public static async cancelBooking(
     customerId: string,
     bookingId: string,
-    reason: string
+    cancellationPayload: any
   ): Promise<IBooking> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) {
@@ -589,36 +598,63 @@ export class BookingService {
       );
     }
 
-    booking.status = BOOKING_STATUS.CANCELLED;
-    booking.cancellationReason = reason;
-    await booking.save();
+    const rawReasons = typeof cancellationPayload === 'object' && Array.isArray(cancellationPayload?.reasons)
+      ? cancellationPayload.reasons
+      : (typeof cancellationPayload === 'object' && cancellationPayload?.reason ? [cancellationPayload.reason] : (typeof cancellationPayload === 'string' && cancellationPayload ? [cancellationPayload] : ['Customer requested cancellation']));
 
-    // Mark job as CANCELLED if it exists
-    const job = await JobModel.findOne({ bookingId: booking._id });
-    if (job) {
-      job.status = 'CANCELLED';
-      await job.save();
-    }
+    const remarks = typeof cancellationPayload === 'object'
+      ? (cancellationPayload?.customerRemarks || cancellationPayload?.reason || '')
+      : (typeof cancellationPayload === 'string' ? cancellationPayload : '');
 
-    // Check for successful payment to auto-initiate refund
-    // PaymentModel imported at top
+    const formattedReason = rawReasons.join(', ') + (remarks ? ` - ${remarks}` : '');
+
+    // Check for successful payments
     const successfulPayments = await PaymentModel.find({
       bookingId: booking._id,
       status: 'SUCCESS'
     });
+    const totalPaid = (successfulPayments || []).reduce((acc: number, p: any) => acc + (Number(p.amount) || 0), 0);
 
-    if (successfulPayments && successfulPayments.length > 0) {
-      const RefundModel = mongoose.model('Refund');
-      for (const payment of successfulPayments) {
-        await RefundModel.create({
-          paymentId: payment._id,
-          bookingId: booking._id,
-          customerId: booking.customerId,
-          amount: payment.amount,
-          reason: reason || 'Customer cancelled booking',
-          status: 'REQUESTED'
+    booking.status = BOOKING_STATUS.CANCELLATION_REQUESTED;
+    booking.cancellationReason = formattedReason;
+    booking.cancellationDetails = {
+      reasons: rawReasons,
+      customerRemarks: remarks,
+      requestedAt: new Date(),
+      executiveStatus: 'PENDING_REVIEW',
+      refundAmount: totalPaid,
+      deductionAmount: 0,
+      accountsStatus: 'NOT_FORWARDED',
+      callAttempts: 0,
+    };
+    await booking.save();
+
+    // Notify Executive, Admin & Super Admin via Notification & Socket
+    try {
+      const { notificationService } = require('../../../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+
+      await notificationService.sendToRole(
+        'EXECUTIVE',
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+        'Cancellation Request Alert',
+        `Booking #${booking._id.toString().slice(-6)} requested cancellation. Primary Reason: ${rawReasons[0] || 'Cancellation requested'}. Please connect with customer to assist.`,
+        { bookingId: booking._id.toString(), type: 'CANCELLATION_REQUESTED' }
+      );
+
+      const io = (global as any).io;
+      if (io) {
+        io.emit('booking_updated', { bookingId: booking._id.toString(), status: 'CANCELLATION_REQUESTED' });
+        io.emit('cancellation_requested', {
+          bookingId: booking._id.toString(),
+          reasons: rawReasons,
+          customerRemarks: remarks,
+          totalPaid,
         });
       }
+    } catch (notifErr) {
+      console.warn('Failed to send cancellation request notification:', notifErr);
     }
 
     return booking;
@@ -851,9 +887,11 @@ export class BookingService {
 
     const extension = job.jobExtensions.find(e => e._id?.toString() === extId);
     if (!extension) throw new NotFoundError('Extension not found');
-    if (extension.status !== 'EXECUTIVE_APPROVED' && extension.status !== 'PENDING') {
+    if (!['EXECUTIVE_APPROVED', 'PENDING', 'PENDING_EXECUTIVE_REVIEW', 'PENDING_CUSTOMER_APPROVAL'].includes(extension.status)) {
       throw new ApiError(400, 'Extension is not pending customer approval', ERROR_CODES.VALIDATION_ERROR);
     }
+
+    const extensionIdStr = extension._id?.toString() || extId;
 
     const oldStatus = extension.status;
     extension.status = status;
@@ -882,45 +920,78 @@ export class BookingService {
       await booking.save();
     }
 
-    // notify partner
+    // notify partner & executive
     try {
       const { notificationService } = require('../../../notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      const { emitToRole, emitToUser } = require('../../../../sockets');
       const partner = await PartnerModel.findById(job.partnerId);
+
+      const statusMsg = status === 'APPROVED'
+        ? `Customer APPROVED extra part "${extension.partName}" (+₹${extension.cost}). You are AUTHORIZED to proceed with this work.`
+        : `Customer REJECTED extra part "${extension.partName}". No work should be performed for this part.`;
+
       if (partner) {
         await notificationService.sendNotification(
           partner.userId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.GENERAL,
-          `Extension ${status}`,
-          `Customer has ${status} the extra part request (${extension.partName}).`,
-          { jobId: job._id.toString() }
+          `Extra Part Request ${status}: ${extension.partName}`,
+          statusMsg,
+          { jobId: job._id.toString(), extensionId: extensionIdStr, status }
         );
         emitToUser(partner.userId.toString(), 'job_updated', { jobId: job._id.toString() });
-        const notifService = require('../../../notification/notification.service').notificationService;
-        const notifModel = require('../../../notification/notification.model');
-        const notifPayload = { bookingId: booking._id.toString() };
-
-        await notifService.sendToRole(
-          'SUPER_ADMIN',
-          notifModel.NOTIFICATION_TYPE.IN_APP,
-          notifModel.NOTIFICATION_CATEGORY.BOOKING_UPDATE,
-          'Booking Updated',
-          `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been updated.`,
-          notifPayload
-        );
-
-        await notifService.sendToRole(
-          'ACCOUNTS',
-          notifModel.NOTIFICATION_TYPE.IN_APP,
-          notifModel.NOTIFICATION_CATEGORY.BOOKING_UPDATE,
-          'Booking Updated',
-          `Booking ${booking._id.toString().slice(-8).toUpperCase()} has been updated.`,
-          notifPayload
-        );
+        emitToUser(partner.userId.toString(), 'extra_work_responded', {
+          jobId: job._id.toString(),
+          bookingId: booking._id.toString(),
+          extensionId: extensionIdStr,
+          partName: extension.partName,
+          cost: extension.cost,
+          status,
+          message: statusMsg,
+        });
       }
+
+      // Notify executive team
+      emitToRole('EXECUTIVE', 'extra_work_responded', {
+        jobId: job._id.toString(),
+        bookingId: booking._id.toString(),
+        extensionId: extensionIdStr,
+        partName: extension.partName,
+        cost: extension.cost,
+        status,
+        customerName: (booking.customerId as any)?.fullName || 'Customer',
+      });
+      emitToRole('EXECUTIVE', 'booking_updated', { bookingId: booking._id.toString() });
+
+      if (booking.assignedExecutiveId) {
+        emitToUser(booking.assignedExecutiveId.toString(), 'extra_work_responded', {
+          jobId: job._id.toString(),
+          bookingId: booking._id.toString(),
+          extensionId: extensionIdStr,
+          partName: extension.partName,
+          cost: extension.cost,
+          status,
+        });
+      }
+
+      // Notify customer
+      emitToUser(customerId.toString(), 'booking_updated', { bookingId: booking._id.toString() });
+
+      const notifService = require('../../../notification/notification.service').notificationService;
+      const notifModel = require('../../../notification/notification.model');
+      const notifPayload = { bookingId: booking._id.toString(), extensionId: extensionIdStr, status };
+
+      await notifService.sendToRole(
+        'SUPER_ADMIN',
+        notifModel.NOTIFICATION_TYPE.IN_APP,
+        notifModel.NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+        `Extra Part ${status}`,
+        `Booking ${booking._id.toString().slice(-8).toUpperCase()} - Customer ${status.toLowerCase()} extra part "${extension.partName}" (₹${extension.cost}).`,
+        notifPayload
+      );
     } catch (e) {
-      console.error('Failed to notify after booking update', e);
+      console.error('Failed to notify after extra part response', e);
     }
 
     return job;

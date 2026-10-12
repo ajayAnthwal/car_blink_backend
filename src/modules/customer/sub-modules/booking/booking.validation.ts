@@ -20,7 +20,9 @@ export const createBookingSchema = z.object({
 });
 
 export const cancelBookingSchema = z.object({
-  reason: z.string().min(1, 'Cancellation reason is required').trim(),
+  reason: z.string().trim().optional(),
+  reasons: z.array(z.string()).optional(),
+  customerRemarks: z.string().trim().optional(),
 });
 
 export const selectQuoteSchema = z.object({

@@ -65,6 +65,12 @@ router.post('/call', ExecutiveController.clickToCall);
 router.get('/extra-work/pending', ExecutiveController.getPendingExtraWork);
 router.patch('/extra-work/:jobId/extensions/:extId/review', ExecutiveController.reviewExtraWork);
 
+// SUB-MODULE 7: Customer Cancellation Review & Retention
+router.get('/cancellations', ExecutiveController.getCancellationRequests);
+router.post('/cancellations/:id/call-log', ExecutiveController.logCancellationCall);
+router.post('/cancellations/:id/retain', ExecutiveController.retainCustomer);
+router.post('/cancellations/:id/forward-accounts', ExecutiveController.forwardCancellationToAccounts);
+
 router.use("/logistics", (logisticsRouter as any).default || logisticsRouter);
 router.use("/tickets", (ticketsRouter as any).default || ticketsRouter);
 router.use("/ads", (bannerAdRouter as any).default || bannerAdRouter);

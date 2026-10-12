@@ -71,6 +71,34 @@ export class PaymentService {
         }
       }
 
+      if (!totalBookingAmount && (booking as any).pricing?.customerGrossQuote) {
+        totalBookingAmount = Number((booking as any).pricing.customerGrossQuote);
+      }
+
+      if (!totalBookingAmount && (booking as any).acceptedQuoteAmount) {
+        totalBookingAmount = Number((booking as any).acceptedQuoteAmount);
+      }
+
+      if (!totalBookingAmount) {
+        const { BidModel } = require("../partner/sub-modules/bidding/bid.model");
+        let bid = await BidModel.findOne({ bookingId: booking._id, status: { $in: ['ACCEPTED', 'CUSTOMER_ACCEPTED'] } });
+        if (!bid && (booking as any).forwardedBidIds?.length) {
+          bid = await BidModel.findById((booking as any).forwardedBidIds[0]);
+        }
+        if (!bid) {
+          bid = await BidModel.findOne({ bookingId: booking._id }).sort({ createdAt: -1 });
+        }
+        if (bid && bid.quotedAmount) {
+          totalBookingAmount = Number(bid.quotedAmount);
+          if (!booking.acceptedBidId) {
+            booking.acceptedBidId = bid._id;
+            (booking as any).assignedPartnerId = bid.partnerId;
+            booking.status = BOOKING_STATUS.CUSTOMER_ACCEPTED;
+            await booking.save();
+          }
+        }
+      }
+
       const job = await JobModel.findOne({ bookingId: booking._id });
       if (!totalBookingAmount && job && job.finalAmount) {
         totalBookingAmount = Number(job.finalAmount);
@@ -97,16 +125,21 @@ export class PaymentService {
       }
 
       const { advanceFor } = require("../../common/utils/money.util");
-      advanceCalc = advanceFor(totalBookingAmount);
-      const serverAdvanceAmount = advanceCalc.advanceAmount;
+      if (totalBookingAmount > 0) {
+        advanceCalc = advanceFor(totalBookingAmount);
+        const serverAdvanceAmount = advanceCalc.advanceAmount;
 
-      if (typeof amount === 'number' && Math.abs(amount - serverAdvanceAmount) > 0.01) {
-        logger.warn(
-          `[PaymentService] Client advance amount ₹${amount} differs from server calculated advance ₹${serverAdvanceAmount} (Booking: ${bookingId}, Total: ₹${totalBookingAmount}). Overriding with server amount.`
-        );
+        if (serverAdvanceAmount > 0) {
+          if (typeof amount === 'number' && Math.abs(amount - serverAdvanceAmount) > 0.01) {
+            logger.warn(
+              `[PaymentService] Client advance amount ₹${amount} differs from server calculated advance ₹${serverAdvanceAmount} (Booking: ${bookingId}, Total: ₹${totalBookingAmount}). Overriding with server amount.`
+            );
+          }
+          amount = serverAdvanceAmount;
+        }
+      } else if (typeof amount === 'number' && amount > 0) {
+        advanceCalc = { advanceAmount: amount, balanceAmount: Math.max(0, Math.round(amount / 0.15) - amount) };
       }
-
-      amount = serverAdvanceAmount;
     } else if (paymentType === PAYMENT_TYPE.FINAL) {
       if (booking.status === 'CANCELLED') {
         throw new BadRequestError(
@@ -201,6 +234,11 @@ export class PaymentService {
     }
 
     const tempPaymentId = new mongoose.Types.ObjectId();
+
+    // Ensure amount is at least 1 INR (Razorpay requirement: min 100 paise)
+    if (!amount || amount < 1) {
+      amount = Math.max(1, amount || 1);
+    }
 
     // Call the provider to create an order
     const order = await razorpayProvider.createOrder(

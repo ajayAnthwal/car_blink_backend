@@ -27,9 +27,8 @@ export class BookingController {
   public static cancelBooking = asyncHandler(async (req: IRequest, res: Response) => {
     const customerId = req.user?.userId;
     const { id } = req.params;
-    const { reason } = req.body;
-    const booking = await BookingService.cancelBooking(String(customerId), id, reason);
-    return successResponse(res, booking, 'Booking cancelled successfully');
+    const booking = await BookingService.cancelBooking(String(customerId), id, req.body);
+    return successResponse(res, booking, 'Cancellation request submitted successfully');
   });
 
   public static getQuotes = asyncHandler(async (req: IRequest, res: Response) => {

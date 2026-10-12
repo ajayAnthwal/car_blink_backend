@@ -674,6 +674,285 @@ export class ExecutiveService {
       job,
     };
   }
+
+  /**
+   * Get all cancellation requests for Executive retention & review
+   */
+  async getCancellationRequests(query: any = {}): Promise<any> {
+    const page = Math.max(1, parseInt(query.page || '1', 10));
+    const limit = Math.max(1, parseInt(query.limit || '20', 10));
+    const skip = (page - 1) * limit;
+
+    const filter: any = {};
+
+    if (query.status === 'PENDING' || query.status === 'CANCELLATION_REQUESTED') {
+      filter.$and = [
+        { status: BOOKING_STATUS.CANCELLATION_REQUESTED },
+        { 'cancellationDetails.executiveStatus': { $nin: ['RETAINED', 'FORWARDED_TO_ACCOUNTS'] } },
+      ];
+    } else if (query.status === 'FORWARDED') {
+      filter['cancellationDetails.executiveStatus'] = 'FORWARDED_TO_ACCOUNTS';
+    } else if (query.status === 'RETAINED') {
+      filter['cancellationDetails.executiveStatus'] = 'RETAINED';
+    } else {
+      filter.$or = [
+        { status: BOOKING_STATUS.CANCELLATION_REQUESTED },
+        { 'cancellationDetails.requestedAt': { $exists: true } },
+      ];
+    }
+
+    const { PaymentModel } = require('../payment/payment.model');
+
+    const [bookings, total] = await Promise.all([
+      BookingModel.find(filter)
+        .populate('customerId', 'fullName email phone')
+        .populate('vehicleId')
+        .populate('serviceId')
+        .populate('cityId')
+        .populate('assignedPartnerId', 'businessName phone businessAddress')
+        .sort({ 'cancellationDetails.requestedAt': -1, updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      BookingModel.countDocuments(filter),
+    ]);
+
+    const cancellations = await Promise.all(
+      bookings.map(async (b: any) => {
+        const payments = await PaymentModel.find({
+          bookingId: b._id,
+        }).lean();
+        const successful = payments.filter((p: any) => p.status === 'SUCCESS');
+        const totalPaid = successful.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+        return {
+          ...b,
+          payments,
+          totalPaid,
+          hasPaidAdvance: totalPaid > 0,
+        };
+      })
+    );
+
+    return {
+      cancellations,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Log an Executive telephone call attempt or outcome with the customer
+   */
+  async logCancellationCall(
+    bookingId: string,
+    executiveId: string,
+    data: { callOutcome?: string; notes?: string }
+  ): Promise<any> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (!booking.cancellationDetails) {
+      booking.cancellationDetails = {
+        reasons: [booking.cancellationReason || 'Cancellation requested'],
+        requestedAt: new Date(),
+        executiveStatus: 'PENDING_REVIEW',
+        callAttempts: 0,
+      };
+    }
+
+    booking.cancellationDetails.callAttempts = (booking.cancellationDetails.callAttempts || 0) + 1;
+    booking.cancellationDetails.lastCallAt = new Date();
+    booking.cancellationDetails.executiveId = new mongoose.Types.ObjectId(executiveId);
+
+    if (data.callOutcome === 'CONNECTED') {
+      booking.cancellationDetails.executiveStatus = 'CALL_CONNECTED';
+    } else if (data.callOutcome === 'NO_ANSWER') {
+      booking.cancellationDetails.executiveStatus = 'CALL_NO_ANSWER';
+    }
+
+    if (data.notes) {
+      const existing = booking.cancellationDetails.executiveNotes || '';
+      booking.cancellationDetails.executiveNotes = existing ? `${existing} | Call Log: ${data.notes}` : data.notes;
+    }
+
+    await booking.save();
+    return {
+      message: 'Call logged successfully',
+      cancellationDetails: booking.cancellationDetails,
+    };
+  }
+
+  /**
+   * Executive successfully retains customer (convinced to continue)
+   */
+  async retainCustomer(
+    bookingId: string,
+    executiveId: string,
+    data: { notes: string; couponCode?: string }
+  ): Promise<any> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    if (!booking.cancellationDetails) {
+      booking.cancellationDetails = {};
+    }
+
+    booking.cancellationDetails.executiveStatus = 'RETAINED';
+    booking.cancellationDetails.executiveId = new mongoose.Types.ObjectId(executiveId);
+    booking.cancellationDetails.executiveNotes = data.notes;
+
+    // Restore booking to active state
+    if (booking.assignedPartnerId) {
+      booking.status = BOOKING_STATUS.ACCEPTED;
+    } else if (booking.forwardedBidIds && booking.forwardedBidIds.length > 0) {
+      booking.status = BOOKING_STATUS.QUOTED;
+    } else {
+      booking.status = BOOKING_STATUS.PENDING;
+    }
+
+    if (data.couponCode) {
+      booking.appliedCoupon = data.couponCode;
+    }
+
+    await booking.save();
+
+    // Notify customer
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+        'Booking Retained & Confirmed',
+        `Your service booking #${booking._id.toString().slice(-6)} has been reinstated. Our team is coordinating with your workshop partner.`,
+        { bookingId: booking._id.toString() }
+      );
+      emitToUser(booking.customerId.toString(), 'booking_updated', { bookingId: booking._id.toString(), status: booking.status });
+    } catch (e) {
+      console.warn('Failed to notify customer about retention:', e);
+    }
+
+    return {
+      message: 'Customer successfully retained and booking reinstated',
+      booking,
+    };
+  }
+
+  /**
+   * Executive confirms cancellation and forwards case to Accounts for refund
+   */
+  async forwardCancellationToAccounts(
+    bookingId: string,
+    executiveId: string,
+    data: { notes: string; deductionAmount?: number; deductionReason?: string; authorizedRefundAmount?: number }
+  ): Promise<any> {
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    const { PaymentModel } = require('../payment/payment.model');
+    const { RefundModel } = require('../accounts/sub-modules/refunds/refund.model');
+
+    const successfulPayments = await PaymentModel.find({
+      bookingId: booking._id,
+      status: 'SUCCESS',
+    });
+    const totalPaid = (successfulPayments || []).reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
+    const deduction = Math.max(0, Number(data.deductionAmount) || 0);
+    const authorizedAmount = data.authorizedRefundAmount !== undefined 
+      ? Number(data.authorizedRefundAmount) 
+      : Math.max(0, totalPaid - deduction);
+
+    // Cancel booking and job
+    booking.status = BOOKING_STATUS.CANCELLED;
+    const job = await JobModel.findOne({ bookingId: booking._id });
+    if (job) {
+      job.status = 'CANCELLED';
+      await job.save();
+    }
+
+    if (!booking.cancellationDetails) {
+      booking.cancellationDetails = {};
+    }
+
+    booking.cancellationDetails.executiveStatus = 'FORWARDED_TO_ACCOUNTS';
+    booking.cancellationDetails.executiveId = new mongoose.Types.ObjectId(executiveId);
+    booking.cancellationDetails.executiveNotes = data.notes;
+    booking.cancellationDetails.deductionAmount = deduction;
+    booking.cancellationDetails.deductionReason = data.deductionReason || 'None';
+    booking.cancellationDetails.refundAmount = authorizedAmount;
+    booking.cancellationDetails.accountsStatus = totalPaid > 0 ? 'PENDING_ACCOUNTS' : 'NOT_FORWARDED';
+    await booking.save();
+
+    // If payments exist and authorized refund > 0, generate/update Refund record for Accounts queue
+    let refundDoc = null;
+    if (successfulPayments && successfulPayments.length > 0 && authorizedAmount > 0) {
+      const primaryPayment = successfulPayments[0];
+      refundDoc = await RefundModel.create({
+        paymentId: primaryPayment._id,
+        bookingId: booking._id,
+        customerId: booking.customerId,
+        amount: authorizedAmount,
+        deductionAmount: deduction,
+        reasons: booking.cancellationDetails.reasons || [],
+        reason: `[Executive Verified]: ${booking.cancellationReason || 'Customer requested cancellation'} | Remarks: ${data.notes}`,
+        status: 'REQUESTED',
+        processedByExecutiveId: new mongoose.Types.ObjectId(executiveId),
+        executiveNotes: data.notes,
+      });
+
+      // Notify Accounts, Admin & Super Admin
+      try {
+        const { notificationService } = require('../notification/notification.service');
+        const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+        await notificationService.sendToRole(
+          'ACCOUNTS',
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Verified Refund Queued',
+          `Executive verified cancellation for Booking #${booking._id.toString().slice(-6)}. Authorized Refund: ₹${authorizedAmount}. Awaiting Accounts Security PIN processing.`,
+          { bookingId: booking._id.toString(), refundId: refundDoc._id.toString() }
+        );
+      } catch (notifErr) {
+        console.warn('Failed to notify accounts about refund:', notifErr);
+      }
+    }
+
+    // Notify customer
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+      await notificationService.sendNotification(
+        booking.customerId.toString(),
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+        'Booking Cancelled & Refund Forwarded',
+        `Your booking has been cancelled. An authorized refund of ₹${authorizedAmount} has been forwarded to our accounts desk for processing.`,
+        { bookingId: booking._id.toString() }
+      );
+      emitToUser(booking.customerId.toString(), 'booking_updated', { bookingId: booking._id.toString(), status: 'CANCELLED' });
+    } catch (e) {
+      console.warn('Failed to notify customer about cancellation:', e);
+    }
+
+    return {
+      message: 'Cancellation confirmed and forwarded to Accounts successfully',
+      booking,
+      refund: refundDoc,
+    };
+  }
 }
 
 export const executiveService = new ExecutiveService();

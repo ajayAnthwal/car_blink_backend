@@ -50,8 +50,8 @@ export class JobService {
           },
           {
             $or: [
-              { status: { $in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.IN_PROGRESS, 'CUSTOMER_ACCEPTED', 'VERIFIED', 'CONFIRMED', 'ASSIGNED'] } },
-              { hasPaidAdvance: true },
+              { status: { $in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.IN_PROGRESS, 'VERIFIED', 'CONFIRMED', 'ASSIGNED'] } },
+              { hasPaidAdvance: true, isAdvancePaid: true },
               { isVerifiedByPartner: true }
             ]
           }
@@ -81,7 +81,6 @@ export class JobService {
           await BookingModel.findByIdAndUpdate(b._id, {
             assignedPartnerId: partner._id,
             acceptedBidId: bidIdToUse,
-            hasPaidAdvance: true
           });
 
           if (matchingBid && matchingBid.status !== 'ACCEPTED') {
@@ -366,7 +365,7 @@ export class JobService {
     return {
       job: targetJob,
       booking,
-      message: `✓ Customer verified successfully! Booking status updated to "Verified / Work Ready". Click "Start Work" to begin service.`
+      message: `✓ Customer verified successfully!`
     };
   }
 
@@ -929,27 +928,47 @@ export class JobService {
       }
     }
 
-    // Notify executive team (NOT customer)
+    // Notify executive team AND customer
     try {
-      const { emitToRole } = require("../../../../sockets");
-      emitToRole("EXECUTIVE", "extra_work_requested", {
+      const { emitToRole, emitToUser } = require("../../../../sockets");
+      const extPayload = {
         jobId: job._id.toString(),
         bookingId: job.bookingId?.toString(),
         extensionId: targetExtId.toString(),
         partName: data.partName,
-        cost: data.cost,
-      });
+        cost: Number(data.cost),
+        reason: data.reason,
+        status: "PENDING_EXECUTIVE_REVIEW",
+        partnerName: partner.businessName || "Workshop Partner",
+      };
+
+      emitToRole("EXECUTIVE", "extra_work_requested", extPayload);
       if (booking?.assignedExecutiveId) {
-        emitToUser(booking.assignedExecutiveId.toString(), "extra_work_requested", {
-          jobId: job._id.toString(),
-          bookingId: booking._id.toString(),
-          extensionId: targetExtId.toString(),
-          partName: data.partName,
-          cost: data.cost,
-        });
+        emitToUser(booking.assignedExecutiveId.toString(), "extra_work_requested", extPayload);
+      }
+
+      if (booking?.customerId) {
+        const custUserId = ((booking.customerId as any)?._id || booking.customerId).toString();
+        emitToUser(custUserId, "extra_work_requested", extPayload);
+        emitToUser(custUserId, "booking_updated", { bookingId: booking._id.toString() });
+      }
+
+      // Also send in-app notification
+      const { notificationService } = require("../../../notification/notification.service");
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require("../../../notification/notification.model");
+      if (booking?.customerId) {
+        const custUserId = ((booking.customerId as any)?._id || booking.customerId).toString();
+        notificationService.sendNotification(
+          custUserId,
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.GENERAL,
+          `Additional Part Requested: ${data.partName}`,
+          `Workshop requested extra part "${data.partName}" costing ₹${data.cost}. Please review and approve or reject.`,
+          { bookingId: booking._id.toString(), extensionId: targetExtId.toString() }
+        ).catch(() => {});
       }
     } catch (e) {
-      console.warn("Failed to notify executive about extra work", e);
+      console.warn("Failed to notify executive/customer about extra work", e);
     }
 
     return job;
