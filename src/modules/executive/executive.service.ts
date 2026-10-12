@@ -395,8 +395,8 @@ export class ExecutiveService {
             partner.userId.toString(),
             NOTIFICATION_TYPE.IN_APP,
             NOTIFICATION_CATEGORY.SYSTEM,
-            'Stage 1 Verification Passed',
-            `Field Executive has verified your workshop details for "${partner.businessName}". Your application has been forwarded to Super Admin for Final Approval.`,
+            'Workshop Details Verified',
+            `Your workshop details for "${partner.businessName}" have been verified on-site. Your application has been submitted for final activation.`,
             { partnerId: partner._id.toString(), status: 'UNDER_REVIEW', stage: 1 }
           );
         }
@@ -436,7 +436,7 @@ export class ExecutiveService {
         isVerified: false,
         reason,
         message: status === 'APPROVED' 
-          ? 'Executive verified your profile. Pending Super Admin Final Approval.'
+          ? 'Your workshop profile has been verified on-site. Pending Final Activation.'
           : `Your verification has been ${status.toLowerCase()}.` 
       };
 

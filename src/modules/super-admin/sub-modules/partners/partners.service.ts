@@ -124,7 +124,7 @@ export class SuperAdminPartnersService {
           NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.SYSTEM,
           '🎉 Partner Account Approved & Verified!',
-          `Congratulations! Super Admin has approved your partner workshop account for "${partner.businessName}". Your console is now unlocked to accept leads, submit quotes, and manage repair jobs.`,
+          `Congratulations! Your partner workshop account for "${partner.businessName}" has been approved and verified. Your console is now unlocked to accept leads, submit quotes, and manage repair jobs.`,
           { partnerId: partner._id.toString(), status: 'APPROVED', isVerified: true }
         );
 
@@ -133,8 +133,8 @@ export class SuperAdminPartnersService {
           'EXECUTIVE',
           NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.SYSTEM,
-          'Partner Account Activated by Super Admin',
-          `Partner "${partner.businessName}" has received final clearance and activation from Super Admin.`,
+          'Partner Account Activated',
+          `Partner "${partner.businessName}" has received final verification and activation.`,
           { partnerId: partner._id.toString() }
         );
       } else {
@@ -142,8 +142,8 @@ export class SuperAdminPartnersService {
           partner.userId.toString(),
           NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.SYSTEM,
-          'Partner Application Status: Rejected',
-          `Your partner account application was rejected by Super Admin. Reason: "${reason || 'Documentation mismatch'}".`,
+          'Partner Application Update',
+          `Your partner account application was not approved. Reason: "${reason || 'Documentation mismatch'}". Please update the required details to re-apply.`,
           { partnerId: partner._id.toString(), status: 'REJECTED', reason }
         );
       }

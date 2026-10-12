@@ -814,8 +814,8 @@ export class BookingService {
           const bookingRef = booking._id.toString().slice(-8).toUpperCase();
           const waMsg = '🚘 *[CARBLINK - QUOTE ACCEPTED]*\n\n' +
             'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
-            'You have successfully selected the quote of *₹' + selectedBid.quotedAmount.toLocaleString() + '* for booking #' + bookingRef + '.\n\n' +
-            '💳 *Next Step (Advance Confirmation):*\nPlease confirm your booking by paying the 15% advance token (*₹' + advanceAmt.toLocaleString() + '*) or select Pay at Workshop (Cash).\n\n' +
+            'You have successfully selected the quote of *₹' + selectedBid.quotedAmount.toLocaleString() + '* (Incl. 18% GST) for booking #' + bookingRef + '.\n\n' +
+            '💳 *Next Step (Advance Confirmation):*\nPlease confirm your booking by paying the 15% advance token (*₹' + advanceAmt.toLocaleString() + '*).\n\n' +
             '🔒 *Security Note:* Your 4-digit Workshop Handover PIN & workshop address will unlock immediately upon confirmation.\n\n' +
             '👉 *Confirm Booking & Pay Advance:*\nhttps://dashboard.carblink.in/customer/bookings/' + booking._id + '\n\n' +
             'Thank you for choosing CarBlink!';

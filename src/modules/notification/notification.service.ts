@@ -84,9 +84,16 @@ export class NotificationService {
           'carblink_verification_notice',
           [user.fullName || 'Customer', waMessage]
         ).catch(() => {
+          let roleTitle = 'UPDATE';
+          if (user.role === 'PARTNER') roleTitle = 'WORKSHOP UPDATE';
+          else if (user.role === 'EXECUTIVE') roleTitle = 'OPERATIONS ALERT';
+          else if (user.role === 'ACCOUNTS') roleTitle = 'FINANCE ALERT';
+          else if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') roleTitle = 'MANAGEMENT ALERT';
+          else roleTitle = 'UPDATE';
+
           return whatsappProvider.sendWhatsAppText(
             user.phone,
-            `🔔 *[CARBLINK ${user.role} NOTIFICATION]*\n*${title}*\n${message}\nOpen Portal: ${portalUrl}`
+            `🔔 *[CARBLINK ${roleTitle}]*\n*${title}*\n${message}\nOpen Portal: ${portalUrl}`
           );
         });
       } catch (waErr: any) {
@@ -157,31 +164,34 @@ export class NotificationService {
 
       // 1. Send WhatsApp alert to central configured Admin/Management phone
       if (adminWhatsAppPhone && ['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE', 'ACCOUNTS'].includes(role)) {
-        await whatsappProvider.sendWhatsAppText(adminWhatsAppPhone, `🚨 *[${role} ALERT]*\n*${title}*\n${message}`);
+        let adminRoleLabel = 'MANAGEMENT ALERT';
+        if (role === 'EXECUTIVE') adminRoleLabel = 'OPERATIONS ALERT';
+        else if (role === 'ACCOUNTS') adminRoleLabel = 'FINANCE ALERT';
+        await whatsappProvider.sendWhatsAppText(adminWhatsAppPhone, `🚨 *[CARBLINK ${adminRoleLabel}]*\n*${title}*\n${message}`);
       }
 
       // 2. Direct WhatsApp alert to individual registered Executives, Partners, Accounts & Admins
       for (const targetUser of users) {
         if (targetUser.phone) {
-          let roleTag = role;
+          let roleTag = 'UPDATE';
           let dashboardLink = 'https://dashboard.carblink.in/login';
           if (role === 'EXECUTIVE') {
-            roleTag = 'EXECUTIVE TEAM';
+            roleTag = 'OPERATIONS ALERT';
             dashboardLink = 'https://dashboard.carblink.in/executive/leads';
           } else if (role === 'PARTNER') {
-            roleTag = 'PARTNER WORKSHOP';
+            roleTag = 'WORKSHOP UPDATE';
             dashboardLink = 'https://dashboard.carblink.in/partner/leads';
           } else if (role === 'ACCOUNTS') {
-            roleTag = 'FINANCE & ACCOUNTS';
+            roleTag = 'FINANCE ALERT';
             dashboardLink = 'https://dashboard.carblink.in/accounts/dashboard';
           } else if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
-            roleTag = 'SUPER ADMIN';
+            roleTag = 'MANAGEMENT ALERT';
             dashboardLink = 'https://dashboard.carblink.in/admin/dashboard';
           }
 
           await whatsappProvider.sendWhatsAppText(
             targetUser.phone,
-            `🔔 *[${roleTag} NOTIFICATION]*\n*${title}*\n${message}\nOpen Dashboard: ${dashboardLink}`
+            `🔔 *[CARBLINK ${roleTag}]*\n*${title}*\n${message}\nOpen Dashboard: ${dashboardLink}`
           );
         }
       }

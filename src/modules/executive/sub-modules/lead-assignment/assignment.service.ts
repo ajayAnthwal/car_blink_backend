@@ -637,7 +637,7 @@ export class AssignmentService {
           NOTIFICATION_TYPE.SMS,
           NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
           'Job Confirmed & Assigned!',
-          `Executive has confirmed booking ${booking._id}. Your quote of INR ${selectedBid.quotedAmount} is accepted and job is assigned to you.`,
+          `Booking #${booking._id.toString().slice(-8).toUpperCase()} is confirmed! Your quote of INR ${selectedBid.quotedAmount} is accepted and job is assigned to your workshop.`,
           { bookingId: booking._id.toString(), jobId: job._id.toString() }
         );
       }
@@ -648,7 +648,7 @@ export class AssignmentService {
         NOTIFICATION_TYPE.SMS,
         NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
         'Booking Confirmed!',
-        `Your booking #${booking._id.toString().slice(-8).toUpperCase()} has been confirmed by our executive and assigned to the partner.`,
+        `Your booking #${booking._id.toString().slice(-8).toUpperCase()} has been confirmed and assigned to your selected workshop.`,
         { bookingId: booking._id.toString() }
       );
 
