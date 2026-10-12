@@ -225,6 +225,17 @@ export class AccountsService {
     if (referenceId) withdrawal.referenceId = referenceId;
     await withdrawal.save();
 
+    // Update Ledger transaction description if present
+    try {
+      const { LedgerTransactionModel } = require('../wallet/ledger.model');
+      await LedgerTransactionModel.findOneAndUpdate(
+        { description: { $regex: withdrawal._id.toString() } },
+        { $set: { description: `Withdrawal Paid (UTR/Ref: ${referenceId || withdrawal._id})` } }
+      );
+    } catch (ledgerErr) {
+      console.warn("Failed to update ledger description for withdrawal:", ledgerErr);
+    }
+
     // Notify Partner
     try {
       const { notificationService } = require('../notification/notification.service');
@@ -234,8 +245,8 @@ export class AccountsService {
         NOTIFICATION_TYPE.SMS,
         NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
         `Withdrawal Paid — ₹${withdrawal.amount}`,
-        `Your withdrawal request of ₹${withdrawal.amount} has been processed and paid out. Ref: ${referenceId || withdrawal._id}`,
-        { withdrawalId: withdrawal._id.toString() }
+        `Your withdrawal request of ₹${withdrawal.amount} has been processed and paid out via bank transfer. Ref / UTR: ${referenceId || withdrawal._id}`,
+        { withdrawalId: withdrawal._id.toString(), referenceId }
       );
     } catch (err) {
       console.warn("Failed to send partner withdrawal notification:", err);

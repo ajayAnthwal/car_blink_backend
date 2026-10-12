@@ -388,20 +388,8 @@ export class WalletService {
         throw new ApiError(500, `Payout failed: ${withdrawal.failureReason}`);
       }
     } else {
-      // Smooth mock payout processing when RazorpayX is disabled
-      setTimeout(async () => {
-        try {
-          const req = await WithdrawalRequestModel.findById(withdrawal._id);
-          if (req && req.status === WITHDRAWAL_STATUS.PENDING) {
-            req.status = WITHDRAWAL_STATUS.COMPLETED;
-            req.referenceId = `payout_${crypto.randomBytes(8).toString('hex')}`;
-            req.processedAt = new Date();
-            await req.save();
-          }
-        } catch (err) {
-          console.error("Mock payout error:", err);
-        }
-      }, 3000);
+      // Manual Payout Mode: Request stays in PENDING state awaiting Accounts/Admin manual IMPS/NEFT/UPI transfer and verification
+      console.log(`[WalletService] Withdrawal request ${withdrawal._id} created in PENDING status for manual transfer by Accounts/Admin.`);
     }
 
     return withdrawal;
