@@ -136,12 +136,21 @@ export class SettlementService {
     const grossAmount = job.finalAmount ?? 0;
     const platformCommission = grossAmount * (commissionPercent / 100);
     const amountAfterCommission = grossAmount - platformCommission;
+
+    const allPayments = await PaymentModel.find({
+      bookingId: booking._id,
+      status: PAYMENT_STATUS.SUCCESS,
+    });
+    const cashCollected = allPayments
+      .filter((p) => p.provider === 'CASH')
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     
     // Calculate TDS (usually on gross or amountAfterCommission, assuming on gross for now)
     const tdsAmount = grossAmount * ((deductions.tdsPercent || 0) / 100);
     const otherDeductions = deductions.otherDeductions || 0;
     
-    const netPayoutAmount = amountAfterCommission - tdsAmount - otherDeductions;
+    // Deduct physical cash collected by partner to prevent double payout
+    const netPayoutAmount = Math.max(0, amountAfterCommission - cashCollected - tdsAmount - otherDeductions);
 
     // 5. Create Settlement
     const settlement = await SettlementModel.create({

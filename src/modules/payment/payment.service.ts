@@ -161,7 +161,12 @@ export class PaymentService {
 
       if (totalAdvancePaid > 0) {
         const job = await JobModel.findOne({ bookingId });
-        let totalJobPayable = Number(job?.finalAmount || 0);
+        let totalJobPayable = Number(
+          (job as any)?.invoice?.grandTotal ||
+          (booking as any)?.pricing?.customerGrossQuote ||
+          job?.finalAmount ||
+          0
+        );
 
         if (!totalJobPayable && booking.acceptedBidId) {
           const { BidModel } = require("../customer/sub-modules/bids/bid.model");
@@ -736,7 +741,12 @@ export class PaymentService {
 
       if (totalAdvancePaid > 0) {
         const job = await JobModel.findOne({ bookingId });
-        let totalJobPayable = Number(job?.finalAmount || 0);
+        let totalJobPayable = Number(
+          (job as any)?.invoice?.grandTotal ||
+          (booking as any)?.pricing?.customerGrossQuote ||
+          job?.finalAmount ||
+          0
+        );
 
         if (!totalJobPayable && booking.acceptedBidId) {
           const { BidModel } = require("../customer/sub-modules/bids/bid.model");
@@ -814,18 +824,33 @@ export class PaymentService {
     booking.paymentMode = 'CASH';
     await booking.save();
 
-    // Update Partner Dues if payment is SUCCESS
+    // Update Partner Dues if payment is SUCCESS (only if online advance did not cover commission)
     if (finalStatus === PAYMENT_STATUS.SUCCESS) {
       const job = await JobModel.findOne({ bookingId });
       if (job && job.partnerId) {
-        const _baseAmount = payment.baseAmount || payment.amount;
-        const _discountAmount = payment.discountAmount || 0;
-        const commissionAmount = _baseAmount * 0.15;
-        const duesToAdd = commissionAmount - _discountAmount;
-
-        await PartnerModel.findByIdAndUpdate(job.partnerId, {
-          $inc: { outstandingDues: duesToAdd },
+        const priorOnlinePayments = await PaymentModel.find({
+          bookingId,
+          provider: { $ne: PAYMENT_PROVIDER.CASH },
+          status: PAYMENT_STATUS.SUCCESS,
         });
+        const totalOnlinePaid = priorOnlinePayments.reduce(
+          (sum, p) => sum + (Number(p.amount) || 0),
+          0,
+        );
+        const totalJobAmount = Number(
+          job.finalAmount ||
+          (booking as any)?.pricing?.customerGrossQuote ||
+          payment.amount ||
+          0
+        );
+        const totalCommission = Number((totalJobAmount * 0.15).toFixed(2));
+        const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
+
+        if (duesToAdd > 0) {
+          await PartnerModel.findByIdAndUpdate(job.partnerId, {
+            $inc: { outstandingDues: duesToAdd },
+          });
+        }
       }
 
       if (payment.couponCode) {
@@ -970,15 +995,30 @@ export class PaymentService {
     booking.paymentMode = 'CASH';
     await booking.save();
 
-    // Deduct commission as outstanding dues, adjusted for any discount borne by the platform
-    const baseAmount = payment.baseAmount || payment.amount;
-    const discountAmount = payment.discountAmount || 0;
-    const commissionAmount = baseAmount * 0.15;
-    const duesToAdd = commissionAmount - discountAmount;
-
-    await PartnerModel.findByIdAndUpdate(job.partnerId, {
-      $inc: { outstandingDues: duesToAdd },
+    // Deduct commission as outstanding dues only if not covered by online advance
+    const priorOnlinePayments = await PaymentModel.find({
+      bookingId: booking._id,
+      provider: { $ne: PAYMENT_PROVIDER.CASH },
+      status: PAYMENT_STATUS.SUCCESS,
     });
+    const totalOnlinePaid = priorOnlinePayments.reduce(
+      (sum, p) => sum + (Number(p.amount) || 0),
+      0,
+    );
+    const totalJobAmount = Number(
+      job.finalAmount ||
+      (booking as any)?.pricing?.customerGrossQuote ||
+      payment.amount ||
+      0
+    );
+    const totalCommission = Number((totalJobAmount * 0.15).toFixed(2));
+    const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
+
+    if (duesToAdd > 0) {
+      await PartnerModel.findByIdAndUpdate(job.partnerId, {
+        $inc: { outstandingDues: duesToAdd },
+      });
+    }
 
     if (payment.couponCode) {
       const { CouponService } = require("../super-admin/sub-modules/coupons/coupons.service");

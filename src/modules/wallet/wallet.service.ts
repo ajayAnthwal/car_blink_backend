@@ -67,7 +67,7 @@ export class WalletService {
     partnerId: string,
     bookingId: string,
     totalAmount: number,
-    paymentMode: 'CASH' | 'ONLINE'
+    paymentMode?: 'CASH' | 'ONLINE'
   ) {
     const wallet = await this.getOrCreateWallet(partnerId);
 
@@ -81,32 +81,64 @@ export class WalletService {
       return wallet;
     }
 
-    const COMMISSION_RATE = 0.15; // 15% fixed commission
-    const commissionAmount = Math.round(totalAmount * COMMISSION_RATE);
-    const partnerShare = totalAmount - commissionAmount;
+    const { PaymentModel } = require('../payment/payment.model');
+    const payments = await PaymentModel.find({
+      bookingId: new mongoose.Types.ObjectId(bookingId),
+      status: 'SUCCESS'
+    }).lean();
 
-    if (paymentMode === 'ONLINE') {
-      wallet.balance += partnerShare;
+    const cashCollected = payments
+      .filter((p: any) => p.provider === 'CASH')
+      .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
+    const onlineCollected = payments
+      .filter((p: any) => p.provider !== 'CASH')
+      .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
+    const COMMISSION_RATE = 0.15; // 15% fixed commission
+    const commissionAmount = Number((totalAmount * COMMISSION_RATE).toFixed(2));
+    const partnerShare = Number((totalAmount - commissionAmount).toFixed(2));
+
+    // Net settlement owed to partner wallet:
+    // Partner earned `partnerShare`. Partner already collected `cashCollected` physically in hand.
+    // So CarBlink needs to credit or debit:
+    const netWalletAdjustment = Number((partnerShare - cashCollected).toFixed(2));
+
+    if (netWalletAdjustment > 0) {
+      // CarBlink holds online funds that belong to Partner -> Credit Partner Wallet
+      wallet.balance = Number((wallet.balance + netWalletAdjustment).toFixed(2));
       await wallet.save();
 
       await LedgerTransactionModel.create({
         walletId: wallet._id,
         bookingId: new mongoose.Types.ObjectId(bookingId),
-        amount: partnerShare,
+        amount: netWalletAdjustment,
         type: TRANSACTION_TYPE.CREDIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Credit (Share: ${totalAmount} - 15%)`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Settlement (Share: ₹${partnerShare}${cashCollected > 0 ? `, Cash: -₹${cashCollected}` : ''})`,
         balanceAfter: wallet.balance,
       });
-    } else if (paymentMode === 'CASH') {
-      wallet.balance -= commissionAmount;
+    } else if (netWalletAdjustment < 0) {
+      // Partner collected cash in excess of their share -> Debit Partner Wallet
+      const debitAmount = Math.abs(netWalletAdjustment);
+      wallet.balance = Number((wallet.balance - debitAmount).toFixed(2));
       await wallet.save();
 
       await LedgerTransactionModel.create({
         walletId: wallet._id,
         bookingId: new mongoose.Types.ObjectId(bookingId),
-        amount: commissionAmount,
+        amount: debitAmount,
         type: TRANSACTION_TYPE.DEBIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Cash Booking Commission (15% of ${totalAmount})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Platform Commission Due (Commission: ₹${commissionAmount}${onlineCollected > 0 ? `, Online Advance: -₹${onlineCollected}` : ''})`,
+        balanceAfter: wallet.balance,
+      });
+    } else {
+      // Exactly settled! (e.g. 15% advance online to CarBlink, 85% cash to partner)
+      await LedgerTransactionModel.create({
+        walletId: wallet._id,
+        bookingId: new mongoose.Types.ObjectId(bookingId),
+        amount: 0,
+        type: TRANSACTION_TYPE.CREDIT,
+        description: `Booking #${bookingId.toString().slice(-6)} - Fully Settled (Cash Collected: ₹${cashCollected}, Online Advance: ₹${onlineCollected})`,
         balanceAfter: wallet.balance,
       });
     }

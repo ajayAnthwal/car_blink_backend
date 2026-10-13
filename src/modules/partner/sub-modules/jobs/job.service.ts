@@ -499,9 +499,13 @@ export class JobService {
     const bid = (await BidModel.findById(job.bidId)) as any;
     const bookingDoc = await BookingModel.findById(job.bookingId);
     const baseQuotedAmount = Number(
-      bookingDoc?.pricing?.partnerBaseQuote ??
+      existingInvoice?.grandTotal ??
+      bookingDoc?.pricing?.customerGrossQuote ??
       bid?.quotedAmount ??
+      (bookingDoc as any)?.quotedAmount ??
+      (bookingDoc as any)?.totalAmount ??
       job.finalAmount ??
+      bookingDoc?.pricing?.partnerBaseQuote ??
       0
     );
 
