@@ -146,7 +146,7 @@ export class EscalationService {
 
         await notificationService.sendNotification(
           escalation.relatedUserId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.ESCALATION,
           'Your Issue Has Been Resolved',
           `Your escalation ticket has been resolved. Notes: ${resolutionNotes || 'None'}`,

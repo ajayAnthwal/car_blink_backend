@@ -336,7 +336,7 @@ export class SettlementService {
       if (partner) {
         await notificationService.sendNotification(
           partner.userId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
           'Settlement Processed',
           `Your payout settlement of INR ${settlement.netPayoutAmount} has been processed. Ref: ${finalTransactionRef}`,

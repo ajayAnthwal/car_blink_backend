@@ -378,7 +378,7 @@ export class ExecutiveInvoiceService {
       if (invoice.customerId) {
         await notificationService.sendNotification(
           invoice.customerId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.JOB_STATUS,
           payload.title,
           payload.message,

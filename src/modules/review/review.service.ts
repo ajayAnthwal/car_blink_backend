@@ -100,7 +100,7 @@ export class ReviewService {
       if (partner) {
         await notificationService.sendNotification(
           partner.userId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.REVIEW_RECEIVED,
           'New Review Received',
           `You have received a new review with a rating of ${data.rating}/5 for your service.`,

@@ -534,8 +534,10 @@ export class PaymentService {
           notifTitle,
           notifBody,
           {
+            templateKey: 'PAYMENT_RECEIVED',
             bookingId: payment.bookingId.toString(),
             paymentId: payment._id.toString(),
+            amount: payAmount,
           },
         );
 
@@ -946,8 +948,10 @@ export class PaymentService {
           "Cash Payment Successful",
           `Your offline cash payment of INR ${amount} for booking ${bookingId} has been successfully collected by the partner.`,
           {
+            templateKey: 'PAYMENT_RECEIVED',
             bookingId: booking._id.toString(),
             paymentId: payment._id.toString(),
+            amount: amount,
           },
         );
       } else {

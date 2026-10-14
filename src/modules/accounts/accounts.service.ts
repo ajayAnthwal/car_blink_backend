@@ -242,7 +242,7 @@ export class AccountsService {
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
       await notificationService.sendNotification(
         withdrawal.partnerId.toString(),
-        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
         `Withdrawal Paid — ₹${withdrawal.amount}`,
         `Your withdrawal request of ₹${withdrawal.amount} has been processed and paid out via bank transfer. Ref / UTR: ${referenceId || withdrawal._id}`,

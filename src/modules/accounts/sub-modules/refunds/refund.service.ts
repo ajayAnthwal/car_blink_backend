@@ -190,7 +190,7 @@ export class RefundService {
       if (refund.customerId) {
         await notificationService.sendNotification(
           refund.customerId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
           'Refund Processed',
           `Your refund of INR ${refund.amount} has been successfully processed.`,

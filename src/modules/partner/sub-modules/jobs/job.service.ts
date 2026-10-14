@@ -421,7 +421,7 @@ export class JobService {
 
       await notificationService.sendNotification(
         booking.customerId.toString(),
-        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.JOB_STATUS,
         "Work Started",
         `Your car service has officially started! Live status: Work Started.`,
@@ -607,7 +607,7 @@ export class JobService {
         // SMS
         await notificationService.sendNotification(
           booking.customerId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.JOB_STATUS,
           "Service Completed",
           `Your car cleaning service is completed. The remaining balance to pay is INR ${remainingAmountToPay}. Please review and pay.`,

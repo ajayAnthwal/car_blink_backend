@@ -158,6 +158,18 @@ export class SuperAdminBookingsService {
     booking.cancellationReason = `Super Admin: ${reason || 'Cancelled by administration'}`;
     await booking.save();
 
+    // Notify customer via DLT Cancellation SMS (Template 1561221)
+    try {
+      const { UserModel } = require('../../../user/user.model');
+      const custUser = await UserModel.findById(booking.customerId);
+      if (custUser && custUser.phone) {
+        const { smsProvider } = require('../../../notification/providers/sms.provider');
+        smsProvider.sendBookingCancelled(custUser.phone, booking._id.toString()).catch(() => {});
+      }
+    } catch (smsErr) {
+      console.warn('Failed to send cancellation SMS to customer:', smsErr);
+    }
+
     try {
       const AuditLog = require('../audit-logs/audit-log.model').default;
       await AuditLog.create({

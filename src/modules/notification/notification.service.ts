@@ -35,7 +35,12 @@ export class NotificationService {
           logger.warn(`No phone registered for user ${userId}. SMS notification skipped.`);
           success = false;
         } else {
-          const result = await smsProvider.sendSms(user.phone, message);
+          const result = await smsProvider.sendSms(
+            user.phone,
+            message,
+            metadata?.templateKey || metadata?.templateId,
+            metadata
+          );
           success = result.success;
           providerMessageId = result.providerMessageId;
         }

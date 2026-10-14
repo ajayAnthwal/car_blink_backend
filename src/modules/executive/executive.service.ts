@@ -943,6 +943,18 @@ export class ExecutiveService {
         { bookingId: booking._id.toString() }
       );
       emitToUser(booking.customerId.toString(), 'booking_updated', { bookingId: booking._id.toString(), status: 'CANCELLED' });
+
+      // DLT SMS Notification (Template 1561221: Booking Cancelled)
+      try {
+        const { UserModel } = require('../user/user.model');
+        const custUser = await UserModel.findById(booking.customerId);
+        if (custUser && custUser.phone) {
+          const { smsProvider } = require('../notification/providers/sms.provider');
+          smsProvider.sendBookingCancelled(custUser.phone, booking._id.toString()).catch(() => {});
+        }
+      } catch (smsErr) {
+        console.warn('Failed to dispatch DLT cancellation SMS:', smsErr);
+      }
     } catch (e) {
       console.warn('Failed to notify customer about cancellation:', e);
     }

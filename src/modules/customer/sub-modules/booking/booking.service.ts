@@ -1132,7 +1132,7 @@ export class BookingService {
 
       await notificationService.sendNotification(
         booking.customerId.toString(),
-        NOTIFICATION_TYPE.SMS,
+        NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.JOB_STATUS,
         payload.title,
         payload.message,

@@ -347,7 +347,7 @@ export class WalletService {
       for (const accUser of accountsUsers) {
         await notificationService.sendNotification(
           accUser._id.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
           `Partner Withdrawal Request — ₹${amount}`,
           `Partner ${partner?.businessName || 'Workshop'} requested a wallet withdrawal of ₹${amount}.`,

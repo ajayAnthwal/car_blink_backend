@@ -649,7 +649,7 @@ export class AssignmentService {
       if (winningPartner && winningPartner.userId) {
         await notificationService.sendNotification(
           winningPartner.userId.toString(),
-          NOTIFICATION_TYPE.SMS,
+          NOTIFICATION_TYPE.IN_APP,
           NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
           'Job Confirmed & Assigned!',
           `Booking #${booking._id.toString().slice(-8).toUpperCase()} is confirmed! Your quote of INR ${selectedBid.quotedAmount} is accepted and job is assigned to your workshop.`,
@@ -657,17 +657,23 @@ export class AssignmentService {
         );
       }
 
-      // B. Notify Customer
+      // B. Notify Customer via DLT Booking Confirmation SMS (Template 1561218)
+      const bookingRef = booking._id.toString().slice(-8).toUpperCase();
+      const prefDateStr = booking.preferredDate ? new Date(booking.preferredDate).toLocaleDateString('en-IN') : 'Today';
       await notificationService.sendNotification(
         booking.customerId.toString(),
         NOTIFICATION_TYPE.SMS,
         NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
         'Booking Confirmed!',
-        `Your booking #${booking._id.toString().slice(-8).toUpperCase()} has been confirmed and assigned to your selected workshop.`,
-        { bookingId: booking._id.toString() }
+        `Your booking #${bookingRef} has been confirmed.`,
+        {
+          templateKey: 'BOOKING_CONFIRMATION',
+          bookingId: bookingRef,
+          dateTime: prefDateStr,
+        }
       );
 
-      // C. Notify rejected partners
+      // C. Notify rejected partners via IN_APP & WhatsApp
       const rejectedBids: any[] = await BidModel.find({ bookingId: booking._id, _id: { $ne: selectedBid._id } });
       const rejectedPartnerIds = rejectedBids.map((b) => b.partnerId);
       const rejectedPartners: any[] = await PartnerModel.find({ _id: { $in: rejectedPartnerIds } });
@@ -676,10 +682,10 @@ export class AssignmentService {
         if (partner.userId) {
           await notificationService.sendNotification(
             partner.userId.toString(),
-            NOTIFICATION_TYPE.SMS,
+            NOTIFICATION_TYPE.IN_APP,
             NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
             'Quote Not Selected',
-            `Your quote for booking ${booking._id} was not selected. Keep bidding!`,
+            `Your quote for booking #${bookingRef} was not selected. Keep bidding!`,
             { bookingId: booking._id.toString() }
           );
         }

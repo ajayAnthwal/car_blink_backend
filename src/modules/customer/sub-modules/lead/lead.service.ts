@@ -200,6 +200,14 @@ export class LeadService {
       } catch (waErr) {
         console.warn('[LeadService] Interakt WhatsApp notification warning:', waErr);
       }
+
+      // 2b. Trigger DLT Template 1561220 (Service Comparison Request Submitted)
+      try {
+        const { smsProvider } = require('../../../notification/providers/sms.provider');
+        smsProvider.sendComparisonRequestReceived(lead.phone).catch(() => {});
+      } catch (smsErr) {
+        console.warn('[LeadService] DLT request received SMS warning:', smsErr);
+      }
     }
 
     // Notify Admin and Executive
