@@ -340,12 +340,14 @@ export class BookingService {
       }
 
       const bAcceptedAmt = (b.acceptedBidId as any)?.quotedAmount || 0;
-      const bBaseAmt = jDetails?.finalAmount || bAcceptedAmt || ((b as any).serviceId?.basePrice || 0);
+      const bBaseAmt = (b as any).pricing?.customerGrossQuote || bAcceptedAmt || ((b as any).serviceId?.basePrice || 0);
       const bApprovedExtsCost = (jDetails?.jobExtensions || [])
         .filter((e: any) => e.status === 'APPROVED')
         .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
       const bCouponDisc = (b as any).couponDiscountAmount || 0;
-      const bResolvedTotal = Math.max(0, bBaseAmt + bApprovedExtsCost - bCouponDisc);
+      const bResolvedTotal = jDetails?.finalAmount
+        ? Number(jDetails.finalAmount)
+        : Math.max(0, bBaseAmt + bApprovedExtsCost - bCouponDisc);
       const { advanceFor: bAdvanceFor } = require('../../../../common/utils/money.util');
       const bCalc = bAdvanceFor(bResolvedTotal);
 
@@ -535,12 +537,14 @@ export class BookingService {
     }
 
     const acceptedAmt = acceptedBidDoc?.quotedAmount || 0;
-    const baseAmt = jobDetails?.finalAmount || acceptedAmt || ((booking as any).serviceId?.basePrice || 0);
+    const baseAmt = (booking as any).pricing?.customerGrossQuote || acceptedAmt || ((booking as any).serviceId?.basePrice || 0);
     const approvedExtsCost = (jobDetails?.jobExtensions || [])
       .filter((e: any) => e.status === 'APPROVED')
       .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
     const couponDisc = (booking as any).couponDiscountAmount || 0;
-    const resolvedTotal = Math.max(0, baseAmt + approvedExtsCost - couponDisc);
+    const resolvedTotal = jobDetails?.finalAmount
+      ? Number(jobDetails.finalAmount)
+      : Math.max(0, baseAmt + approvedExtsCost - couponDisc);
     const { advanceFor: bIdAdvanceFor } = require('../../../../common/utils/money.util');
     const bIdCalc = bIdAdvanceFor(resolvedTotal);
 
@@ -1026,17 +1030,17 @@ export class BookingService {
     }
 
     const job = await JobModel.findOne({ bookingId: booking._id });
+    let totalAmount = 0;
     if (job && job.finalAmount) {
-      baseAmount = job.finalAmount;
+      totalAmount = Number(job.finalAmount);
+    } else {
+      let approvedExtensionsCost = 0;
+      if (job && job.jobExtensions && job.jobExtensions.length > 0) {
+        const approvedExts = job.jobExtensions.filter((e: any) => e.status === 'APPROVED');
+        approvedExtensionsCost = approvedExts.reduce((sum: number, ext: any) => sum + ext.cost, 0);
+      }
+      totalAmount = baseAmount + approvedExtensionsCost;
     }
-
-    let approvedExtensionsCost = 0;
-    if (job && job.jobExtensions && job.jobExtensions.length > 0) {
-      const approvedExts = job.jobExtensions.filter((e: any) => e.status === 'APPROVED');
-      approvedExtensionsCost = approvedExts.reduce((sum: number, ext: any) => sum + ext.cost, 0);
-    }
-
-    const totalAmount = baseAmount + approvedExtensionsCost;
     if (totalAmount <= 0) {
       throw new ApiError(400, 'Total booking amount is zero, cannot apply coupon', ERROR_CODES.VALIDATION_ERROR);
     }
