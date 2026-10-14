@@ -58,6 +58,10 @@ export interface IBooking extends Document {
   suspendedPartnerFlag?: boolean;
   partnerSuspendedAt?: Date;
   adminWorkflowFlag?: string;
+  acceptedQuoteAmount?: number;
+  totalAmount?: number;
+  finalAmount?: number;
+  paymentStatus?: 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'REFUNDED';
   pricing?: IBookingPricing;
   createdAt: Date;
   updatedAt: Date;
@@ -263,6 +267,20 @@ const BookingSchema = new Schema<IBooking>(
     adminWorkflowFlag: {
       type: String,
       trim: true,
+    },
+    acceptedQuoteAmount: {
+      type: Number,
+    },
+    totalAmount: {
+      type: Number,
+    },
+    finalAmount: {
+      type: Number,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['PENDING', 'PARTIALLY_PAID', 'PAID', 'REFUNDED'],
+      default: 'PENDING',
     },
     pricing: {
       _id: false,

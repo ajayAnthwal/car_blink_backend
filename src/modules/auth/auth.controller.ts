@@ -78,9 +78,25 @@ export class AuthController {
   });
 
   public static sendSignupOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { phone, identifier } = req.body;
+    const { phone, identifier, role, purpose, type } = req.body;
     const target = phone || identifier;
-    const result = await AuthService.sendSignupOtp(target);
+    const resolvedPurpose = purpose || type || (req.path.includes('login') ? 'LOGIN' : undefined);
+    const result = await AuthService.sendSignupOtp(target, role, resolvedPurpose);
+    return successResponse(res, result, result.message);
+  });
+
+  public static sendLoginOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { phone, identifier, role } = req.body;
+    const target = phone || identifier;
+    const result = await AuthService.sendSignupOtp(target, role, 'LOGIN');
+    return successResponse(res, result, result.message);
+  });
+
+  public static sendOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { phone, identifier, role, purpose, type } = req.body;
+    const target = phone || identifier;
+    const resolvedPurpose = purpose || type || 'LOGIN';
+    const result = await AuthService.sendSignupOtp(target, role, resolvedPurpose);
     return successResponse(res, result, result.message);
   });
 

@@ -184,14 +184,29 @@ export class AssignmentService {
     const acceptedBidDoc = (booking.acceptedBidId as any)?.quotedAmount ? booking.acceptedBidId : (bids.find((b: any) => b.status === 'ACCEPTED' || b.status === 'CUSTOMER_ACCEPTED') || null);
     const acceptedQuoteAmount = (acceptedBidDoc as any)?.quotedAmount || 0;
 
+    const allJobExtensions = (job?.jobExtensions || (booking as any).jobExtensions || []);
+    const approvedExtensionsCost = allJobExtensions
+      .filter((e: any) => e.status === 'APPROVED')
+      .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+
+    const baseQuote = acceptedQuoteAmount || (booking.pricing?.customerGrossQuote || 0);
+    const resolvedFinalAmount = Number(
+      booking.finalAmount ||
+      job?.finalAmount ||
+      (approvedExtensionsCost > 0 ? baseQuote + approvedExtensionsCost : baseQuote) ||
+      0
+    );
+
     return {
       ...booking,
       acceptedBidId: acceptedBidDoc || booking.acceptedBidId,
       acceptedQuoteAmount,
+      finalAmount: resolvedFinalAmount,
       assignment: assignment || null,
       bids,
       payments: payments || [],
       job: job || null,
+      jobExtensions: allJobExtensions,
     };
   }
 

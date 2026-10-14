@@ -497,13 +497,13 @@ export class AuthService {
     return { success: true };
   }
 
-  public static async sendSignupOtp(phone: string, role?: string): Promise<{ message: string }> {
+  public static async sendSignupOtp(phone: string, role?: string, purposeParam?: string): Promise<{ message: string }> {
     const cleanPhone = phone ? phone.trim().replace(/[^0-9]/g, '').slice(-10) : '';
     if (cleanPhone.length !== 10 || !/^[6-9]\d{9}$/.test(cleanPhone)) {
       throw new ApiError(400, 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9');
     }
 
-    if (role === ROLES.PARTNER) {
+    if (role === ROLES.PARTNER && purposeParam !== 'LOGIN') {
       const existingPartner = await UserModel.findOne({
         $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }],
         role: ROLES.PARTNER,
@@ -516,7 +516,8 @@ export class AuthService {
 
     const { generateOtp, storeOtp } = require('./strategies/otp.strategy');
     const otp = generateOtp();
-    const purpose = role === ROLES.PARTNER ? 'PARTNER_REGISTER' : 'REGISTER';
+    const isLogin = purposeParam === 'LOGIN' || role === 'LOGIN';
+    const purpose = isLogin ? 'LOGIN' : (role === ROLES.PARTNER ? 'PARTNER_REGISTER' : 'REGISTER');
     await storeOtp(cleanPhone, otp, purpose);
 
     return {

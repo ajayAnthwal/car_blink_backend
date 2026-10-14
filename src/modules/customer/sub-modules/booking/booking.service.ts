@@ -920,6 +920,24 @@ export class BookingService {
       if (status === 'APPROVED') {
         booking.pricing.approvedExtrasAmount = (booking.pricing.approvedExtrasAmount || 0) + Number(extension.cost);
         booking.pricing.balanceAmount = (booking.pricing.balanceAmount || 0) + Number(extension.cost);
+
+        const approvedExtsCost = (job.jobExtensions || [])
+          .filter((e: any) => e.status === 'APPROVED' || e._id?.toString() === extension._id?.toString())
+          .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+
+        const baseQuote = Number(
+          booking.pricing?.customerGrossQuote ||
+          booking.acceptedQuoteAmount ||
+          (booking.acceptedBidId as any)?.quotedAmount ||
+          0
+        );
+
+        const newTotal = baseQuote + approvedExtsCost;
+        if (newTotal > (job.finalAmount || 0)) {
+          job.finalAmount = newTotal;
+          await job.save();
+        }
+        booking.finalAmount = newTotal;
       }
       await booking.save();
     }

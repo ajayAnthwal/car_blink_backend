@@ -147,46 +147,49 @@ export class PaymentService {
         );
       }
 
-      // Safety guard: ensure final payment accounts for any successful advance payments
-      const priorAdvancePayments = await PaymentModel.find({
+      // Safety guard: ensure final payment accounts for all successful prior payments and includes approved extra parts
+      const priorPayments = await PaymentModel.find({
         bookingId,
-        paymentType: PAYMENT_TYPE.ADVANCE,
         status: PAYMENT_STATUS.SUCCESS,
       });
 
-      const totalAdvancePaid = priorAdvancePayments.reduce(
+      const totalPaidSoFar = priorPayments.reduce(
         (sum, p) => sum + (Number(p.amount) || 0),
         0,
       );
 
-      if (totalAdvancePaid > 0) {
-        const job = await JobModel.findOne({ bookingId });
-        let totalJobPayable = Number(
-          (job as any)?.invoice?.grandTotal ||
-          (booking as any)?.pricing?.customerGrossQuote ||
-          job?.finalAmount ||
-          0
-        );
+      const job = await JobModel.findOne({ bookingId });
+      const approvedExtensionsCost = (job?.jobExtensions || [])
+        .filter((e: any) => e.status === "APPROVED")
+        .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
 
-        if (!totalJobPayable && booking.acceptedBidId) {
-          const { BidModel } = require("../customer/sub-modules/bids/bid.model");
-          const bid = await BidModel.findById(booking.acceptedBidId);
-          if (bid) {
-            totalJobPayable = Number(bid.quotedAmount || 0);
-          }
+      const baseQuote = Number(
+        booking.pricing?.customerGrossQuote ||
+        booking.acceptedQuoteAmount ||
+        (booking.acceptedBidId as any)?.quotedAmount ||
+        booking.totalAmount ||
+        0
+      );
+
+      let totalJobPayable = Number(
+        (job as any)?.invoice?.grandTotal ||
+        (job?.finalAmount && job.finalAmount >= (baseQuote + approvedExtensionsCost) ? job.finalAmount : 0) ||
+        (booking.finalAmount && booking.finalAmount >= (baseQuote + approvedExtensionsCost) ? booking.finalAmount : 0) ||
+        (baseQuote + approvedExtensionsCost) ||
+        job?.finalAmount ||
+        0
+      );
+
+      if (totalJobPayable > 0) {
+        const remainingDue = Math.max(0, Math.round((totalJobPayable - totalPaidSoFar) * 100) / 100);
+        if (remainingDue <= 0.01 && totalPaidSoFar > 0) {
+          throw new BadRequestError("This booking has already been fully paid and settled in full.");
         }
-
-        if (totalJobPayable > 0) {
-          const remainingDue = Math.max(0, totalJobPayable - totalAdvancePaid);
-          if (remainingDue <= 0) {
-            throw new BadRequestError("This booking has already been fully paid via advance payment.");
-          }
-          if (amount > remainingDue) {
-            logger.warn(
-              `[PaymentService] Capping online FINAL payment from ₹${amount} to remaining due ₹${remainingDue} (Total: ₹${totalJobPayable}, Advance: ₹${totalAdvancePaid})`,
-            );
-            amount = remainingDue;
-          }
+        if (amount > remainingDue || amount <= 0) {
+          logger.warn(
+            `[PaymentService] Adjusting online FINAL payment from ₹${amount} to remaining due ₹${remainingDue} (Total: ₹${totalJobPayable}, Paid: ₹${totalPaidSoFar})`,
+          );
+          amount = remainingDue;
         }
       }
     } else if (paymentType === PAYMENT_TYPE.FULL) {
@@ -402,6 +405,59 @@ export class PaymentService {
           }
 
           await booking.save();
+        }
+      }
+
+      // Update overall booking payment status and sync final amount with approved extra parts
+      const allSuccessfulPayments = await PaymentModel.find({
+        bookingId: payment.bookingId,
+        status: PAYMENT_STATUS.SUCCESS,
+      });
+      const totalPaidSoFar = allSuccessfulPayments.reduce(
+        (sum: number, p: any) => sum + (Number(p.amount) || 0),
+        0,
+      );
+
+      const bookingDoc: any = await BookingModel.findById(payment.bookingId);
+      if (bookingDoc) {
+        const jobDoc: any = await JobModel.findOne({ bookingId: payment.bookingId });
+        const approvedExtensionsCost = (jobDoc?.jobExtensions || (bookingDoc as any).jobExtensions || [])
+          .filter((e: any) => e.status === "APPROVED")
+          .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+
+        const baseQuote = Number(
+          bookingDoc.pricing?.customerGrossQuote ||
+          bookingDoc.acceptedQuoteAmount ||
+          (bookingDoc.acceptedBidId as any)?.quotedAmount ||
+          bookingDoc.totalAmount ||
+          0
+        );
+
+        const totalJobPayable = Number(
+          (jobDoc as any)?.invoice?.grandTotal ||
+          (jobDoc?.finalAmount && jobDoc.finalAmount >= (baseQuote + approvedExtensionsCost) ? jobDoc.finalAmount : 0) ||
+          (bookingDoc.finalAmount && bookingDoc.finalAmount >= (baseQuote + approvedExtensionsCost) ? bookingDoc.finalAmount : 0) ||
+          (approvedExtensionsCost > 0 ? baseQuote + approvedExtensionsCost : baseQuote) ||
+          jobDoc?.finalAmount ||
+          bookingDoc.finalAmount ||
+          0
+        );
+
+        if (totalJobPayable > 0) {
+          if (totalPaidSoFar >= totalJobPayable - 0.01) {
+            bookingDoc.paymentStatus = 'PAID';
+          } else if (totalPaidSoFar > 0) {
+            bookingDoc.paymentStatus = 'PARTIALLY_PAID';
+          }
+          bookingDoc.finalAmount = totalJobPayable;
+          if (!bookingDoc.pricing) bookingDoc.pricing = {};
+          bookingDoc.pricing.balanceAmount = Math.max(0, Math.round((totalJobPayable - totalPaidSoFar) * 100) / 100);
+          await bookingDoc.save();
+
+          if (jobDoc) {
+            jobDoc.finalAmount = totalJobPayable;
+            await jobDoc.save();
+          }
         }
       }
     } catch (confirmErr) {
@@ -713,61 +769,62 @@ export class PaymentService {
       throw new UnauthorizedError("You are not authorized for this booking");
     }
 
-    // Prevent duplicate payments of the same type
-    const existingPayment = await PaymentModel.findOne({
+    // Calculate total job payable including all approved extra parts
+    const job = await JobModel.findOne({ bookingId });
+    const approvedExtensionsCost = (job?.jobExtensions || [])
+      .filter((e: any) => e.status === "APPROVED")
+      .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+
+    const baseQuote = Number(
+      booking.pricing?.customerGrossQuote ||
+      booking.acceptedQuoteAmount ||
+      (booking.acceptedBidId as any)?.quotedAmount ||
+      booking.totalAmount ||
+      0
+    );
+
+    let totalJobPayable = Number(
+      (job as any)?.invoice?.grandTotal ||
+      (job?.finalAmount && job.finalAmount >= (baseQuote + approvedExtensionsCost) ? job.finalAmount : 0) ||
+      (booking.finalAmount && booking.finalAmount >= (baseQuote + approvedExtensionsCost) ? booking.finalAmount : 0) ||
+      (baseQuote + approvedExtensionsCost) ||
+      job?.finalAmount ||
+      0
+    );
+
+    const priorPayments = await PaymentModel.find({
       bookingId,
-      paymentType,
-      status: { $in: [PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.PENDING] },
+      status: PAYMENT_STATUS.SUCCESS,
+    });
+    const totalPaidSoFar = priorPayments.reduce(
+      (sum, p) => sum + (Number(p.amount) || 0),
+      0,
+    );
+    const remainingDue = Math.max(0, Math.round((totalJobPayable - totalPaidSoFar) * 100) / 100);
+
+    if (remainingDue <= 0.01 && totalPaidSoFar > 0) {
+      throw new BadRequestError("This booking has already been fully paid and settled in full.");
+    }
+
+    // Prevent duplicate PENDING cash requests from customer
+    const pendingPayment = await PaymentModel.findOne({
+      bookingId,
+      status: PAYMENT_STATUS.PENDING,
     });
 
-    if (existingPayment) {
+    if (pendingPayment && !isPartner) {
       throw new ConflictError(
-        `A ${paymentType} payment already exists or is pending for this booking.`,
+        `A cash payment request is already pending partner verification.`,
       );
     }
 
-    // Safety guard for FINAL offline payment: deduct any successful advance payments
-    if (paymentType === PAYMENT_TYPE.FINAL) {
-      const priorAdvancePayments = await PaymentModel.find({
-        bookingId,
-        paymentType: PAYMENT_TYPE.ADVANCE,
-        status: PAYMENT_STATUS.SUCCESS,
-      });
-
-      const totalAdvancePaid = priorAdvancePayments.reduce(
-        (sum, p) => sum + (Number(p.amount) || 0),
-        0,
-      );
-
-      if (totalAdvancePaid > 0) {
-        const job = await JobModel.findOne({ bookingId });
-        let totalJobPayable = Number(
-          (job as any)?.invoice?.grandTotal ||
-          (booking as any)?.pricing?.customerGrossQuote ||
-          job?.finalAmount ||
-          0
+    // Safety guard for FINAL offline payment: cap to actual remaining due
+    if (paymentType === PAYMENT_TYPE.FINAL || paymentType === PAYMENT_TYPE.FULL) {
+      if (amount > remainingDue || amount <= 0) {
+        logger.warn(
+          `[PaymentService] Adjusting offline ${paymentType} payment from ₹${amount} to remaining due ₹${remainingDue} (Total: ₹${totalJobPayable}, Paid: ₹${totalPaidSoFar})`,
         );
-
-        if (!totalJobPayable && booking.acceptedBidId) {
-          const { BidModel } = require("../customer/sub-modules/bids/bid.model");
-          const bid = await BidModel.findById(booking.acceptedBidId);
-          if (bid) {
-            totalJobPayable = Number(bid.quotedAmount || 0);
-          }
-        }
-
-        if (totalJobPayable > 0) {
-          const remainingDue = Math.max(0, totalJobPayable - totalAdvancePaid);
-          if (remainingDue <= 0) {
-            throw new BadRequestError("This booking has already been fully paid via advance payment.");
-          }
-          if (amount > remainingDue) {
-            logger.warn(
-              `[PaymentService] Capping offline FINAL payment from ₹${amount} to remaining due ₹${remainingDue} (Total: ₹${totalJobPayable}, Advance Paid: ₹${totalAdvancePaid})`,
-            );
-            amount = remainingDue;
-          }
-        }
+        amount = remainingDue;
       }
     }
 
@@ -826,30 +883,41 @@ export class PaymentService {
 
     // Update Partner Dues if payment is SUCCESS (only if online advance did not cover commission)
     if (finalStatus === PAYMENT_STATUS.SUCCESS) {
-      const job = await JobModel.findOne({ bookingId });
-      if (job && job.partnerId) {
-        const priorOnlinePayments = await PaymentModel.find({
-          bookingId,
-          provider: { $ne: PAYMENT_PROVIDER.CASH },
-          status: PAYMENT_STATUS.SUCCESS,
-        });
-        const totalOnlinePaid = priorOnlinePayments.reduce(
-          (sum, p) => sum + (Number(p.amount) || 0),
-          0,
-        );
-        const totalJobAmount = Number(
-          job.finalAmount ||
-          (booking as any)?.pricing?.customerGrossQuote ||
-          payment.amount ||
-          0
-        );
-        const totalCommission = Number((totalJobAmount * 0.15).toFixed(2));
-        const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
+      const newTotalPaid = totalPaidSoFar + amount;
+      if (newTotalPaid >= totalJobPayable - 0.01) {
+        booking.paymentStatus = 'PAID';
+      } else {
+        booking.paymentStatus = 'PARTIALLY_PAID';
+      }
+      booking.finalAmount = totalJobPayable;
+      if (!booking.pricing) booking.pricing = {};
+      booking.pricing.balanceAmount = Math.max(0, totalJobPayable - newTotalPaid);
+      await booking.save();
 
-        if (duesToAdd > 0) {
-          await PartnerModel.findByIdAndUpdate(job.partnerId, {
-            $inc: { outstandingDues: duesToAdd },
+      const job = await JobModel.findOne({ bookingId });
+      if (job) {
+        job.finalAmount = totalJobPayable;
+        await job.save();
+
+        if (job.partnerId) {
+          const priorOnlinePayments = await PaymentModel.find({
+            bookingId,
+            provider: { $ne: PAYMENT_PROVIDER.CASH },
+            status: PAYMENT_STATUS.SUCCESS,
           });
+          const totalOnlinePaid = priorOnlinePayments.reduce(
+            (sum, p) => sum + (Number(p.amount) || 0),
+            0,
+          );
+          const totalJobAmount = totalJobPayable;
+          const totalCommission = Number((totalJobAmount * 0.15).toFixed(2));
+          const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
+
+          if (duesToAdd > 0) {
+            await PartnerModel.findByIdAndUpdate(job.partnerId, {
+              $inc: { outstandingDues: duesToAdd },
+            });
+          }
         }
       }
 
@@ -993,25 +1061,62 @@ export class PaymentService {
     await payment.save();
 
     booking.paymentMode = 'CASH';
-    await booking.save();
 
-    // Deduct commission as outstanding dues only if not covered by online advance
-    const priorOnlinePayments = await PaymentModel.find({
+    // Calculate total job payable including all approved extra parts
+    const approvedExtensionsCost = (job?.jobExtensions || [])
+      .filter((e: any) => e.status === "APPROVED")
+      .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+
+    const baseQuote = Number(
+      booking.pricing?.customerGrossQuote ||
+      booking.acceptedQuoteAmount ||
+      (booking.acceptedBidId as any)?.quotedAmount ||
+      booking.totalAmount ||
+      0
+    );
+
+    const totalJobPayable = Number(
+      (job as any)?.invoice?.grandTotal ||
+      (job?.finalAmount && job.finalAmount >= (baseQuote + approvedExtensionsCost) ? job.finalAmount : 0) ||
+      (booking.finalAmount && booking.finalAmount >= (baseQuote + approvedExtensionsCost) ? booking.finalAmount : 0) ||
+      (baseQuote + approvedExtensionsCost) ||
+      job?.finalAmount ||
+      0
+    );
+
+    const allSuccessfulPayments = await PaymentModel.find({
       bookingId: booking._id,
-      provider: { $ne: PAYMENT_PROVIDER.CASH },
       status: PAYMENT_STATUS.SUCCESS,
     });
+    const totalPaidSoFar = allSuccessfulPayments.reduce(
+      (sum, p) => sum + (Number(p.amount) || 0),
+      0,
+    );
+
+    if (totalPaidSoFar >= totalJobPayable - 0.01) {
+      booking.paymentStatus = 'PAID';
+    } else {
+      booking.paymentStatus = 'PARTIALLY_PAID';
+    }
+    booking.finalAmount = totalJobPayable;
+    if (!booking.pricing) booking.pricing = {};
+    booking.pricing.balanceAmount = Math.max(0, totalJobPayable - totalPaidSoFar);
+    await booking.save();
+
+    if (job) {
+      job.finalAmount = totalJobPayable;
+      await job.save();
+    }
+
+    // Deduct commission as outstanding dues only if not covered by online advance
+    const priorOnlinePayments = allSuccessfulPayments.filter(
+      (p) => p.provider !== PAYMENT_PROVIDER.CASH,
+    );
     const totalOnlinePaid = priorOnlinePayments.reduce(
       (sum, p) => sum + (Number(p.amount) || 0),
       0,
     );
-    const totalJobAmount = Number(
-      job.finalAmount ||
-      (booking as any)?.pricing?.customerGrossQuote ||
-      payment.amount ||
-      0
-    );
-    const totalCommission = Number((totalJobAmount * 0.15).toFixed(2));
+    const totalCommission = Number((totalJobPayable * 0.15).toFixed(2));
     const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
 
     if (duesToAdd > 0) {
