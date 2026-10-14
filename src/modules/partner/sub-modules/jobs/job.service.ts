@@ -498,22 +498,22 @@ export class JobService {
     const BidModel = mongoose.model("Bid");
     const bid = (await BidModel.findById(job.bidId)) as any;
     const bookingDoc = await BookingModel.findById(job.bookingId);
-    const baseQuotedAmount = Number(
-      existingInvoice?.grandTotal ??
-      bookingDoc?.pricing?.customerGrossQuote ??
-      bid?.quotedAmount ??
-      (bookingDoc as any)?.quotedAmount ??
-      (bookingDoc as any)?.totalAmount ??
-      job.finalAmount ??
-      bookingDoc?.pricing?.partnerBaseQuote ??
-      0
-    );
-
     const approvedExtensionsCost = job.jobExtensions
       .filter((ext) => ext.status === "APPROVED")
       .reduce((sum, ext) => sum + (Number(ext.cost) || 0), 0);
 
-    const calculatedFinalAmount = baseQuotedAmount + approvedExtensionsCost;
+    const baseQuotedAmount = Number(
+      bookingDoc?.pricing?.customerGrossQuote ??
+      bid?.quotedAmount ??
+      (bookingDoc as any)?.quotedAmount ??
+      (bookingDoc as any)?.totalAmount ??
+      bookingDoc?.pricing?.partnerBaseQuote ??
+      0
+    );
+
+    const calculatedFinalAmount = existingInvoice?.grandTotal
+      ? Number(existingInvoice.grandTotal)
+      : (baseQuotedAmount + approvedExtensionsCost);
 
     // Fetch Advance Paid to calculate Remaining Amount for Invoice/Notification
     const PaymentModel = mongoose.model("Payment");
