@@ -53,10 +53,33 @@ export class WalletService {
         wallet.userId = targetObjId;
         await wallet.save();
       }
-      return wallet;
+    } else {
+      wallet = await WalletModel.create({ userId: targetObjId, balance: 0 });
     }
 
-    wallet = await WalletModel.create({ userId: targetObjId, balance: 0 });
+    // Auto-consolidate legacy orphaned wallet created under partner._id if present
+    try {
+      const partnerRef = partnerById || (await PartnerModel.findOne({ userId: targetObjId }).lean());
+      if (partnerRef && partnerRef._id.toString() !== targetUserId) {
+        const orphanedWallet = await WalletModel.findOne({ userId: partnerRef._id });
+        if (orphanedWallet && orphanedWallet._id.toString() !== wallet._id.toString() && orphanedWallet.balance !== 0) {
+          const transferAmt = orphanedWallet.balance;
+          wallet.balance = Number((wallet.balance + transferAmt).toFixed(2));
+          await wallet.save();
+          await LedgerTransactionModel.updateMany(
+            { walletId: orphanedWallet._id },
+            { $set: { walletId: wallet._id } }
+          );
+          orphanedWallet.balance = 0;
+          orphanedWallet.isActive = false;
+          await orphanedWallet.save();
+          console.log(`[WalletService] Consolidated orphaned wallet ${orphanedWallet._id} (₹${transferAmt}) into main wallet ${wallet._id}`);
+        }
+      }
+    } catch (mergeErr) {
+      console.warn('[WalletService] Legacy wallet merge notice:', mergeErr);
+    }
+
     return wallet;
   }
 
@@ -143,6 +166,15 @@ export class WalletService {
       });
     }
 
+    try {
+      const { emitToUser } = require('../../sockets');
+      emitToUser(wallet.userId.toString(), 'wallet_updated', {
+        balance: wallet.balance,
+      });
+    } catch (e) {
+      console.warn("Failed to emit wallet_updated on commission:", e);
+    }
+
     return wallet;
   }
 
@@ -156,7 +188,12 @@ export class WalletService {
     const { BookingModel } = require('../customer/sub-modules/booking/booking.model');
     const { PaymentModel } = require('../payment/payment.model');
 
-    const partner = await PartnerModel.findOne({ userId }).lean();
+    const partner = await PartnerModel.findOne({
+      $or: [
+        { userId: userId },
+        { _id: mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId }
+      ]
+    }).lean();
     if (partner) {
       // Find all completed jobs for this partner
       const completedJobs = await JobModel.find({
@@ -201,9 +238,46 @@ export class WalletService {
       .sort({ createdAt: -1 })
       .limit(50);
 
+    const bankDetails = (partner?.bankDetails && partner.bankDetails.accountNumber) ? partner.bankDetails : (partner?.accountNumber ? {
+      accountNumber: partner.accountNumber,
+      ifscCode: partner.ifsc,
+      accountHolderName: partner.accountHolderName || partner.businessName
+    } : null);
+
+    const { WithdrawalRequestModel } = require('./withdrawal.model');
+    const partnerIdQuery: any[] = [];
+    if (partner?._id) {
+      partnerIdQuery.push({ partnerId: partner._id });
+      if (mongoose.isValidObjectId(partner._id)) {
+        partnerIdQuery.push({ partnerId: new mongoose.Types.ObjectId(partner._id) });
+      }
+    }
+    if (wallet?.userId) {
+      partnerIdQuery.push({ partnerId: wallet.userId });
+      if (mongoose.isValidObjectId(wallet.userId)) {
+        partnerIdQuery.push({ partnerId: new mongoose.Types.ObjectId(wallet.userId) });
+      }
+    }
+    if (partner?.userId) {
+      partnerIdQuery.push({ partnerId: partner.userId });
+      if (mongoose.isValidObjectId(partner.userId)) {
+        partnerIdQuery.push({ partnerId: new mongoose.Types.ObjectId(partner.userId) });
+      }
+    }
+
+    const withdrawals = await WithdrawalRequestModel.find(
+      partnerIdQuery.length > 0 ? { $or: partnerIdQuery } : {}
+    )
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
     return {
       balance: freshWallet ? freshWallet.balance : wallet.balance,
       currency: wallet.currency,
+      bankDetails,
+      bankVerificationStatus: partner?.bankVerificationStatus || 'NOT_CONFIGURED',
+      withdrawals,
       transactions,
     };
   }
@@ -266,7 +340,7 @@ export class WalletService {
       // In mock mode, we just accept it
     }
 
-    wallet.balance += amount;
+    wallet.balance = Number((wallet.balance + amount).toFixed(2));
     await wallet.save();
 
     await LedgerTransactionModel.create({
@@ -276,6 +350,15 @@ export class WalletService {
       description: `Dues Cleared - Payment ID: ${paymentId}`,
       balanceAfter: wallet.balance,
     });
+
+    try {
+      const { emitToUser } = require('../../sockets');
+      emitToUser(wallet.userId.toString(), 'wallet_updated', {
+        balance: wallet.balance,
+      });
+    } catch (e) {
+      console.warn("Failed to emit wallet_updated on dues payment:", e);
+    }
 
     return wallet;
   }
@@ -317,9 +400,16 @@ export class WalletService {
     };
 
 
-    // Deduct amount immediately to lock funds
-    wallet.balance -= amount;
-    await wallet.save();
+    // Atomically deduct amount to lock funds and prevent concurrent double-spending race conditions
+    const updatedWallet = await WalletModel.findOneAndUpdate(
+      { _id: wallet._id, balance: { $gte: amount } },
+      { $inc: { balance: -amount } },
+      { new: true }
+    );
+    if (!updatedWallet) {
+      throw new ApiError(400, 'Insufficient wallet balance or concurrent transaction in progress');
+    }
+    wallet.balance = updatedWallet.balance;
 
     const withdrawal = await WithdrawalRequestModel.create({
       partnerId: partner ? partner._id : partnerId,
@@ -341,7 +431,7 @@ export class WalletService {
       const { notificationService } = require('../notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
       const { UserModel } = require('../user/user.model');
-      const { emitToUser } = require('../../sockets');
+      const { emitToUser, emitToRole } = require('../../sockets');
 
       const accountsUsers = await UserModel.find({ role: 'ACCOUNTS' });
       for (const accUser of accountsUsers) {
@@ -359,6 +449,17 @@ export class WalletService {
           amount
         });
       }
+
+      emitToRole('ACCOUNTS', 'new_withdrawal_request', {
+        withdrawalId: withdrawal._id,
+        partnerName: partner?.businessName || 'Partner',
+        amount
+      });
+      emitToRole('SUPER_ADMIN', 'new_withdrawal_request', {
+        withdrawalId: withdrawal._id,
+        partnerName: partner?.businessName || 'Partner',
+        amount
+      });
     } catch (notifErr) {
       console.error('Failed to send withdrawal notification to accounts:', notifErr);
     }

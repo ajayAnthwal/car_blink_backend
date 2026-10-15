@@ -417,6 +417,7 @@ export class AssignmentService {
     }
 
     if (updateData.followUpDate) {
+      booking.followUpDate = new Date(updateData.followUpDate);
     }
     if (updateData.remarks !== undefined) {
       booking.remarks = updateData.remarks;
@@ -583,8 +584,9 @@ export class AssignmentService {
     const hasAdvance = successfulPayments && successfulPayments.some(
       (p: any) => p.paymentType === 'ADVANCE' || p.paymentType === 'FULL' || p.amount > 0
     );
+    const isCashBooking = booking.paymentMode === 'CASH';
 
-    if (!hasAdvance) {
+    if (!hasAdvance && !isCashBooking) {
       throw new BadRequestError('Customer has selected the quote but HAS NOT paid the 15% advance token yet. 15% advance payment is required to confirm booking.');
     }
 

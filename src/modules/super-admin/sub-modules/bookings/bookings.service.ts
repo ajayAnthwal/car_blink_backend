@@ -7,6 +7,7 @@ import { CityModel } from '../../../master-data/models/city.model';
 import { BidModel } from '../../../partner/sub-modules/bidding/bid.model';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
+import { BadRequestError } from '../../../../common/errors/BadRequestError';
 import mongoose, { Types } from 'mongoose';
 
 export class SuperAdminBookingsService {
@@ -217,21 +218,50 @@ export class SuperAdminBookingsService {
     const prevStatus = booking.status;
     const updatesPerformed: string[] = [];
 
+    let resolvedPartnerDoc: any = null;
     if (partnerId && mongoose.Types.ObjectId.isValid(partnerId)) {
-      const { PartnerEligibilityService } = require('../../../partner/partner-eligibility.service');
-      await PartnerEligibilityService.validatePartnerAssignment(bookingId, partnerId);
-      booking.assignedPartnerId = partnerId as any;
-      updatesPerformed.push(`Partner assigned (${partnerId})`);
+      const { PartnerModel } = require('../../../partner/partner.model');
+      resolvedPartnerDoc = await PartnerModel.findById(partnerId);
+      if (!resolvedPartnerDoc) {
+        resolvedPartnerDoc = await PartnerModel.findOne({ userId: partnerId });
+      }
+
+      if (!resolvedPartnerDoc) {
+        throw new BadRequestError(`Partner not found with ID '${partnerId}'`);
+      }
+
+      booking.assignedPartnerId = resolvedPartnerDoc._id;
+      updatesPerformed.push(`Partner assigned: ${resolvedPartnerDoc.businessName || resolvedPartnerDoc._id}`);
     }
 
     if (executiveId && mongoose.Types.ObjectId.isValid(executiveId)) {
-      booking.assignedExecutiveId = executiveId as any;
-      updatesPerformed.push(`Executive assigned (${executiveId})`);
+      const { UserModel } = require('../../../auth/user.model');
+      const execUser = await UserModel.findById(executiveId);
+      if (execUser) {
+        booking.assignedExecutiveId = execUser._id;
+        updatesPerformed.push(`Executive assigned: ${execUser.fullName || execUser.phone} (${execUser._id})`);
+      } else {
+        booking.assignedExecutiveId = executiveId as any;
+        updatesPerformed.push(`Executive assigned (${executiveId})`);
+      }
     }
 
     if (status) {
       booking.status = status as any;
       updatesPerformed.push(`Status changed from ${prevStatus} to ${status}`);
+    }
+
+    if (quotedAmount !== undefined && quotedAmount !== null && !isNaN(Number(quotedAmount))) {
+      const numAmt = Number(quotedAmount);
+      booking.acceptedQuoteAmount = numAmt;
+      booking.finalAmount = numAmt;
+      if (!booking.pricing) {
+        booking.pricing = {};
+      }
+      booking.pricing.partnerBaseQuote = numAmt;
+      booking.pricing.customerGrossQuote = numAmt;
+      booking.pricing.advanceRequired = Math.round(numAmt * 0.15);
+      updatesPerformed.push(`Custom quote price set to ₹${numAmt}`);
     }
 
     if (overridePayment) {
@@ -267,23 +297,26 @@ export class SuperAdminBookingsService {
 
     await booking.save();
 
-    if (partnerId && mongoose.Types.ObjectId.isValid(partnerId)) {
+    if (resolvedPartnerDoc) {
       const { JobModel } = require('../../../partner/sub-modules/jobs/job.model');
       const existingJob = await JobModel.findOne({ bookingId: booking._id });
-      const jobStatus = status === 'COMPLETED' ? 'COMPLETED' : status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'ASSIGNED';
+      let jobStatus = 'ASSIGNED';
+      if (status === 'COMPLETED') jobStatus = 'COMPLETED';
+      else if (status === 'IN_PROGRESS') jobStatus = 'IN_PROGRESS';
+      else if (status === 'CANCELLED') jobStatus = 'CANCELLED';
 
       if (!existingJob) {
         await JobModel.create({
           bookingId: booking._id,
-          partnerId: partnerId,
+          partnerId: resolvedPartnerDoc._id,
           customerId: booking.customerId,
           serviceId: booking.serviceId,
           vehicleId: booking.vehicleId,
           status: jobStatus,
-          jobDetails: { finalAmount: quotedAmount || 0 },
+          jobDetails: { finalAmount: quotedAmount || booking.finalAmount || 0 },
         });
       } else {
-        existingJob.partnerId = partnerId as any;
+        existingJob.partnerId = resolvedPartnerDoc._id;
         if (status) existingJob.status = jobStatus as any;
         if (quotedAmount) {
           existingJob.jobDetails = existingJob.jobDetails || {};
@@ -291,6 +324,30 @@ export class SuperAdminBookingsService {
         }
         await existingJob.save();
       }
+    }
+
+    // Emit live socket events & notifications
+    try {
+      const { emitToRole, emitToUser } = require('../../../../sockets');
+      emitToRole('SUPER_ADMIN', 'booking_status_update', booking);
+      emitToRole('EXECUTIVE', 'booking_status_update', booking);
+      if (booking.customerId) {
+        emitToUser(booking.customerId.toString(), 'booking_status_update', booking);
+      }
+      if (resolvedPartnerDoc?.userId) {
+        emitToUser(resolvedPartnerDoc.userId.toString(), 'job_assigned', {
+          bookingId: booking._id,
+          jobStatus: status || 'ASSIGNED',
+        });
+        emitToUser(resolvedPartnerDoc.userId.toString(), 'booking_status_update', booking);
+      }
+      if (executiveId) {
+        emitToUser(executiveId.toString(), 'booking_assigned', {
+          bookingId: booking._id,
+        });
+      }
+    } catch (socketErr) {
+      console.error('Socket emission error during manual bypass:', socketErr);
     }
 
     // Write audit log entry
@@ -304,7 +361,7 @@ export class SuperAdminBookingsService {
         method: 'POST',
         payload: {
           bookingId,
-          partnerId,
+          partnerId: resolvedPartnerDoc?._id || partnerId,
           executiveId,
           status,
           quotedAmount,

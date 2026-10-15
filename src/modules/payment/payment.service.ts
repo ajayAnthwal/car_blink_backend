@@ -363,7 +363,6 @@ export class PaymentService {
               const partnerDoc: any = await PartnerModel.findById(partnerIdToAssign);
               const partnerUserId = partnerDoc?.userId?.toString();
               if (partnerUserId) {
-                const { emitToUser } = require('../../../sockets');
                 const { notificationService } = require('../notification/notification.service');
                 const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
 
@@ -396,7 +395,6 @@ export class PaymentService {
 
           if (booking.customerId) {
             try {
-              const { emitToUser } = require('../../../sockets');
               const custIdStr = booking.customerId.toString();
               emitToUser(custIdStr, 'booking_confirmed', { bookingId: booking._id.toString(), status: booking.status });
               emitToUser(custIdStr, 'booking_updated', { bookingId: booking._id.toString(), status: booking.status });
@@ -769,6 +767,10 @@ export class PaymentService {
 
     if (!isPartner && booking.customerId.toString() !== userId) {
       throw new UnauthorizedError("You are not authorized for this booking");
+    }
+
+    if (paymentType === PAYMENT_TYPE.ADVANCE) {
+      throw new BadRequestError("Advance booking deposit must be paid online via payment gateway. Cash payment is not permitted for advance deposits.");
     }
 
     // Calculate total job payable including all approved extra parts

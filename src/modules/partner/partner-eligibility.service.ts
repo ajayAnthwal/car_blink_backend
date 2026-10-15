@@ -432,7 +432,10 @@ export class PartnerEligibilityService {
       throw new NotFoundError('Booking not found');
     }
 
-    const partner = await PartnerModel.findById(partnerId);
+    let partner = await PartnerModel.findById(partnerId);
+    if (!partner) {
+      partner = await PartnerModel.findOne({ userId: partnerId });
+    }
     if (!partner) {
       throw new NotFoundError(`Partner with ID '${partnerId}' not found`);
     }

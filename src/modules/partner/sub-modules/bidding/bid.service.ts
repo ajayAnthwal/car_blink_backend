@@ -48,6 +48,22 @@ export class BidService {
       return { bookings: [], total: 0, page, limit };
     }
 
+    // Credit Limit Gating: If wallet dues exceed ₹1,000 (balance < -1000), pause leads
+    const { WalletModel } = require('../../../wallet/wallet.model');
+    const wallet = await WalletModel.findOne({
+      $or: [{ userId: partner.userId }, { userId: partner._id }]
+    });
+    if (wallet && wallet.balance < -1000) {
+      return { 
+        bookings: [], 
+        total: 0, 
+        page, 
+        limit,
+        duesExceeded: true,
+        currentDues: Math.abs(wallet.balance)
+      } as any;
+    }
+
     // Lead Visibility:
     // - Status is PENDING
     // - Partner hasn't bidded yet
@@ -90,6 +106,19 @@ export class BidService {
     const partner = await PartnerModel.findOne({ userId });
     if (!partner) {
       throw new NotFoundError('Partner profile not found');
+    }
+
+    // Credit Limit / Wallet Dues Check: Block bidding if dues exceed ₹1,000
+    const { WalletModel } = require('../../../wallet/wallet.model');
+    const wallet = await WalletModel.findOne({
+      $or: [{ userId: partner.userId }, { userId: partner._id }]
+    });
+    if (wallet && wallet.balance < -1000) {
+      throw new ApiError(
+        403,
+        `Your outstanding wallet dues are ₹${Math.abs(wallet.balance)}. Please clear your dues in My Wallet to continue bidding on new leads.`,
+        ERROR_CODES.FORBIDDEN
+      );
     }
 
     // 1. Verify booking exists and status is PENDING or QUOTED (leads can still receive bids if already quoted by someone else)

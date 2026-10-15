@@ -240,14 +240,30 @@ export class AccountsService {
     try {
       const { notificationService } = require('../notification/notification.service');
       const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+      const { PartnerModel } = require('../partner/partner.model');
+      const partner = await PartnerModel.findById(withdrawal.partnerId);
+      const targetUserId = partner ? partner.userId.toString() : withdrawal.partnerId.toString();
+
       await notificationService.sendNotification(
-        withdrawal.partnerId.toString(),
+        targetUserId,
         NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
         `Withdrawal Paid — ₹${withdrawal.amount}`,
         `Your withdrawal request of ₹${withdrawal.amount} has been processed and paid out via bank transfer. Ref / UTR: ${referenceId || withdrawal._id}`,
         { withdrawalId: withdrawal._id.toString(), referenceId }
       );
+
+      const { emitToUser, emitToRole } = require('../../sockets');
+      emitToUser(targetUserId.toString(), 'withdrawal_status_updated', {
+        withdrawalId: withdrawal._id.toString(),
+        status: 'COMPLETED',
+        amount: withdrawal.amount,
+        referenceId
+      });
+      emitToRole('ACCOUNTS', 'withdrawal_processed', {
+        withdrawalId: withdrawal._id.toString(),
+        status: 'COMPLETED'
+      });
     } catch (err) {
       console.warn("Failed to send partner withdrawal notification:", err);
     }
@@ -277,9 +293,18 @@ export class AccountsService {
     // Refund back to Partner Wallet
     const { WalletModel } = require('../wallet/wallet.model');
     const { LedgerTransactionModel, TRANSACTION_TYPE } = require('../wallet/ledger.model');
-    const wallet = await WalletModel.findOne({ partnerId: withdrawal.partnerId });
+    const { PartnerModel } = require('../partner/partner.model');
+
+    const partner = await PartnerModel.findById(withdrawal.partnerId);
+    const targetUserId = partner ? partner.userId : withdrawal.partnerId;
+
+    let wallet = await WalletModel.findOne({ userId: targetUserId });
+    if (!wallet) {
+      wallet = await WalletModel.findOne({ _id: targetUserId });
+    }
+
     if (wallet) {
-      wallet.balance += withdrawal.amount;
+      wallet.balance = Number((wallet.balance + withdrawal.amount).toFixed(2));
       await wallet.save();
 
       await LedgerTransactionModel.create({
@@ -289,6 +314,34 @@ export class AccountsService {
         description: `Withdrawal Refunded - Ref: ${withdrawal._id}`,
         balanceAfter: wallet.balance,
       });
+    }
+
+    // Notify Partner of Rejection
+    try {
+      const { notificationService } = require('../notification/notification.service');
+      const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+      await notificationService.sendNotification(
+        targetUserId.toString(),
+        NOTIFICATION_TYPE.IN_APP,
+        NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+        `Withdrawal Rejected — ₹${withdrawal.amount}`,
+        `Your withdrawal request of ₹${withdrawal.amount} was rejected (${reason || 'Details could not be verified'}). The amount has been refunded back to your wallet.`,
+        { withdrawalId: withdrawal._id.toString(), reason }
+      );
+
+      const { emitToUser, emitToRole } = require('../../sockets');
+      emitToUser(targetUserId.toString(), 'withdrawal_status_updated', {
+        withdrawalId: withdrawal._id.toString(),
+        status: 'FAILED',
+        amount: withdrawal.amount,
+        reason
+      });
+      emitToRole('ACCOUNTS', 'withdrawal_processed', {
+        withdrawalId: withdrawal._id.toString(),
+        status: 'FAILED'
+      });
+    } catch (err) {
+      console.warn("Failed to send partner withdrawal rejection notification:", err);
     }
 
     return withdrawal;

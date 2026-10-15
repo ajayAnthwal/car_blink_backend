@@ -96,6 +96,9 @@ export class SuperAdminPartnersService {
     if (status === 'APPROVED') {
       partner.isVerified = true;
       partner.rejectionReason = undefined;
+      if (partner.bankDetails?.accountNumber || partner.accountNumber) {
+        partner.bankVerificationStatus = 'VERIFIED';
+      }
       if (adminUserId && mongoose.Types.ObjectId.isValid(adminUserId)) {
         partner.adminApprovedBy = new mongoose.Types.ObjectId(adminUserId);
       }

@@ -647,16 +647,22 @@ export class BookingService {
         { bookingId: booking._id.toString(), type: 'CANCELLATION_REQUESTED' }
       );
 
-      const io = (global as any).io;
-      if (io) {
-        io.emit('booking_updated', { bookingId: booking._id.toString(), status: 'CANCELLATION_REQUESTED' });
-        io.emit('cancellation_requested', {
-          bookingId: booking._id.toString(),
-          reasons: rawReasons,
-          customerRemarks: remarks,
-          totalPaid,
-        });
-      }
+      emitToRole('EXECUTIVE', 'cancellation_requested', {
+        bookingId: booking._id.toString(),
+        reasons: rawReasons,
+        customerRemarks: remarks,
+        totalPaid,
+      });
+      emitToRole('SUPER_ADMIN', 'cancellation_requested', {
+        bookingId: booking._id.toString(),
+        reasons: rawReasons,
+        customerRemarks: remarks,
+        totalPaid,
+      });
+      emitToUser(booking.customerId.toString(), 'booking_updated', {
+        bookingId: booking._id.toString(),
+        status: 'CANCELLATION_REQUESTED'
+      });
     } catch (notifErr) {
       console.warn('Failed to send cancellation request notification:', notifErr);
     }
