@@ -91,11 +91,12 @@ export class SuperAdminBookingsService {
         .populate('serviceId', 'name basePrice category')
         .populate('cityId', 'name state')
         .populate('assignedExecutiveId', 'fullName phone email')
+        .populate('assignedPartnerId', 'businessName uniquePartnerId userId contactNumber phone')
         .populate({
           path: 'acceptedBidId',
           populate: {
             path: 'partnerId',
-            select: 'businessName userId contactNumber',
+            select: 'businessName uniquePartnerId userId contactNumber',
             populate: { path: 'userId', select: 'fullName email' }
           }
         })
@@ -112,11 +113,12 @@ export class SuperAdminBookingsService {
           .populate('serviceId', 'name basePrice category')
           .populate('cityId', 'name state')
           .populate('assignedExecutiveId', 'fullName phone email')
+          .populate('assignedPartnerId', 'businessName uniquePartnerId userId contactNumber phone')
           .populate({
             path: 'acceptedBidId',
             populate: {
               path: 'partnerId',
-              select: 'businessName userId contactNumber',
+              select: 'businessName uniquePartnerId userId contactNumber',
               populate: { path: 'userId', select: 'fullName email' }
             }
           })
@@ -235,7 +237,7 @@ export class SuperAdminBookingsService {
     }
 
     if (executiveId && mongoose.Types.ObjectId.isValid(executiveId)) {
-      const { UserModel } = require('../../../auth/user.model');
+      const { UserModel } = require('../../../user/user.model');
       const execUser = await UserModel.findById(executiveId);
       if (execUser) {
         booking.assignedExecutiveId = execUser._id;
@@ -266,6 +268,13 @@ export class SuperAdminBookingsService {
 
     if (overridePayment) {
       booking.hasPaidAdvance = true;
+      (booking as any).isAdvancePaid = true;
+      (booking as any).paymentStatus = 'PARTIALLY_PAID';
+
+      if (!booking.verificationCode) {
+        booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+      }
+
       const { PaymentModel } = require('../../../payment/payment.model');
       const existingSuccessPayment = await PaymentModel.findOne({ bookingId: booking._id, status: 'SUCCESS' });
       if (!existingSuccessPayment) {
@@ -293,6 +302,37 @@ export class SuperAdminBookingsService {
         });
       }
       updatesPerformed.push(`Payment requirement bypassed & marked as PAID`);
+    }
+
+    // If partner assigned, ensure BidModel is linked as acceptedBidId
+    if (resolvedPartnerDoc) {
+      try {
+        const { BidModel } = require('../../../partner/sub-modules/bidding/bid.model');
+        let existingBid = await BidModel.findOne({ bookingId: booking._id, partnerId: resolvedPartnerDoc._id });
+        const bidPrice = quotedAmount || booking.finalAmount || booking.acceptedQuoteAmount || 0;
+        
+        if (!existingBid) {
+          existingBid = await BidModel.create({
+            bookingId: booking._id,
+            partnerId: resolvedPartnerDoc._id,
+            quotedAmount: bidPrice,
+            estimatedDuration: 'Same Day',
+            status: 'ACCEPTED',
+            notes: reason || 'Assigned directly by Super Admin',
+          });
+        } else {
+          existingBid.status = 'ACCEPTED';
+          if (quotedAmount) existingBid.quotedAmount = quotedAmount;
+          await existingBid.save();
+        }
+
+        booking.acceptedBidId = existingBid._id;
+        if (!booking.forwardedBidIds?.includes(existingBid._id)) {
+          booking.forwardedBidIds = [...(booking.forwardedBidIds || []), existingBid._id];
+        }
+      } catch (bidErr) {
+        console.warn('Super Admin: Could not auto-sync BidModel:', bidErr);
+      }
     }
 
     await booking.save();

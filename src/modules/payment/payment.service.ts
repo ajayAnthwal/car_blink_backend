@@ -587,7 +587,7 @@ export class PaymentService {
             if (isAdvance) {
               waMsg = '✅ *[CARBLINK - ADVANCE PAYMENT RECEIVED & BOOKING CONFIRMED]*\n\n' +
                 'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
-                'Your 15% advance payment of *₹' + payAmount.toLocaleString() + '* has been received successfully!\n\n' +
+                'Your advance payment of *₹' + payAmount.toLocaleString() + '* has been received successfully!\n\n' +
                 '📋 *Booking ID:* #' + bRef + '\n' +
                 '🏪 *Workshop:* ' + partnerName + '\n' +
                 '📍 *Address:* ' + partnerAddress + '\n\n' +

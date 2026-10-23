@@ -319,7 +319,7 @@ export class BookingService {
           sanitizedAssignedPartner = {
             _id: rawP._id,
             businessName: rawP.businessName ? `${rawP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
-            businessAddress: 'Unlocked after 15% advance payment',
+            businessAddress: 'Unlocked after advance payment',
             rating: rawP.rating || 4.8,
             totalReviews: rawP.totalReviews || 0,
             isVerified: true
@@ -337,7 +337,7 @@ export class BookingService {
             partnerId: {
               _id: rawBidP._id,
               businessName: rawBidP.businessName ? `${rawBidP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
-              businessAddress: 'Unlocked after 15% advance payment',
+              businessAddress: 'Unlocked after advance payment',
               rating: rawBidP.rating || 4.8,
               totalReviews: rawBidP.totalReviews || 0,
               isVerified: true
@@ -476,7 +476,7 @@ export class BookingService {
         rawPartner = {
           _id: rawPartner._id,
           businessName: rawPartner?.businessName ? `${rawPartner.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
-          businessAddress: 'Unlocked after 15% advance payment',
+          businessAddress: 'Unlocked after advance payment',
           phone: '',
           rating: rawPartner?.rating || 4.8,
           totalReviews: rawPartner?.totalReviews || 0,
@@ -534,7 +534,7 @@ export class BookingService {
           partnerId: rawBP ? {
             _id: rawBP._id,
             businessName: rawBP.businessName ? `${rawBP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
-            businessAddress: 'Unlocked after 15% advance payment',
+            businessAddress: 'Unlocked after advance payment',
             rating: rawBP.rating || 4.8,
             totalReviews: rawBP.totalReviews || 0,
             isVerified: true
@@ -852,7 +852,7 @@ export class BookingService {
         NOTIFICATION_TYPE.IN_APP,
         NOTIFICATION_CATEGORY.QUOTE_ACCEPTED,
         'Quote Selection Received',
-        `You have selected the quote of ₹${selectedBid.quotedAmount} for booking #${booking._id.toString().slice(-8).toUpperCase()}. Please confirm booking with 15% advance to unlock partner address and Handover PIN.`,
+        `You have selected the quote of ₹${selectedBid.quotedAmount} for booking #${booking._id.toString().slice(-8).toUpperCase()}. Please confirm booking with advance deposit to unlock partner address and Handover PIN.`,
         { bookingId: booking._id.toString() }
       );
 
@@ -868,7 +868,7 @@ export class BookingService {
           const waMsg = '🚘 *[CARBLINK - QUOTE ACCEPTED]*\n\n' +
             'Hello *' + (customerUser.fullName || 'Customer') + '*! 👋\n\n' +
             'You have successfully selected the quote of *₹' + selectedBid.quotedAmount.toLocaleString() + '* (Incl. 18% GST) for booking #' + bookingRef + '.\n\n' +
-            '💳 *Next Step (Advance Confirmation):*\nPlease confirm your booking by paying the 15% advance token (*₹' + advanceAmt.toLocaleString() + '*).\n\n' +
+            '💳 *Next Step (Advance Confirmation):*\nPlease confirm your booking by paying the advance token (*₹' + advanceAmt.toLocaleString() + '*).\n\n' +
             '🔒 *Security Note:* Your 4-digit Workshop Handover PIN & workshop address will unlock immediately upon confirmation.\n\n' +
             '👉 *Confirm Booking & Pay Advance:*\nhttps://dashboard.carblink.in/customer/bookings/' + booking._id + '\n\n' +
             'Thank you for choosing CarBlink!';
