@@ -25,9 +25,21 @@ export interface GstinVerificationResult {
   rawResponse?: Record<string, any>;
 }
 
+export interface AadhaarVerificationResult {
+  valid: boolean;
+  aadhaarNumber: string;
+  maskedAadhaar?: string;
+  holderName?: string;
+  status: "VERIFIED" | "FAILED";
+  referenceId: string;
+  message?: string;
+  rawResponse?: Record<string, any>;
+}
+
 export interface IVerificationProvider {
   verifyPan(pan: string, expectedName?: string): Promise<PanVerificationResult>;
   verifyGstin(gstin: string, expectedTradeName?: string): Promise<GstinVerificationResult>;
+  verifyAadhaar(aadhaar: string, expectedName?: string): Promise<AadhaarVerificationResult>;
 }
 
 /**
@@ -102,6 +114,40 @@ export class MockVerificationProvider implements IVerificationProvider {
         pan: panFromGst,
         taxpayerType: "Regular",
         status: "Active",
+      },
+    };
+  }
+
+  private static readonly AADHAAR_REGEX = /^\d{12}$/;
+
+  public async verifyAadhaar(aadhaar: string, expectedName?: string): Promise<AadhaarVerificationResult> {
+    const cleanAadhaar = (aadhaar || "").trim().replace(/[\s-]/g, "");
+
+    if (!MockVerificationProvider.AADHAAR_REGEX.test(cleanAadhaar)) {
+      return {
+        valid: false,
+        aadhaarNumber: cleanAadhaar,
+        status: "FAILED",
+        referenceId: `MOCK-AADHAAR-FAIL-${Date.now()}`,
+        message: "Invalid Aadhaar format. Aadhaar must be a 12-digit numeric number.",
+      };
+    }
+
+    const maskedAadhaar = `XXXX-XXXX-${cleanAadhaar.slice(-4)}`;
+    const simulatedHolderName = expectedName ? expectedName.trim().toUpperCase() : "VERIFIED CITIZEN";
+
+    return {
+      valid: true,
+      aadhaarNumber: cleanAadhaar,
+      maskedAadhaar,
+      holderName: simulatedHolderName,
+      status: "VERIFIED",
+      referenceId: `MOCK-AADHAAR-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      message: "Aadhaar successfully verified with UIDAI records (MOCK).",
+      rawResponse: {
+        aadhaar: maskedAadhaar,
+        holderName: simulatedHolderName,
+        status: "Valid and linked",
       },
     };
   }

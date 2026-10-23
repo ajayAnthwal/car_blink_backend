@@ -42,6 +42,9 @@ export const submitBusinessKycSchema = z
       .optional(),
     authorizationDocRef: z.string().trim().optional(),
     ownerName: z.string().trim().optional(),
+    aadhaarNumber: z.string().trim().optional(),
+    aadhaarProofRef: z.string().trim().optional(),
+    aadhaarHolderName: z.string().trim().optional(),
   })
   .superRefine((data, ctx) => {
     // 1. If GST Registered: GSTIN is strictly required and must match format
@@ -180,8 +183,16 @@ export const submitWorkshopCapabilitiesSchema = z
     insuranceWorkCapable: z.boolean().default(false),
     authorizedServiceClaim: z.boolean().default(false),
     authorizedServiceProofRef: z.string().trim().optional(),
+    otherServicesDescription: z.string().trim().optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.services.includes("Other") && (!data.otherServicesDescription || !data.otherServicesDescription.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please specify details for 'Other' services",
+        path: ["otherServicesDescription"],
+      });
+    }
     if (data.authorizedServiceClaim && (!data.authorizedServiceProofRef || !data.authorizedServiceProofRef.trim())) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

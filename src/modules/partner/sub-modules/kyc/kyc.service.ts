@@ -81,13 +81,27 @@ export class KycService {
       partner.proofRef = data.proofRef;
     }
 
-    // 3. Udyam / MSME (Optional, stored as PENDING verification if provided)
+    // 3. Aadhaar Verification via Adapter
+    if (data.aadhaarNumber && data.aadhaarNumber.trim()) {
+      const cleanAadhaar = data.aadhaarNumber.trim().replace(/[\s-]/g, "");
+      const aadhaarResult = await verificationProvider.verifyAadhaar(cleanAadhaar, partner.ownerName);
+      partner.aadhaarNumber = cleanAadhaar;
+      partner.aadhaarStatus = aadhaarResult.status;
+      partner.aadhaarHolderName = data.aadhaarHolderName || aadhaarResult.holderName;
+      if (data.aadhaarProofRef) {
+        partner.aadhaarProofRef = data.aadhaarProofRef.trim();
+      }
+    } else if (data.aadhaarProofRef) {
+      partner.aadhaarProofRef = data.aadhaarProofRef.trim();
+    }
+
+    // 4. Udyam / MSME (Optional, stored as PENDING verification if provided)
     if (data.udyamNumber && data.udyamNumber.trim()) {
       partner.udyamNumber = data.udyamNumber.trim().toUpperCase();
       partner.udyamStatus = 'PENDING'; // Never mark verified on manual entry alone!
     }
 
-    // 4. Business Registration Proof (for non-proprietorships or additional compliance)
+    // 5. Business Registration Proof (for non-proprietorships or additional compliance)
     if (data.businessRegistrationProofRef && data.businessRegistrationProofRef.trim()) {
       partner.businessRegistrationProofRef = data.businessRegistrationProofRef.trim();
     }
@@ -243,6 +257,10 @@ export class KycService {
       udyamNumber: partner.udyamNumber,
       udyamStatus: partner.udyamStatus || 'PENDING',
       businessRegistrationProofRef: partner.businessRegistrationProofRef,
+      aadhaarNumber: partner.aadhaarNumber,
+      aadhaarStatus: partner.aadhaarStatus || 'PENDING',
+      aadhaarHolderName: partner.aadhaarHolderName,
+      aadhaarProofRef: partner.aadhaarProofRef,
       isRepresentative: partner.isRepresentative,
       representativeDetails: partner.representativeDetails,
       authorizationDocRef: partner.authorizationDocRef,
@@ -578,6 +596,11 @@ export class KycService {
     if (!partner) throw new NotFoundError('Partner profile not found.');
 
     partner.services = data.services as any;
+    if (data.services.includes("Other") && data.otherServicesDescription) {
+      partner.otherServicesDescription = data.otherServicesDescription.trim();
+    } else {
+      partner.otherServicesDescription = undefined;
+    }
     partner.serviceBays = data.serviceBays;
     partner.technicianCount = data.technicianCount;
     partner.workingDays = data.workingDays;
@@ -645,6 +668,7 @@ export class KycService {
         ifsc: partner.ifsc || partner.bankDetails?.ifscCode,
         bankProofRef: partner.bankProofRef,
         services: partner.services || [],
+        otherServicesDescription: partner.otherServicesDescription,
         serviceBays: partner.serviceBays || 1,
         technicianCount: partner.technicianCount || 1,
         workingDays: partner.workingDays || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],

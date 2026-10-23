@@ -76,6 +76,10 @@ export interface IPartner extends Document {
   udyamNumber?: string;
   udyamStatus?: "PENDING" | "VERIFIED" | "FAILED";
   businessRegistrationProofRef?: string;
+  aadhaarNumber?: string;
+  aadhaarStatus?: "PENDING" | "VERIFIED" | "FAILED";
+  aadhaarHolderName?: string;
+  aadhaarProofRef?: string;
 
   // Representative Details
   isRepresentative: boolean;
@@ -127,6 +131,7 @@ export interface IPartner extends Document {
     | "Body Shop"
     | "Other"
   )[];
+  otherServicesDescription?: string;
   servicesOffered: mongoose.Types.ObjectId[]; // Kept for backward compatibility with Service model refs
   serviceBays: number;
   technicianCount: number;
@@ -357,6 +362,23 @@ const PartnerSchema = new Schema<IPartner>(
       type: String,
       trim: true,
     },
+    aadhaarNumber: {
+      type: String,
+      trim: true,
+    },
+    aadhaarStatus: {
+      type: String,
+      enum: ["PENDING", "VERIFIED", "FAILED"],
+      default: "PENDING",
+    },
+    aadhaarHolderName: {
+      type: String,
+      trim: true,
+    },
+    aadhaarProofRef: {
+      type: String,
+      trim: true,
+    },
     isRepresentative: {
       type: Boolean,
       default: false,
@@ -443,6 +465,10 @@ const PartnerSchema = new Schema<IPartner>(
         ],
       },
     ],
+    otherServicesDescription: {
+      type: String,
+      trim: true,
+    },
     serviceBays: {
       type: Number,
       default: 1,

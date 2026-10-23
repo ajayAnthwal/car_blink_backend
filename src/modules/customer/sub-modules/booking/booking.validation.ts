@@ -17,7 +17,13 @@ export const createBookingSchema = z.object({
   paymentMode: z.enum(['CASH', 'ONLINE']).optional(),
   address: z.string().trim().optional(),
   landmark: z.string().trim().optional(),
-});
+}).refine(
+  (data) => (!!data.address && data.address.trim().length > 0) || (data.latitude !== undefined && data.longitude !== undefined),
+  {
+    message: 'Location or address is mandatory for booking',
+    path: ['address'],
+  }
+);
 
 export const cancelBookingSchema = z.object({
   reason: z.string().trim().optional(),

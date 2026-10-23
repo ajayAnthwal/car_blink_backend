@@ -51,6 +51,13 @@ export class BookingService {
       return recentBooking;
     }
 
+    // Location validation: booking must not proceed without a location or address
+    const hasAddress = !!(data as any).address && (data as any).address.trim().length > 0;
+    const hasCoordinates = data.latitude !== undefined && data.longitude !== undefined;
+    if (!hasAddress && !hasCoordinates) {
+      throw new ApiError(400, 'Location is mandatory. Please provide an address or coordinates to proceed with booking.');
+    }
+
     // 1. Verify vehicle ownership
     const vehicle = await GarageModel.findOne({ _id: data.vehicleId, isActive: { $ne: false } });
     if (!vehicle) {
