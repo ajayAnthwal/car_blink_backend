@@ -126,6 +126,29 @@ export const registerSchema = z.object({
         path: ['otp'],
       });
     }
+
+    // 8. Mandatory GST Number verification for partners
+    const cleanGst = (data.gstNumber || '').trim().toUpperCase();
+    if (!cleanGst) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'GST Number is required for workshop partner registration',
+        path: ['gstNumber'],
+      });
+    } else {
+      const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+      const stateCode = cleanGst.substring(0, 2);
+      const stateNum = parseInt(stateCode, 10);
+      const isValidState = (stateNum >= 1 && stateNum <= 38) || stateCode === '97' || stateCode === '99';
+
+      if (cleanGst.length !== 15 || !gstRegex.test(cleanGst) || !isValidState) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid GST Number format. Must be a valid 15-character Indian GSTIN (e.g. 05AAAAA0000A1Z5)',
+          path: ['gstNumber'],
+        });
+      }
+    }
   }
 });
 

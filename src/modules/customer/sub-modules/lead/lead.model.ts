@@ -28,6 +28,7 @@ export interface ILead extends Document {
   city?: string;
   message?: string;
   query?: string;
+  customServiceName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +55,7 @@ const LeadSchema = new Schema<ILead>(
     vehicleModel: { type: String, trim: true },
     city: { type: String, trim: true },
     message: { type: String, trim: true },
+    customServiceName: { type: String, trim: true },
   },
   {
     timestamps: true,

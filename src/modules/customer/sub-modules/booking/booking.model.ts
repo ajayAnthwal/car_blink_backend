@@ -21,6 +21,7 @@ export interface IBooking extends Document {
   customerId: mongoose.Types.ObjectId;
   vehicleId: mongoose.Types.ObjectId;
   serviceId: mongoose.Types.ObjectId;
+  customServiceName?: string;
   cityId: mongoose.Types.ObjectId;
   description?: string;
   preferredDate?: Date;
@@ -100,6 +101,10 @@ const BookingSchema = new Schema<IBooking>(
       type: Schema.Types.ObjectId,
       ref: 'Service',
       required: [true, 'Service ID is required'],
+    },
+    customServiceName: {
+      type: String,
+      trim: true,
     },
     cityId: {
       type: Schema.Types.ObjectId,

@@ -111,17 +111,98 @@ export class LeadService {
 
         // Resolve service
         let serviceId: any = null;
+        let customServiceName = (data as any).customServiceName || '';
+
+        // Extract raw query text from message / query
+        let rawQuery = '';
+        if ((data as any).query && typeof (data as any).query === 'string' && (data as any).query.trim()) {
+          rawQuery = (data as any).query.trim();
+        } else if (data.message && typeof data.message === 'string') {
+          const firstPart = data.message.split('|')[0] || '';
+          rawQuery = firstPart.replace(/^Custom Address:.*?\|/i, '').replace(/^Query:\s*/i, '').trim();
+        }
+
         if ((data as any).services && Array.isArray((data as any).services) && (data as any).services.length > 0) {
           const firstServiceName = (data as any).services[0];
-          const matchedService = await ServiceModel.findOne({
-            name: new RegExp(`^${firstServiceName.trim()}$`, 'i'),
+          if (firstServiceName && firstServiceName.toLowerCase() === 'other') {
+            customServiceName = (data as any).otherServiceDetails || rawQuery || 'Custom Service';
+          } else if (firstServiceName) {
+            const matchedService = await ServiceModel.findOne({
+              name: new RegExp(`^${firstServiceName.trim()}$`, 'i'),
+              isActive: true
+            });
+            if (matchedService) {
+              serviceId = matchedService._id;
+            }
+          }
+        }
+
+        // If service is not explicitly matched, perform intelligent keyword detection from rawQuery
+        if (!serviceId && rawQuery) {
+          if (/mirror|glass|windshield|side\s*mirror|rear\s*view|dent|paint|scratch|bumper|fender|door\s*panel/i.test(rawQuery)) {
+            const bodyService = await ServiceModel.findOne({ name: /Dent & Paint/i, isActive: true });
+            if (bodyService) serviceId = bodyService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/ac|coolant|cooling|chilling|compressor|air\s*con/i.test(rawQuery)) {
+            const acService = await ServiceModel.findOne({ name: /AC Repair/i, isActive: true });
+            if (acService) serviceId = acService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/battery|jumpstart|charge/i.test(rawQuery)) {
+            const battService = await ServiceModel.findOne({ name: /Battery/i, isActive: true });
+            if (battService) serviceId = battService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/brake|pad|caliper|rotor|disc/i.test(rawQuery)) {
+            const brakeService = await ServiceModel.findOne({ name: /Brake Service/i, isActive: true });
+            if (brakeService) serviceId = brakeService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/clutch|gearbox|transmission/i.test(rawQuery)) {
+            const clutchService = await ServiceModel.findOne({ name: /Clutch Repair/i, isActive: true });
+            if (clutchService) serviceId = clutchService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/engine|head\s*gasket|overheating|timing/i.test(rawQuery)) {
+            const engService = await ServiceModel.findOne({ name: /Engine Repair/i, isActive: true });
+            if (engService) serviceId = engService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/tyre|tire|puncture|wheel|alignment|balancing/i.test(rawQuery)) {
+            const tyreService = await ServiceModel.findOne({ name: /Tyres/i, isActive: true });
+            if (tyreService) serviceId = tyreService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/wash|foam|cleaning|interior\s*clean/i.test(rawQuery)) {
+            const washService = await ServiceModel.findOne({ name: /Car Wash/i, isActive: true });
+            if (washService) serviceId = washService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/detail|ceramic|ppf|polish|rubbing/i.test(rawQuery)) {
+            const detailService = await ServiceModel.findOne({ name: /Detailing/i, isActive: true });
+            if (detailService) serviceId = detailService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/suspension|shock|shocker|strut|bush/i.test(rawQuery)) {
+            const suspService = await ServiceModel.findOne({ name: /Suspension/i, isActive: true });
+            if (suspService) serviceId = suspService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          } else if (/service|maintenance|tuning|oil\s*change|filter/i.test(rawQuery)) {
+            const periodicService = await ServiceModel.findOne({ name: /Periodic Service/i, isActive: true });
+            if (periodicService) serviceId = periodicService._id;
+            if (!customServiceName) customServiceName = rawQuery;
+          }
+        }
+
+        // If still no serviceId, assign Periodic Service / General Inspection (never blind AC Repair)
+        if (!serviceId) {
+          let genService = await ServiceModel.findOne({
+            name: new RegExp('Periodic Service|General Inspection', 'i'),
             isActive: true
           });
-          if (matchedService) serviceId = matchedService._id;
+          if (!genService) {
+            genService = await ServiceModel.findOne({ isActive: true });
+          }
+          if (genService) serviceId = genService._id;
+          if (!customServiceName) customServiceName = rawQuery || 'General Service';
         }
-        if (!serviceId) {
-          const defService = await ServiceModel.findOne({ isActive: true });
-          if (defService) serviceId = defService._id;
+
+        if (customServiceName && typeof customServiceName === 'string') {
+          customServiceName = customServiceName.trim();
+          customServiceName = customServiceName.charAt(0).toUpperCase() + customServiceName.slice(1);
+          data.customServiceName = customServiceName;
         }
 
         // Resolve city
@@ -155,6 +236,7 @@ export class LeadService {
             bookingDoc.serviceId = serviceId;
             bookingDoc.cityId = cityId;
             bookingDoc.description = bookingDesc;
+            if (customServiceName) (bookingDoc as any).customServiceName = customServiceName;
             if (data.city) bookingDoc.address = data.city;
             await bookingDoc.save();
             data.bookingId = bookingDoc._id;
@@ -164,6 +246,7 @@ export class LeadService {
               customerId: customerUser._id,
               vehicleId: vehicle._id,
               serviceId: serviceId,
+              customServiceName: customServiceName || undefined,
               cityId: cityId,
               description: bookingDesc,
               status: BOOKING_STATUS.PENDING,
