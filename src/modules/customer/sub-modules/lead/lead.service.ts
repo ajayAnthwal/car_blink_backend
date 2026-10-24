@@ -358,6 +358,26 @@ export class LeadService {
       }
     }
 
+    // Ensure serviceIds are always persisted on the lead document
+    if (!data.serviceIds || data.serviceIds.length === 0) {
+      try {
+        const { ServiceModel } = require('../../../master-data/models/service.model');
+        let resolvedSrvId: any = (data as any).serviceId || null;
+        if (!resolvedSrvId && (data as any).serviceType) {
+          const sObj = await ServiceModel.findOne({ name: new RegExp(`^${(data as any).serviceType.trim()}$`, 'i'), isActive: true });
+          if (sObj) resolvedSrvId = sObj._id;
+        }
+        if (!resolvedSrvId && (data as any).services && Array.isArray((data as any).services) && (data as any).services.length > 0) {
+          const sName = (data as any).services[0];
+          const sObj = await ServiceModel.findOne({ name: new RegExp(`^${sName.trim()}$`, 'i'), isActive: true });
+          if (sObj) resolvedSrvId = sObj._id;
+        }
+        if (resolvedSrvId) {
+          data.serviceIds = [resolvedSrvId];
+        }
+      } catch (srvErr) {}
+    }
+
     const lead = await LeadModel.create(data);
     
     // 2. Trigger Interakt WhatsApp Welcome Alert to Customer
