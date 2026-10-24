@@ -249,8 +249,9 @@ export class LeadService {
         if (locationCandidateStr) {
           const segments = locationCandidateStr.split(',').map((s: string) => s.trim()).filter(Boolean);
           for (const seg of segments) {
+            const safeSeg = seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const matchedCity = await CityModel.findOne({
-              name: new RegExp(`^${seg}$`, 'i'),
+              name: new RegExp(`^${safeSeg}$`, 'i'),
               isActive: true
             });
             if (matchedCity) {
