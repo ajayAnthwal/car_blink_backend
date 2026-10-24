@@ -122,11 +122,24 @@ export class LeadService {
           rawQuery = firstPart.replace(/^Custom Address:.*?\|/i, '').replace(/^Query:\s*/i, '').trim();
         }
 
+        // Direct serviceId or serviceType matching
+        if (!serviceId && (data as any).serviceId) {
+          const directSrv = await ServiceModel.findById((data as any).serviceId);
+          if (directSrv && directSrv.isActive) serviceId = directSrv._id;
+        }
+        if (!serviceId && (data as any).serviceType && (data as any).serviceType.toLowerCase() !== 'other') {
+          const matchedServiceType = await ServiceModel.findOne({
+            name: new RegExp(`^${(data as any).serviceType.trim()}$`, 'i'),
+            isActive: true
+          });
+          if (matchedServiceType) serviceId = matchedServiceType._id;
+        }
+
         if ((data as any).services && Array.isArray((data as any).services) && (data as any).services.length > 0) {
           const firstServiceName = (data as any).services[0];
           if (firstServiceName && firstServiceName.toLowerCase() === 'other') {
             customServiceName = (data as any).otherServiceDetails || rawQuery || 'Custom Service';
-          } else if (firstServiceName) {
+          } else if (firstServiceName && !serviceId) {
             const matchedService = await ServiceModel.findOne({
               name: new RegExp(`^${firstServiceName.trim()}$`, 'i'),
               isActive: true
@@ -196,7 +209,13 @@ export class LeadService {
             genService = await ServiceModel.findOne({ isActive: true });
           }
           if (genService) serviceId = genService._id;
-          if (!customServiceName) customServiceName = rawQuery || 'General Service';
+          if (!customServiceName) customServiceName = (data as any).otherServiceDetails || 'Custom Service';
+        }
+
+        if (serviceId) {
+          if (!data.serviceIds || data.serviceIds.length === 0) {
+            data.serviceIds = [serviceId];
+          }
         }
 
         if (customServiceName && typeof customServiceName === 'string') {
@@ -205,19 +224,86 @@ export class LeadService {
           data.customServiceName = customServiceName;
         }
 
-        // Resolve city
+        // Resolve coordinates
+        let geoPoint: any = null;
+        const rawLat = (data as any).latitude;
+        const rawLng = (data as any).longitude;
+        if (rawLat !== undefined && rawLng !== undefined && rawLat !== null && rawLng !== null) {
+          const numLat = Number(rawLat);
+          const numLng = Number(rawLng);
+          if (!isNaN(numLat) && !isNaN(numLng) && (numLat !== 0 || numLng !== 0)) {
+            geoPoint = {
+              type: 'Point',
+              coordinates: [numLng, numLat] // GeoJSON format: [longitude, latitude]
+            };
+          }
+        }
+
+        // Full address resolution
+        const resolvedAddress = (data as any).address || data.city || (data as any).location || '';
+
+        // Resolve city accurately across all segments of the address
         let cityId: any = null;
-        if (data.city) {
-          const cityQuery = data.city.split(',')[0].trim();
-          const matchedCity = await CityModel.findOne({
-            name: new RegExp(cityQuery, 'i'),
+        const locationCandidateStr = [data.city, (data as any).address, (data as any).location].filter(Boolean).join(', ');
+
+        if (locationCandidateStr) {
+          const segments = locationCandidateStr.split(',').map((s: string) => s.trim()).filter(Boolean);
+          for (const seg of segments) {
+            const matchedCity = await CityModel.findOne({
+              name: new RegExp(`^${seg}$`, 'i'),
+              isActive: true
+            });
+            if (matchedCity) {
+              cityId = matchedCity._id;
+              break;
+            }
+          }
+
+          // If still not matched, check if any active city name is contained in the full address text
+          if (!cityId) {
+            const allActiveCities = await CityModel.find({ isActive: true }).select('_id name').lean();
+            for (const ac of allActiveCities) {
+              const cityRegex = new RegExp(`\\b${ac.name.trim()}\\b`, 'i');
+              if (cityRegex.test(locationCandidateStr)) {
+                cityId = ac._id;
+                break;
+              }
+            }
+          }
+        }
+
+        // Sensible regional fallback if no specific city was matched (prefer regional centers over alphabetical Bamboo Flat)
+        if (!cityId) {
+          const fallbackCity = await CityModel.findOne({
+            name: new RegExp('Dehradun|Delhi|Gurgaon|Noida', 'i'),
             isActive: true
           });
-          if (matchedCity) cityId = matchedCity._id;
+          if (fallbackCity) {
+            cityId = fallbackCity._id;
+          } else {
+            const defCity = await CityModel.findOne({ isActive: true });
+            if (defCity) cityId = defCity._id;
+          }
         }
-        if (!cityId) {
-          const defCity = await CityModel.findOne({ isActive: true });
-          if (defCity) cityId = defCity._id;
+
+        // Sync customer user's location and address if newly available
+        if (customerUser) {
+          let userChanged = false;
+          if (geoPoint && (!customerUser.location || !customerUser.location.coordinates || customerUser.location.coordinates.length === 0)) {
+            customerUser.location = geoPoint;
+            userChanged = true;
+          }
+          if (resolvedAddress && !customerUser.address) {
+            customerUser.address = resolvedAddress;
+            userChanged = true;
+          }
+          if (cityId && !customerUser.cityId) {
+            customerUser.cityId = cityId;
+            userChanged = true;
+          }
+          if (userChanged) {
+            await customerUser.save().catch(() => {});
+          }
         }
 
         if (vehicle && serviceId && cityId) {
@@ -237,12 +323,13 @@ export class LeadService {
             bookingDoc.cityId = cityId;
             bookingDoc.description = bookingDesc;
             if (customServiceName) (bookingDoc as any).customServiceName = customServiceName;
-            if (data.city) bookingDoc.address = data.city;
+            if (resolvedAddress) bookingDoc.address = resolvedAddress;
+            if (geoPoint) bookingDoc.location = geoPoint;
             await bookingDoc.save();
             data.bookingId = bookingDoc._id;
             console.log(`[LeadService] Reused existing pending booking ${bookingDoc._id} for customer ${customerUser._id}`);
           } else {
-            bookingDoc = await BookingModel.create({
+            const bookingPayload: any = {
               customerId: customerUser._id,
               vehicleId: vehicle._id,
               serviceId: serviceId,
@@ -250,8 +337,12 @@ export class LeadService {
               cityId: cityId,
               description: bookingDesc,
               status: BOOKING_STATUS.PENDING,
-              address: data.city || '',
-            });
+              address: resolvedAddress || '',
+            };
+            if (geoPoint) {
+              bookingPayload.location = geoPoint;
+            }
+            bookingDoc = await BookingModel.create(bookingPayload);
             data.bookingId = bookingDoc._id;
 
             try {

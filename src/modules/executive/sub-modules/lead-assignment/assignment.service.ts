@@ -11,6 +11,7 @@ import { BadRequestError } from '../../../../common/errors/BadRequestError';
 import { ASSIGNMENT_TYPE, BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY, NOTIFICATION_STATUS } from '../../../notification/notification.model';
 import { PartnerEligibilityService } from '../../../partner/partner-eligibility.service';
+import { LeadModel } from '../../../customer/sub-modules/lead/lead.model';
 
 export class AssignmentService {
   /**
@@ -159,7 +160,7 @@ export class AssignmentService {
       await PaymentService.reconcileBookingPayments(bookingId);
     } catch (recErr) {}
 
-    const [assignment, bids, payments, job] = await Promise.all([
+    const [assignment, bids, payments, job, leadDoc] = await Promise.all([
       AssignmentModel.findOne({ bookingId })
         .populate('assignedExecutiveId', 'fullName email')
         .populate('assignedPartnerIds', 'businessName isVerified')
@@ -178,7 +179,8 @@ export class AssignmentService {
       PaymentModel.find({ bookingId }).sort({ createdAt: -1 }).lean(),
       JobModel.findOne({ bookingId })
         .populate('partnerId', 'businessName phone rating address')
-        .lean()
+        .lean(),
+      LeadModel.findOne({ bookingId }).lean()
     ]);
 
     const acceptedBidDoc = (booking.acceptedBidId as any)?.quotedAmount ? booking.acceptedBidId : (bids.find((b: any) => b.status === 'ACCEPTED' || b.status === 'CUSTOMER_ACCEPTED') || null);
@@ -197,8 +199,22 @@ export class AssignmentService {
       0
     );
 
+    // Resolve accurate address and coordinates fallback from leadDoc / customerUser
+    const customerObj = booking.customerId as any;
+    const resolvedAddress = booking.address || leadDoc?.city || customerObj?.address || '';
+    const resolvedLocation = (booking.location?.coordinates && booking.location.coordinates.length === 2 && (booking.location.coordinates[0] !== 0 || booking.location.coordinates[1] !== 0))
+      ? booking.location
+      : ((customerObj?.location?.coordinates && customerObj.location.coordinates.length === 2 && (customerObj.location.coordinates[0] !== 0 || customerObj.location.coordinates[1] !== 0))
+        ? customerObj.location
+        : null);
+
     return {
       ...booking,
+      address: resolvedAddress,
+      location: resolvedLocation || booking.location,
+      customServiceName: booking.customServiceName || (leadDoc?.customServiceName ? leadDoc.customServiceName : undefined),
+      leadSource: leadDoc?.source || null,
+      leadDoc: leadDoc || null,
       acceptedBidId: acceptedBidDoc || booking.acceptedBidId,
       acceptedQuoteAmount,
       finalAmount: resolvedFinalAmount,
