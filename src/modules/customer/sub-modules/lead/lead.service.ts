@@ -287,6 +287,10 @@ export class LeadService {
           }
         }
 
+        if (cityId && !data.cityId) {
+          data.cityId = cityId;
+        }
+
         // Sync customer user's location and address if newly available
         if (customerUser) {
           let userChanged = false;
@@ -515,6 +519,8 @@ export class LeadService {
       LeadModel.find(filter)
         .populate('customerId', 'fullName email phone')
         .populate('serviceIds', 'name')
+        .populate('cityId', 'name state')
+        .populate({ path: 'bookingId', select: 'cityId address vehicleId serviceId', populate: { path: 'cityId', select: 'name state' } })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
