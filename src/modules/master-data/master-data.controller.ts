@@ -4,7 +4,94 @@ import { successResponse } from '../../common/utils/apiResponse.util';
 import { asyncHandler } from '../../common/utils/asyncHandler.util';
 
 export class MasterDataController {
-  // Services
+  // ==========================================
+  // STATES
+  // ==========================================
+  public static getStates = asyncHandler(async (req: Request, res: Response) => {
+    const query = {
+      page: req.query.page ? Number(req.query.page) : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      isActive: req.query.isActive ? String(req.query.isActive) : undefined,
+    };
+    const result = await MasterDataService.getAllStates(query);
+    return successResponse(res, result, 'States retrieved successfully');
+  });
+
+  public static getStateById = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await MasterDataService.getStateById(id);
+    return successResponse(res, result, 'State details retrieved successfully');
+  });
+
+  public static createState = asyncHandler(async (req: Request, res: Response) => {
+    const result = await MasterDataService.createState(req.body);
+    return successResponse(res, result, 'State created successfully', 201);
+  });
+
+  public static updateState = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await MasterDataService.updateState(id, req.body);
+    return successResponse(res, result, 'State updated successfully');
+  });
+
+  public static deleteState = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const deleteLinkedCities = req.query.deleteLinkedCities === 'true';
+    const result = await MasterDataService.deleteState(id, deleteLinkedCities);
+    return successResponse(res, result, 'State deleted successfully');
+  });
+
+  // ==========================================
+  // CITIES
+  // ==========================================
+  public static getCities = asyncHandler(async (req: Request, res: Response) => {
+    const query = {
+      page: req.query.page ? Number(req.query.page) : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+      search: req.query.search ? String(req.query.search) : undefined,
+      state: req.query.state ? String(req.query.state) : undefined,
+      stateId: req.query.stateId ? String(req.query.stateId) : undefined,
+      isActive: req.query.isActive ? String(req.query.isActive) : undefined,
+    };
+    const result = await MasterDataService.getAllCities(query);
+    return successResponse(res, result, 'Cities retrieved successfully');
+  });
+
+  public static getCityById = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await MasterDataService.getCityById(id);
+    return successResponse(res, result, 'City details retrieved successfully');
+  });
+
+  public static createCity = asyncHandler(async (req: Request, res: Response) => {
+    const result = await MasterDataService.createCity(req.body);
+    return successResponse(res, result, 'City created successfully', 201);
+  });
+
+  public static updateCity = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await MasterDataService.updateCity(id, req.body);
+    return successResponse(res, result, 'City updated successfully');
+  });
+
+  public static deleteCity = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await MasterDataService.deleteCity(id);
+    return successResponse(res, result, 'City deleted successfully');
+  });
+
+  // ==========================================
+  // GEOGRAPHIC HIERARCHY
+  // ==========================================
+  public static getLocationHierarchy = asyncHandler(async (req: Request, res: Response) => {
+    const result = await MasterDataService.getLocationHierarchy();
+    return successResponse(res, result, 'Geographic location hierarchy retrieved successfully');
+  });
+
+  // ==========================================
+  // SERVICES
+  // ==========================================
   public static getServices = asyncHandler(async (req: Request, res: Response) => {
     const query = {
       page: req.query.page ? Number(req.query.page) : undefined,
@@ -39,34 +126,9 @@ export class MasterDataController {
     return successResponse(res, result, 'Service deleted successfully');
   });
 
-  // Cities
-  public static getCities = asyncHandler(async (req: Request, res: Response) => {
-    const query = {
-      page: req.query.page ? Number(req.query.page) : undefined,
-      limit: req.query.limit ? Number(req.query.limit) : undefined,
-    };
-    const result = await MasterDataService.getAllCities(query);
-    return successResponse(res, result, 'Cities retrieved successfully');
-  });
-
-  public static createCity = asyncHandler(async (req: Request, res: Response) => {
-    const result = await MasterDataService.createCity(req.body);
-    return successResponse(res, result, 'City created successfully', 201);
-  });
-
-  public static updateCity = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const result = await MasterDataService.updateCity(id, req.body);
-    return successResponse(res, result, 'City updated successfully');
-  });
-
-  public static deleteCity = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const result = await MasterDataService.deleteCity(id);
-    return successResponse(res, result, 'City deleted successfully');
-  });
-
-  // Vehicle Brands & Models
+  // ==========================================
+  // VEHICLE BRANDS & MODELS
+  // ==========================================
   public static getVehicleBrands = asyncHandler(async (req: Request, res: Response) => {
     const result = await MasterDataService.getAllVehicleBrands();
     return successResponse(res, result, 'Vehicle brands retrieved successfully');
@@ -88,7 +150,9 @@ export class MasterDataController {
     return successResponse(res, result, 'Vehicle model created successfully', 201);
   });
 
-  // Plans
+  // ==========================================
+  // PLANS
+  // ==========================================
   public static getPlans = asyncHandler(async (req: Request, res: Response) => {
     const result = await MasterDataService.getAllPlans();
     return successResponse(res, result, 'Plans retrieved successfully');

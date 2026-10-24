@@ -25,6 +25,7 @@ import notificationsRouter from './sub-modules/notifications/notifications.route
 import zonesRouter from './sub-modules/zones/zones.routes';
 import taxReportsRouter from './sub-modules/tax-reports/tax-reports.routes';
 import adminRefundsRouter from './sub-modules/refunds/admin-refund.routes';
+import locationsRouter from './sub-modules/locations/locations.routes';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ router.use('/settlements', settlementsRouter);
 router.use('/settings', settingsRouter);
 router.use('/notifications', notificationsRouter);
 router.use('/zones', zonesRouter);
+router.use('/locations', locationsRouter);
 router.use('/tax-reports', taxReportsRouter);
 router.use('/refunds', adminRefundsRouter);
 
