@@ -36,6 +36,24 @@ export class AssignmentService {
     if (query.cityId) filter.cityId = query.cityId;
     if (query.serviceId) filter.serviceId = query.serviceId;
 
+    // Date Range Filtering (startDate & endDate, fromDate & toDate, or from & to)
+    const startDate = query.startDate || query.fromDate || query.from;
+    const endDate = query.endDate || query.toDate || query.to;
+
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        filter.createdAt.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
     if (query.search) {
       const searchRegex = new RegExp(query.search, 'i');
       
