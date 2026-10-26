@@ -601,6 +601,23 @@ export class KycService {
     } else {
       partner.otherServicesDescription = undefined;
     }
+
+    // Auto-populate servicesOffered with matching ServiceModel ObjectIds
+    try {
+      const { ServiceModel } = require('../../../master-data/models/service.model');
+      const { PartnerEligibilityService } = require('../../partner-eligibility.service');
+      const allCatalogServices = await ServiceModel.find({}).lean();
+      const matchedIds: any[] = [];
+      for (const s of allCatalogServices) {
+        if (PartnerEligibilityService.matchServiceCapability(partner, s).matched) {
+          matchedIds.push(s._id);
+        }
+      }
+      partner.servicesOffered = matchedIds;
+    } catch (svcErr) {
+      console.warn('[KycService.submitCapabilities] Error resolving servicesOffered:', svcErr);
+    }
+
     partner.serviceBays = data.serviceBays;
     partner.technicianCount = data.technicianCount;
     partner.workingDays = data.workingDays;

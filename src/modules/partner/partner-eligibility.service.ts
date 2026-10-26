@@ -87,6 +87,51 @@ export class PartnerEligibilityService {
     return Math.round(R * c * 10) / 10;
   }
 
+  // Robust semantic mapping between catalog service names/categories and partner capability strings
+  private static readonly CAPABILITY_MAPPINGS: Record<string, string[]> = {
+    // Denting & Painting / Bodywork
+    "dent & paint": ["denting/painting", "body shop", "bodywork"],
+    "bodywork": ["denting/painting", "body shop"],
+    "denting/painting": ["dent & paint", "body shop", "bodywork"],
+    "body shop": ["dent & paint", "denting/painting", "bodywork"],
+
+    // Mechanical / Periodic / General Service
+    "periodic service": ["general service", "mechanical"],
+    "general service": ["periodic service"],
+    "engine repair": ["mechanical"],
+    "clutch repair": ["mechanical"],
+    "brake service": ["mechanical"],
+    "suspension": ["mechanical"],
+    "mechanical": ["engine repair", "clutch repair", "brake service", "suspension", "periodic service"],
+
+    // AC
+    "ac repair": ["ac"],
+    "ac": ["ac repair"],
+
+    // Insurance
+    "insurance claims": ["insurance repair"],
+    "insurance repair": ["insurance claims"],
+
+    // Detailing / Protection
+    "ceramic coating": ["ceramic"],
+    "ceramic": ["ceramic coating"],
+    "ppf": ["ppf"],
+    "detailing": ["detailing"],
+
+    // Cleaning
+    "car wash": ["car wash", "wash"],
+    "wash": ["car wash"],
+
+    // Tyres & Battery
+    "tyres": ["tyres"],
+    "battery": ["battery"],
+    "electrical": ["electrical"],
+  };
+
+  private static readonly STOP_WORDS = new Set([
+    "service", "repair", "car", "shop", "work", "maintenance", "claim", "claims", "other"
+  ]);
+
   /**
    * Determine whether a partner offers the service requested in a booking
    */
@@ -111,22 +156,64 @@ export class PartnerEligibilityService {
 
     // 2. Check capability categories in partner.services
     if (partner.services && Array.isArray(partner.services)) {
-      const sName = (service.name || '').toLowerCase();
-      const sCategory = (service.category || '').toLowerCase();
-      const sSlug = (service.slug || '').toLowerCase();
+      const sName = (service.name || '').toLowerCase().trim();
+      const sCategory = (service.category || '').toLowerCase().trim();
+      const sSlug = (service.slug || '').toLowerCase().trim();
+
+      const serviceWords = sName
+        .split(/[\s/&,._-]+/)
+        .map((w) => w.toLowerCase().trim())
+        .filter((w) => w.length >= 3 && !this.STOP_WORDS.has(w));
 
       for (const capability of partner.services) {
-        const capLower = capability.toLowerCase();
+        const capLower = capability.toLowerCase().trim();
 
-        // Exact category or capability match
+        // A. Direct exact match
         if (
-          capLower === sCategory ||
           capLower === sName ||
-          sName.includes(capLower) ||
-          capLower.includes(sName) ||
-          sCategory.includes(capLower) ||
-          sSlug.includes(capLower)
+          capLower === sCategory ||
+          sName === capLower ||
+          (sSlug && capLower === sSlug)
         ) {
+          if (!matchedServices.includes(capability)) {
+            matchedServices.push(capability);
+          }
+          continue;
+        }
+
+        // B. Semantic mapping lookup
+        const mappedTerms = this.CAPABILITY_MAPPINGS[capLower] || [];
+        const isMapped = mappedTerms.some((term) => {
+          return (
+            term === sName ||
+            term === sCategory ||
+            sName.includes(term) ||
+            term.includes(sName)
+          );
+        });
+
+        if (isMapped) {
+          if (!matchedServices.includes(capability)) {
+            matchedServices.push(capability);
+          }
+          continue;
+        }
+
+        // C. Meaningful token stem match (e.g. "dent" matches "denting", "paint" matches "painting")
+        const capWords = capLower
+          .split(/[\s/&,._-]+/)
+          .map((w) => w.toLowerCase().trim())
+          .filter((w) => w.length >= 3 && !this.STOP_WORDS.has(w));
+
+        const hasTokenMatch = capWords.some((cw) =>
+          serviceWords.some(
+            (sw) =>
+              cw === sw ||
+              (cw.length >= 4 && sw.length >= 4 && (cw.startsWith(sw.slice(0, 4)) || sw.startsWith(cw.slice(0, 4))))
+          )
+        );
+
+        if (hasTokenMatch) {
           if (!matchedServices.includes(capability)) {
             matchedServices.push(capability);
           }

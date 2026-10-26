@@ -64,6 +64,21 @@ export class BidService {
       } as any;
     }
 
+    // Resolve effective service IDs matching partner capabilities
+    let effectiveServiceIds: any[] = (partner.servicesOffered || []) as any[];
+    if (!effectiveServiceIds || effectiveServiceIds.length === 0) {
+      if (partner.services && partner.services.length > 0) {
+        try {
+          const { ServiceModel } = require('../../../master-data/models/service.model');
+          const { PartnerEligibilityService } = require('../../partner-eligibility.service');
+          const allServices = await ServiceModel.find({}).lean();
+          effectiveServiceIds = allServices
+            .filter((s: any) => PartnerEligibilityService.matchServiceCapability(partner, s).matched)
+            .map((s: any) => s._id);
+        } catch (e) {}
+      }
+    }
+
     // Lead Visibility:
     // - Status is PENDING
     // - Partner hasn't bidded yet
@@ -79,7 +94,7 @@ export class BidService {
           assignedPartnerId: { $in: [null, undefined] },
           cityId: partner.cityId,
           $or: [
-            { serviceId: { $in: partner.servicesOffered || [] } }
+            { serviceId: { $in: effectiveServiceIds } }
           ]
         }
       ]
