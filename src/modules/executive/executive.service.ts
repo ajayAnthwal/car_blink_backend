@@ -891,7 +891,10 @@ export class ExecutiveService {
     booking.cancellationDetails.deductionAmount = deduction;
     booking.cancellationDetails.deductionReason = data.deductionReason || 'None';
     booking.cancellationDetails.refundAmount = authorizedAmount;
-    booking.cancellationDetails.accountsStatus = totalPaid > 0 ? 'PENDING_ACCOUNTS' : 'NOT_FORWARDED';
+    booking.cancellationDetails.accountsStatus = totalPaid > 0 ? 'PENDING_ACCOUNTS' : 'PROCESSED';
+    if (totalPaid === 0) {
+      booking.cancellationDetails.accountsProcessedAt = new Date();
+    }
     await booking.save();
 
     // If payments exist and authorized refund > 0, generate/update Refund record for Accounts queue
@@ -927,6 +930,35 @@ export class ExecutiveService {
       } catch (notifErr) {
         console.warn('Failed to notify accounts about refund:', notifErr);
       }
+    } else {
+      // Notify Accounts that cancellation packet was closed with zero refund
+      try {
+        const { notificationService } = require('../notification/notification.service');
+        const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+
+        await notificationService.sendToRole(
+          'ACCOUNTS',
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+          'Booking Cancelled (No Refund)',
+          `Executive finalized cancellation for Booking #${booking._id.toString().slice(-6)}. No online payments recorded (₹0 refund). Remarks: ${data.notes}`,
+          { bookingId: booking._id.toString(), type: 'CANCELLATION_FINALIZED' }
+        );
+      } catch (notifErr) {
+        console.warn('Failed to notify accounts about zero-refund cancellation:', notifErr);
+      }
+    }
+
+    // Real-time socket sync to ACCOUNTS role
+    try {
+      const { emitToRole } = require('../../sockets');
+      if (refundDoc) {
+        emitToRole('ACCOUNTS', 'new_refund', { refund: refundDoc, bookingId: booking._id });
+        emitToRole('ACCOUNTS', 'refund_requested', { refund: refundDoc, bookingId: booking._id });
+      }
+      emitToRole('ACCOUNTS', 'cancellation_forwarded', { bookingId: booking._id, refundId: refundDoc?._id });
+    } catch (socketErr) {
+      console.warn('Failed to emit cancellation socket event to accounts:', socketErr);
     }
 
     // Notify customer
