@@ -132,6 +132,7 @@ export interface IPartner extends Document {
     | "Other"
   )[];
   otherServicesDescription?: string;
+  customServices?: string[];
   servicesOffered: mongoose.Types.ObjectId[]; // Kept for backward compatibility with Service model refs
   serviceBays: number;
   technicianCount: number;
@@ -252,6 +253,12 @@ const PartnerSchema = new Schema<IPartner>(
       {
         type: Schema.Types.ObjectId,
         ref: "Service",
+      },
+    ],
+    customServices: [
+      {
+        type: String,
+        trim: true,
       },
     ],
     gstNumber: {

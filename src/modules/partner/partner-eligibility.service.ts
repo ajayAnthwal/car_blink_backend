@@ -221,6 +221,23 @@ export class PartnerEligibilityService {
       }
     }
 
+    // 3. Check customServices defined by partner
+    if (partner.customServices && Array.isArray(partner.customServices)) {
+      const sName = (service.name || '').toLowerCase().trim();
+      for (const custom of partner.customServices) {
+        const cLower = custom.toLowerCase().trim();
+        if (
+          cLower === sName ||
+          (cLower.length >= 3 && sName.includes(cLower)) ||
+          (sName.length >= 3 && cLower.includes(sName))
+        ) {
+          if (!matchedServices.includes(custom)) {
+            matchedServices.push(custom);
+          }
+        }
+      }
+    }
+
     return {
       matched: matchedServices.length > 0,
       matchedServices,

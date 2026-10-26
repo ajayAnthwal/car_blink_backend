@@ -127,8 +127,26 @@ export class PartnerService {
     delete data.rating;
     delete data.totalReviews;
 
-    // Fraud Prevention: Freeze bank details if a settlement is pending
-    if (data.bankDetails || data.accountNumber) {
+    // Fraud Prevention: Only validate & freeze bank details if partner is ACTUALLY changing their bank details
+    const incomingAcc = (data.accountNumber || data.bankDetails?.accountNumber || '').trim();
+    const incomingIfsc = (data.ifsc || data.bankDetails?.ifscCode || '').trim().toUpperCase();
+    const incomingHolder = (data.accountHolderName || data.bankDetails?.accountHolderName || '').trim();
+
+    const currentAcc = (existingPartner.accountNumber || existingPartner.bankDetails?.accountNumber || '').trim();
+    const currentIfsc = (existingPartner.ifsc || existingPartner.bankDetails?.ifscCode || '').trim().toUpperCase();
+    const currentHolder = (existingPartner.accountHolderName || existingPartner.bankDetails?.accountHolderName || '').trim();
+
+    // Check if the user is actually modifying their bank details to a new, unmasked value
+    const isRealBankUpdate =
+      incomingAcc.length > 0 &&
+      !incomingAcc.includes('•') &&
+      (
+        incomingAcc !== currentAcc ||
+        (incomingIfsc.length > 0 && incomingIfsc !== currentIfsc) ||
+        (incomingHolder.length > 0 && incomingHolder !== currentHolder)
+      );
+
+    if (isRealBankUpdate) {
       const pendingSettlement = await SettlementModel.findOne({ 
         partnerId: existingPartner._id, 
         status: 'PENDING' 
@@ -137,30 +155,35 @@ export class PartnerService {
         throw new ApiError(400, 'Cannot update bank details while a payout settlement is pending. This is a security measure.');
       }
 
-      const incomingAcc = (data.accountNumber || data.bankDetails?.accountNumber || '').trim();
-      const incomingIfsc = (data.ifsc || data.bankDetails?.ifscCode || '').trim().toUpperCase();
-      const incomingHolder = (data.accountHolderName || data.bankDetails?.accountHolderName || '').trim();
+      existingPartner.accountNumber = incomingAcc;
+      if (incomingIfsc) existingPartner.ifsc = incomingIfsc;
+      if (incomingHolder) existingPartner.accountHolderName = incomingHolder;
+      existingPartner.bankVerificationStatus = 'PENDING';
 
-      // Ignore masked placeholder strings (e.g. ••••••••)
-      if (incomingAcc && !incomingAcc.includes('•')) {
-        existingPartner.accountNumber = incomingAcc;
-        if (incomingIfsc) existingPartner.ifsc = incomingIfsc;
-        if (incomingHolder) existingPartner.accountHolderName = incomingHolder;
-        existingPartner.bankVerificationStatus = 'PENDING';
+      existingPartner.bankDetails = {
+        accountNumber: incomingAcc,
+        ifscCode: incomingIfsc,
+        accountHolderName: incomingHolder,
+      };
+    }
 
-        // Only set bankDetails if partner does not already have an active payout destination
-        if (!existingPartner.bankDetails || !existingPartner.bankDetails.accountNumber) {
-          existingPartner.bankDetails = {
-            accountNumber: incomingAcc,
-            ifscCode: incomingIfsc,
-            accountHolderName: incomingHolder,
-          };
-        }
+    delete data.bankDetails;
+    delete data.accountNumber;
+    delete data.ifsc;
+    delete data.accountHolderName;
+
+    // Handle Custom Services
+    if (data.customServices !== undefined) {
+      if (Array.isArray(data.customServices)) {
+        existingPartner.customServices = Array.from(
+          new Set(
+            data.customServices
+              .map((s: any) => String(s).trim())
+              .filter((s: string) => s.length > 0)
+          )
+        );
       }
-      delete data.bankDetails;
-      delete data.accountNumber;
-      delete data.ifsc;
-      delete data.accountHolderName;
+      delete data.customServices;
     }
 
     if (data.latitude !== undefined && data.longitude !== undefined) {
