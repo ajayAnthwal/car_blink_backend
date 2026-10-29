@@ -9,9 +9,12 @@ export class SuperAdminStaffService {
     const { page = 1, limit = 10 } = query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Fetch users who are ADMIN or have a customRoleId
+    // Fetch users who are ADMIN, SUPER_ADMIN, or have a staff customRoleId
     const filter = {
-      role: { $in: [ROLES.ADMIN, ROLES.SUPER_ADMIN] }
+      $or: [
+        { role: { $in: [ROLES.ADMIN, ROLES.SUPER_ADMIN] } },
+        { customRoleId: { $exists: true, $ne: null } }
+      ]
     };
 
     const staff = await UserModel.find(filter)
@@ -47,11 +50,24 @@ export class SuperAdminStaffService {
       throw new Error('User with this email or phone already exists');
     }
 
+    let assignedRole = ROLES.ADMIN;
+    if (customRoleId) {
+      const customRole = await RoleModel.findById(customRoleId).lean();
+      const roleName = customRole?.name?.toUpperCase();
+      if (roleName === 'EXECUTIVE') {
+        assignedRole = ROLES.EXECUTIVE;
+      } else if (roleName === 'ACCOUNTS') {
+        assignedRole = ROLES.ACCOUNTS;
+      } else if (roleName === 'SUPER_ADMIN') {
+        assignedRole = ROLES.SUPER_ADMIN;
+      }
+    }
+
     const staffData: any = {
       fullName,
       phone: cleanPhone,
       password: password, // Mongoose pre-save hook handles hashing
-      role: ROLES.ADMIN,
+      role: assignedRole,
       customRoleId,
       isEmailVerified: true,
       isPhoneVerified: true,
