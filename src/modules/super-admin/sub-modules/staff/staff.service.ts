@@ -9,10 +9,10 @@ export class SuperAdminStaffService {
     const { page = 1, limit = 10 } = query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Fetch users who are ADMIN, SUPER_ADMIN, or have a staff customRoleId
+    // Fetch users who are ADMIN, SUPER_ADMIN, EXECUTIVE, ACCOUNTS, or have a staff customRoleId
     const filter = {
       $or: [
-        { role: { $in: [ROLES.ADMIN, ROLES.SUPER_ADMIN] } },
+        { role: { $in: [ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.EXECUTIVE, ROLES.ACCOUNTS] } },
         { customRoleId: { $exists: true, $ne: null } }
       ]
     };
