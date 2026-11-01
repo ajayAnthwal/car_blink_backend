@@ -769,7 +769,7 @@ export class PaymentService {
       throw new UnauthorizedError("You are not authorized for this booking");
     }
 
-    if (paymentType === a PAYMENT_TYPE.ADVANCE) {
+    if (paymentType === PAYMENT_TYPE.ADVANCE) {
       throw new BadRequestError("Advance booking deposit must be paid online via payment gateway. Cash payment is not permitted for advance deposits.");
     }
 
