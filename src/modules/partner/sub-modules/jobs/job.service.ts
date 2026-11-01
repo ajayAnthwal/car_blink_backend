@@ -3,6 +3,7 @@ import { JobModel, IJob, JobExtensionLogModel } from "./job.model";
 import { PartnerModel } from "../../partner.model";
 import { BookingModel } from "../../../customer/sub-modules/booking/booking.model";
 import { WarrantyModel } from "../../../customer/sub-modules/warranty/warranty.model";
+import { BidModel } from "../bidding/bid.model";
 import { NotFoundError } from "../../../../common/errors/NotFoundError";
 import { UnauthorizedError } from "../../../../common/errors/UnauthorizedError";
 import { ApiError } from "../../../../common/errors/ApiError";
@@ -66,14 +67,16 @@ export class JobService {
             matchingBid = await BidModel.findById(b.acceptedBidId);
           }
           const bidIdToUse = matchingBid?._id || b.acceptedBidId || new mongoose.Types.ObjectId();
-          const finalAmount = matchingBid?.quotedAmount || 0;
+          const partnerAmount = (matchingBid?.originalQuotedAmount !== undefined && matchingBid.originalQuotedAmount > 0)
+            ? matchingBid.originalQuotedAmount
+            : (matchingBid?.quotedAmount || 0);
 
           await JobModel.create({
             bookingId: b._id,
             partnerId: partner._id,
             bidId: bidIdToUse,
             status: b.isVerifiedByPartner ? 'VERIFIED' : 'NOT_STARTED',
-            finalAmount,
+            finalAmount: partnerAmount,
             createdAt: b.createdAt || new Date(),
             updatedAt: b.updatedAt || new Date()
           });
@@ -100,10 +103,10 @@ export class JobService {
             { path: "vehicleId" },
             { path: "serviceId" },
             { path: "cityId" },
-            { path: "acceptedBidId", select: "quotedAmount notes status" }
+            { path: "acceptedBidId", select: "quotedAmount originalQuotedAmount notes status" }
           ],
         })
-        .populate("bidId", "quotedAmount notes status")
+        .populate("bidId", "quotedAmount originalQuotedAmount notes status")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -143,8 +146,52 @@ export class JobService {
       const inv = invoicesMap.get(jIdStr) || invoicesMap.get(bIdStr) || null;
       const invUrl = job.invoiceUrl || inv?.pdfUrl || (inv ? 'ITEMIZED_INVOICE_SUBMITTED' : null);
 
+      // Ensure partner ALWAYS sees their original submitted quote (plus any approved extras)
+      const partnerOrigQuote = (job.bidId as any)?.originalQuotedAmount ?? (job.bookingId as any)?.acceptedBidId?.originalQuotedAmount ?? job.finalAmount;
+      let displayFinalAmount = job.finalAmount;
+      if (partnerOrigQuote !== undefined && partnerOrigQuote > 0) {
+        const approvedExtras = (job.jobExtensions || [])
+          .filter((e: any) => e.status === 'APPROVED')
+          .reduce((sum: number, e: any) => sum + (Number(e.cost) || 0), 0);
+        displayFinalAmount = partnerOrigQuote + approvedExtras;
+      }
+
+      // Sanitize bid objects in job payload for partner view
+      const sanitizedBid = job.bidId && typeof job.bidId === 'object'
+        ? { 
+            ...(job.bidId as any), 
+            quotedAmount: (job.bidId as any).originalQuotedAmount ?? (job.bidId as any).quotedAmount,
+            originalQuotedAmount: (job.bidId as any).originalQuotedAmount ?? (job.bidId as any).quotedAmount
+          }
+        : job.bidId;
+
+      let sanitizedBooking: any = job.bookingId;
+      if (sanitizedBooking && typeof sanitizedBooking === 'object') {
+        const sanitizedAcceptedBid = sanitizedBooking.acceptedBidId && typeof sanitizedBooking.acceptedBidId === 'object'
+          ? { 
+              ...sanitizedBooking.acceptedBidId, 
+              quotedAmount: sanitizedBooking.acceptedBidId.originalQuotedAmount ?? sanitizedBooking.acceptedBidId.quotedAmount,
+              originalQuotedAmount: sanitizedBooking.acceptedBidId.originalQuotedAmount ?? sanitizedBooking.acceptedBidId.quotedAmount
+            }
+          : sanitizedBooking.acceptedBidId;
+
+        sanitizedBooking = {
+          ...sanitizedBooking,
+          acceptedBidId: sanitizedAcceptedBid,
+          pricing: sanitizedBooking.pricing ? {
+            ...sanitizedBooking.pricing,
+            customerGrossQuote: partnerOrigQuote,
+            partnerBaseQuote: partnerOrigQuote
+          } : sanitizedBooking.pricing
+        };
+      }
+
       return {
         ...job,
+        finalAmount: displayFinalAmount,
+        originalQuotedAmount: partnerOrigQuote,
+        bidId: sanitizedBid,
+        bookingId: sanitizedBooking,
         payments: jobPayments,
         invoice: inv,
         invoiceUrl: invUrl,
@@ -207,12 +254,16 @@ export class JobService {
         if (matchingBooking) {
           const matchingBid = partnerBids.find((pb: any) => pb.bookingId.toString() === matchingBooking._id.toString());
           if (matchingBid) {
+            const partnerAmount = (matchingBid.originalQuotedAmount !== undefined && matchingBid.originalQuotedAmount > 0)
+              ? matchingBid.originalQuotedAmount
+              : (matchingBid.quotedAmount || 0);
+
             targetJob = await JobModel.create({
               bookingId: matchingBooking._id,
               partnerId: partner._id,
               bidId: matchingBid._id,
               status: 'NOT_STARTED',
-              finalAmount: matchingBid.quotedAmount || 0,
+              finalAmount: partnerAmount,
             });
 
             await BookingModel.findByIdAndUpdate(matchingBooking._id, {

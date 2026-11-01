@@ -15,6 +15,26 @@ import { ERROR_CODES } from '../../../../common/constants/error-codes.constant';
 import { Types } from 'mongoose';
 import { emitToUser, emitToRole } from '../../../../sockets';
 
+/**
+ * Calculates road-adjusted driving distance in kilometers between two geographic coordinates
+ * Uses Haversine spherical formula with standard urban road routing factor (1.28x)
+ */
+function calculateRoadDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const straightLine = R * c;
+  const roadDist = straightLine * 1.28;
+  return Math.round(roadDist * 10) / 10;
+}
+
 export class BookingService {
   public static async createBooking(
     customerId: string,
@@ -84,12 +104,24 @@ export class BookingService {
     //   throw new NotFoundError('City not found or inactive');
     // }
 
-    // 4. Create booking
+    // 4. Create booking - Auto-align cityId if address explicitly mentions another registered city
+    let resolvedCityId = data.cityId;
+    if ((data as any).address) {
+      try {
+        const addrStr = String((data as any).address).toLowerCase();
+        const allCities = await CityModel.find({ isActive: true }).select('name _id').lean();
+        const matched = allCities.find((c: any) => c.name && c.name.length > 3 && addrStr.includes(c.name.toLowerCase()));
+        if (matched) {
+          resolvedCityId = (matched as any)._id;
+        }
+      } catch (e) {}
+    }
+
     const bookingData: any = {
       customerId,
       vehicleId: data.vehicleId,
       serviceId: data.serviceId,
-      cityId: data.cityId,
+      cityId: resolvedCityId,
       description: data.description,
       preferredDate: data.preferredDate ? new Date(data.preferredDate) : undefined,
       serviceMode: (data as any).serviceMode || 'GARAGE_VISIT',
@@ -318,7 +350,7 @@ export class BookingService {
           const rawP = sanitizedAssignedPartner;
           sanitizedAssignedPartner = {
             _id: rawP._id,
-            businessName: rawP.businessName ? `${rawP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+            businessName: rawP.businessName ? 'CarBlink Certified Partner Workshop' : 'CarBlink Certified Partner',
             businessAddress: 'Unlocked after advance payment',
             rating: rawP.rating || 4.8,
             totalReviews: rawP.totalReviews || 0,
@@ -336,7 +368,7 @@ export class BookingService {
             ...sanitizedAcceptedBid,
             partnerId: {
               _id: rawBidP._id,
-              businessName: rawBidP.businessName ? `${rawBidP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+              businessName: rawBidP.businessName ? 'CarBlink Certified Partner Workshop' : 'CarBlink Certified Partner',
               businessAddress: 'Unlocked after advance payment',
               rating: rawBidP.rating || 4.8,
               totalReviews: rawBidP.totalReviews || 0,
@@ -475,7 +507,7 @@ export class BookingService {
       if (!isUnlocked) {
         rawPartner = {
           _id: rawPartner._id,
-          businessName: rawPartner?.businessName ? `${rawPartner.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+          businessName: rawPartner?.businessName ? 'CarBlink Certified Partner Workshop' : 'CarBlink Certified Partner',
           businessAddress: 'Unlocked after advance payment',
           phone: '',
           rating: rawPartner?.rating || 4.8,
@@ -533,7 +565,7 @@ export class BookingService {
           ...acceptedBidDoc,
           partnerId: rawBP ? {
             _id: rawBP._id,
-            businessName: rawBP.businessName ? `${rawBP.businessName.split(' ')[0]} ***** (Verified Partner)` : 'CarBlink Certified Partner',
+            businessName: rawBP.businessName ? 'CarBlink Certified Partner Workshop' : 'CarBlink Certified Partner',
             businessAddress: 'Unlocked after advance payment',
             rating: rawBP.rating || 4.8,
             totalReviews: rawBP.totalReviews || 0,
@@ -729,9 +761,48 @@ export class BookingService {
       ['VERIFIED', 'IN_PROGRESS', 'WORK_STARTED', 'IN_SERVICE', 'DIAGNOSIS', 'REPAIRING', 'QUALITY_CHECK', 'JOB_COMPLETED', 'COMPLETED'].includes(booking.status)
     );
 
+    // Resolve Customer Coordinates for Distance Calculation
+    let custLat: number | null = (booking as any).latitude || null;
+    let custLng: number | null = (booking as any).longitude || null;
+    if ((!custLat || !custLng) && booking.location?.coordinates && Array.isArray(booking.location.coordinates) && booking.location.coordinates.length === 2) {
+      if (booking.location.coordinates[0] !== 0 || booking.location.coordinates[1] !== 0) {
+        custLng = booking.location.coordinates[0];
+        custLat = booking.location.coordinates[1];
+      }
+    }
+
     const processedBids = bids.map((bid: any) => {
       const p = bid.partnerId;
       if (!p) return bid;
+
+      // Calculate relative road distance between customer and workshop
+      let partLat: number | null = null;
+      let partLng: number | null = null;
+      if (p.location?.coordinates && Array.isArray(p.location.coordinates) && p.location.coordinates.length === 2) {
+        if (p.location.coordinates[0] !== 0 || p.location.coordinates[1] !== 0) {
+          partLng = p.location.coordinates[0];
+          partLat = p.location.coordinates[1];
+        }
+      } else if (p.latitude && p.longitude) {
+        partLat = Number(p.latitude);
+        partLng = Number(p.longitude);
+      }
+
+      let distanceInfo: { km: number | null; text: string; estimatedDriveTime: string | null } = {
+        km: null,
+        text: "Verified Local Workshop",
+        estimatedDriveTime: null,
+      };
+
+      if (custLat && custLng && partLat && partLng && !isNaN(custLat) && !isNaN(custLng) && !isNaN(partLat) && !isNaN(partLng)) {
+        const km = calculateRoadDistanceKm(custLat, custLng, partLat, partLng);
+        const estMins = Math.max(5, Math.round(km * 3.5));
+        distanceInfo = {
+          km,
+          text: `${km} km away`,
+          estimatedDriveTime: `~${estMins} mins drive`,
+        };
+      }
 
       const rawName = p.businessName || p.userId?.fullName || 'Partner Garage';
       const isAcceptedAndPaid = hasPaidAdvanceStrict && booking.acceptedBidId && (
@@ -740,17 +811,20 @@ export class BookingService {
       );
 
       if (isAcceptedAndPaid) {
-        return bid; // Allowed to see verified partner details for their accepted & paid bid
+        return {
+          ...bid,
+          distance: distanceInfo,
+        }; // Allowed to see verified partner details for their accepted & paid bid
       }
 
-      // Redact sensitive contact & GPS details for unaccepted or unpaid bids
-      const nameParts = rawName.split(' ');
-      const maskedName = nameParts.length > 1
-        ? `${nameParts[0]} ***** (Verified Partner)`
-        : `${rawName.substring(0, 3)}***** (Verified Partner)`;
+      // Redact sensitive contact & GPS details for unaccepted or unpaid bids (100% anonymized)
+      const maskedName = bids.length > 1
+        ? `CarBlink Verified Workshop #${bids.indexOf(bid) + 1}`
+        : 'CarBlink Verified Workshop';
 
       return {
         ...bid,
+        distance: distanceInfo,
         partnerId: {
           ...p,
           businessName: maskedName,

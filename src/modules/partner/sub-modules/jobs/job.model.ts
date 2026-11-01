@@ -21,6 +21,8 @@ export interface IJob extends Document {
   }[];
   staffId?: mongoose.Types.ObjectId;
   finalAmount?: number;
+  cashCollectedByPartner?: boolean;
+  cashCollectedAmount?: number;
   suspendedPartnerFlag?: boolean;
   partnerSuspendedAt?: Date;
   adminWorkflowFlag?: string;
@@ -100,6 +102,14 @@ const JobSchema = new Schema<IJob>(
     finalAmount: {
       type: Number,
       min: [0, 'Final amount cannot be negative'],
+    },
+    cashCollectedByPartner: {
+      type: Boolean,
+      default: false,
+    },
+    cashCollectedAmount: {
+      type: Number,
+      default: 0,
     },
     suspendedPartnerFlag: {
       type: Boolean,

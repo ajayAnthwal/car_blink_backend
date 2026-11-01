@@ -31,12 +31,13 @@ export class AssignmentController {
   public static forwardQuoteToCustomer = asyncHandler(async (req: IRequest, res: Response) => {
     const executiveId = req.user?.userId;
     const { id } = req.params;
-    const { bidIds, notes } = req.body;
+    const { bidIds, notes, quoteAdjustments } = req.body;
     const booking = await assignmentService.forwardQuoteToCustomer(
       String(executiveId),
       id,
       bidIds,
-      notes
+      notes,
+      quoteAdjustments
     );
     return successResponse(res, booking, 'Quote(s) forwarded to customer successfully');
   });

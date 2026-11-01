@@ -351,7 +351,14 @@ export class AssignmentService {
     executiveId: string,
     bookingId: string,
     bidIds: string[],
-    notes?: string
+    notes?: string,
+    quoteAdjustments?: Array<{
+      bidId: string;
+      quoteAmount?: number;
+      discountAmount?: number;
+      adjustedAmount?: number;
+      notes?: string;
+    }>
   ): Promise<any> {
     const booking = await BookingModel.findById(bookingId);
     if (!booking) {
@@ -370,6 +377,61 @@ export class AssignmentService {
     const invalidBids = bids.filter(bid => bid.bookingId.toString() !== bookingId);
     if (invalidBids.length > 0) {
       throw new BadRequestError('One or more bids do not belong to this booking');
+    }
+
+    // Apply any executive discounts or price modifications
+    if (Array.isArray(quoteAdjustments) && quoteAdjustments.length > 0) {
+      const adjustmentMap = new Map<string, { quoteAmount?: number; discountAmount?: number; adjustedAmount?: number; notes?: string }>();
+      quoteAdjustments.forEach(adj => {
+        if (adj && adj.bidId) {
+          adjustmentMap.set(adj.bidId.toString(), adj);
+        }
+      });
+
+      for (const bid of bids) {
+        const adj = adjustmentMap.get(bid._id.toString());
+        if (adj) {
+          const originalAmt = bid.originalQuotedAmount !== undefined && bid.originalQuotedAmount > 0
+            ? bid.originalQuotedAmount
+            : bid.quotedAmount;
+
+          const rawExecQuote = adj.quoteAmount !== undefined && !isNaN(Number(adj.quoteAmount)) && Number(adj.quoteAmount) > 0
+            ? Number(adj.quoteAmount)
+            : (adj.adjustedAmount !== undefined && adj.discountAmount !== undefined 
+                ? (Number(adj.adjustedAmount) + Number(adj.discountAmount)) 
+                : originalAmt);
+
+          let discountAmt = adj.discountAmount !== undefined && !isNaN(Number(adj.discountAmount)) && Number(adj.discountAmount) >= 0
+            ? Number(adj.discountAmount)
+            : 0;
+
+          let newCustomerAmount = adj.adjustedAmount !== undefined && !isNaN(Number(adj.adjustedAmount)) && Number(adj.adjustedAmount) > 0
+            ? Number(adj.adjustedAmount)
+            : Math.max(0, rawExecQuote - discountAmt);
+
+          const isModified = discountAmt > 0 || rawExecQuote !== originalAmt || newCustomerAmount !== originalAmt;
+
+          if (isModified) {
+            bid.originalQuotedAmount = originalAmt;
+            bid.executiveQuoteAmount = rawExecQuote;
+            bid.quotedAmount = newCustomerAmount;
+            bid.executiveDiscount = discountAmt;
+            bid.isModifiedByExecutive = true;
+            bid.version = (bid.version || 1) + 1;
+            if (mongoose.Types.ObjectId.isValid(executiveId)) {
+              bid.modifiedByUserId = new mongoose.Types.ObjectId(executiveId);
+            }
+            if (adj.notes) {
+              bid.notes = adj.notes;
+            }
+            await bid.save();
+          } else {
+            if (!bid.originalQuotedAmount) bid.originalQuotedAmount = originalAmt;
+            if (!bid.executiveQuoteAmount) bid.executiveQuoteAmount = originalAmt;
+            await bid.save();
+          }
+        }
+      }
     }
 
     // Update booking
@@ -644,14 +706,21 @@ export class AssignmentService {
 
     // 3. Create Job document in NOT_STARTED status
     let job = await JobModel.findOne({ bookingId: booking._id });
+    const partnerAgreedAmount = selectedBid.originalQuotedAmount !== undefined && selectedBid.originalQuotedAmount > 0
+      ? selectedBid.originalQuotedAmount
+      : selectedBid.quotedAmount;
+
     if (!job) {
       job = await JobModel.create({
         bookingId: booking._id,
         partnerId: selectedBid.partnerId._id || selectedBid.partnerId,
         bidId: selectedBid._id,
         status: 'NOT_STARTED',
-        finalAmount: selectedBid.quotedAmount,
+        finalAmount: partnerAgreedAmount,
       });
+    } else {
+      job.finalAmount = partnerAgreedAmount;
+      await job.save();
     }
 
     // 4. Emit live socket events & send notifications

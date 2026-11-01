@@ -118,9 +118,47 @@ export class WalletService {
       .filter((p: any) => p.provider !== 'CASH')
       .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
 
-    const COMMISSION_RATE = 0.15; // 15% fixed commission
-    const commissionAmount = Number((totalAmount * COMMISSION_RATE).toFixed(2));
-    const partnerShare = Number((totalAmount - commissionAmount).toFixed(2));
+    const COMMISSION_RATE = 0.15; // 15% fixed commission fallback
+    const { BookingModel } = require('../customer/sub-modules/booking/booking.model');
+    const { JobModel } = require('../partner/sub-modules/jobs/job.model');
+    require('../partner/sub-modules/bidding/bid.model');
+
+    const booking = await BookingModel.findById(bookingId).populate('acceptedBidId').lean();
+    const job = await JobModel.findOne({ bookingId }).populate('bidId').lean();
+
+    // 1. Calculate partner's legitimate share dynamically without hardcoded static amounts
+    const partnerBaseQuote = Number(
+      booking?.pricing?.partnerBaseQuote ??
+      (booking?.acceptedBidId as any)?.originalQuotedAmount ??
+      (booking?.acceptedBidId as any)?.quotedAmount ??
+      (job?.bidId as any)?.originalQuotedAmount ??
+      (job?.bidId as any)?.quotedAmount ??
+      job?.originalQuotedAmount ??
+      0
+    );
+
+    const approvedExtras = (job?.jobExtensions || [])
+      .filter((e: any) => e.status === 'APPROVED')
+      .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0) || (booking?.pricing?.approvedExtrasAmount || 0);
+
+    let partnerShare = 0;
+    if (partnerBaseQuote > 0) {
+      partnerShare = Number((partnerBaseQuote + approvedExtras).toFixed(2));
+    } else {
+      // Safe fallback for legacy bookings where pricing breakdown is not present (15% platform commission)
+      const fallbackCommission = Number((totalAmount * COMMISSION_RATE).toFixed(2));
+      partnerShare = Number((totalAmount - fallbackCommission).toFixed(2));
+    }
+
+    const customerTotal = Number(
+      (job?.invoice?.grandTotal ||
+       (booking?.pricing?.customerGrossQuote ? (booking.pricing.customerGrossQuote + approvedExtras) : 0) ||
+       booking?.finalAmount ||
+       totalAmount ||
+       0).toFixed(2)
+    );
+
+    const commissionAmount = Math.max(0, Number((customerTotal - partnerShare).toFixed(2)));
 
     // Net settlement owed to partner wallet:
     // Partner earned `partnerShare`. Partner already collected `cashCollected` physically in hand.
@@ -137,11 +175,11 @@ export class WalletService {
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: netWalletAdjustment,
         type: TRANSACTION_TYPE.CREDIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Settlement (Share: ₹${partnerShare}${cashCollected > 0 ? `, Cash: -₹${cashCollected}` : ''})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Settlement (Share: ₹${partnerShare.toFixed(2)}${cashCollected > 0 ? `, Cash Collected: -₹${cashCollected.toFixed(2)}` : ''})`,
         balanceAfter: wallet.balance,
       });
     } else if (netWalletAdjustment < 0) {
-      // Partner collected cash in excess of their share -> Debit Partner Wallet
+      // Partner collected cash in excess of their share -> Debit Partner Wallet (Negative balance / Commission due)
       const debitAmount = Math.abs(netWalletAdjustment);
       wallet.balance = Number((wallet.balance - debitAmount).toFixed(2));
       await wallet.save();
@@ -151,19 +189,53 @@ export class WalletService {
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: debitAmount,
         type: TRANSACTION_TYPE.DEBIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Platform Commission Due (Commission: ₹${commissionAmount}${onlineCollected > 0 ? `, Online Advance: -₹${onlineCollected}` : ''})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Cash Collection Commission Due (Cash Collected: ₹${cashCollected.toFixed(2)}, Partner Share: ₹${partnerShare.toFixed(2)})`,
         balanceAfter: wallet.balance,
       });
     } else {
-      // Exactly settled! (e.g. 15% advance online to CarBlink, 85% cash to partner)
+      // Exactly settled! (e.g. 15% advance online to CarBlink, exact cash matches partner share)
       await LedgerTransactionModel.create({
         walletId: wallet._id,
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: 0,
         type: TRANSACTION_TYPE.CREDIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Fully Settled (Cash Collected: ₹${cashCollected}, Online Advance: ₹${onlineCollected})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Fully Settled (Cash Collected: ₹${cashCollected.toFixed(2)}, Online Advance: ₹${onlineCollected.toFixed(2)})`,
         balanceAfter: wallet.balance,
       });
+    }
+
+    // Keep Partner model synced with wallet balance & outstanding dues
+    try {
+      const { PartnerModel } = require('../partner/partner.model');
+      const partnerDoc = await PartnerModel.findOne({
+        $or: [{ userId: wallet.userId }, { _id: wallet.userId }]
+      });
+      if (partnerDoc) {
+        partnerDoc.walletBalance = wallet.balance;
+        partnerDoc.outstandingDues = wallet.balance < 0 ? Math.abs(wallet.balance) : 0;
+        await partnerDoc.save();
+      }
+    } catch (syncErr) {
+      console.warn('[WalletService] Error syncing PartnerModel with wallet:', syncErr);
+    }
+
+    // Threshold Alert Trigger: If negative balance exceeds limit (₹500 / ₹1,000)
+    if (wallet.balance <= -500) {
+      try {
+        const { notificationService } = require('../notification/notification.service');
+        const { NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../notification/notification.model');
+        const dueAmt = Math.abs(wallet.balance).toFixed(2);
+        await notificationService.sendNotification(
+          wallet.userId.toString(),
+          NOTIFICATION_TYPE.IN_APP,
+          NOTIFICATION_CATEGORY.PAYMENT_UPDATE,
+          'Commission Dues Alert',
+          `Please settle outstanding commission of ₹${dueAmt} to receive new leads.`,
+          { walletBalance: wallet.balance, outstandingDues: dueAmt }
+        );
+      } catch (notifErr) {
+        console.warn('Failed to send dues threshold notification:', notifErr);
+      }
     }
 
     try {

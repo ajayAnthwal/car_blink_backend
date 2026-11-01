@@ -52,11 +52,11 @@ export class ExecutiveInvoiceService {
     const ServiceModel = mongoose.model('Service');
     const serviceDoc = await ServiceModel.findById(booking.serviceId);
 
-    // Option A: Base quote is Customer Gross Quote (All-Inclusive of 18% GST)
+    // Base quote for Partner must be Partner's original submitted quote
     const baseQuoteAmount = Number(
-      booking.pricing?.customerGrossQuote ??
-      bid?.quotedAmount ??
+      bid?.originalQuotedAmount ??
       job.finalAmount ??
+      bid?.quotedAmount ??
       booking.pricing?.partnerBaseQuote ??
       0
     );

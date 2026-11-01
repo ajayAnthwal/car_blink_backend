@@ -901,26 +901,23 @@ export class PaymentService {
       const job = await JobModel.findOne({ bookingId });
       if (job) {
         job.finalAmount = totalJobPayable;
+        if (isPartner) {
+          job.cashCollectedByPartner = true;
+          job.cashCollectedAmount = amount;
+        }
         await job.save();
 
         if (job.partnerId) {
-          const priorOnlinePayments = await PaymentModel.find({
-            bookingId,
-            provider: { $ne: PAYMENT_PROVIDER.CASH },
-            status: PAYMENT_STATUS.SUCCESS,
-          });
-          const totalOnlinePaid = priorOnlinePayments.reduce(
-            (sum, p) => sum + (Number(p.amount) || 0),
-            0,
-          );
-          const totalJobAmount = totalJobPayable;
-          const totalCommission = Number((totalJobAmount * 0.15).toFixed(2));
-          const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
-
-          if (duesToAdd > 0) {
-            await PartnerModel.findByIdAndUpdate(job.partnerId, {
-              $inc: { outstandingDues: duesToAdd },
-            });
+          try {
+            const { WalletService } = require("../wallet/wallet.service");
+            await WalletService.processBookingCommission(
+              job.partnerId.toString(),
+              bookingId.toString(),
+              totalJobPayable,
+              'CASH'
+            );
+          } catch (walletErr) {
+            console.warn('[PaymentService] Error settling wallet commission for cash collection:', walletErr);
           }
         }
       }
@@ -1110,25 +1107,24 @@ export class PaymentService {
     await booking.save();
 
     if (job) {
+      job.cashCollectedByPartner = true;
+      job.cashCollectedAmount = payment.amount;
       job.finalAmount = totalJobPayable;
       await job.save();
-    }
 
-    // Deduct commission as outstanding dues only if not covered by online advance
-    const priorOnlinePayments = allSuccessfulPayments.filter(
-      (p) => p.provider !== PAYMENT_PROVIDER.CASH,
-    );
-    const totalOnlinePaid = priorOnlinePayments.reduce(
-      (sum, p) => sum + (Number(p.amount) || 0),
-      0,
-    );
-    const totalCommission = Number((totalJobPayable * 0.15).toFixed(2));
-    const duesToAdd = Math.max(0, totalCommission - totalOnlinePaid);
-
-    if (duesToAdd > 0) {
-      await PartnerModel.findByIdAndUpdate(job.partnerId, {
-        $inc: { outstandingDues: duesToAdd },
-      });
+      if (job.partnerId) {
+        try {
+          const { WalletService } = require("../wallet/wallet.service");
+          await WalletService.processBookingCommission(
+            job.partnerId.toString(),
+            booking._id.toString(),
+            totalJobPayable,
+            'CASH'
+          );
+        } catch (walletErr) {
+          console.warn('[PaymentService] Error settling wallet commission for verified cash payment:', walletErr);
+        }
+      }
     }
 
     if (payment.couponCode) {

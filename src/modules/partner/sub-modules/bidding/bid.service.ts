@@ -60,7 +60,8 @@ export class BidService {
         page, 
         limit,
         duesExceeded: true,
-        currentDues: Math.abs(wallet.balance)
+        currentDues: Math.abs(wallet.balance),
+        message: `Please settle outstanding commission of ₹${Math.abs(wallet.balance).toFixed(2)} to receive new leads.`
       } as any;
     }
 
@@ -131,7 +132,7 @@ export class BidService {
     if (wallet && wallet.balance < -1000) {
       throw new ApiError(
         403,
-        `Your outstanding wallet dues are ₹${Math.abs(wallet.balance)}. Please clear your dues in My Wallet to continue bidding on new leads.`,
+        `Please settle outstanding commission of ₹${Math.abs(wallet.balance).toFixed(2)} to receive new leads.`,
         ERROR_CODES.FORBIDDEN
       );
     }
@@ -167,6 +168,10 @@ export class BidService {
       bookingId: data.bookingId,
       partnerId: partner._id,
       quotedAmount: data.quotedAmount,
+      originalQuotedAmount: data.quotedAmount,
+      executiveQuoteAmount: data.quotedAmount,
+      executiveDiscount: 0,
+      isModifiedByExecutive: false,
       estimatedDuration: data.estimatedDuration,
       notes: data.notes,
       status: 'PENDING',
@@ -258,7 +263,15 @@ export class BidService {
       BidModel.countDocuments(filter),
     ]);
 
-    return { bids, total, page, limit };
+    const sanitizedBids = bids.map((b: any) => {
+      const bObj = b.toObject ? b.toObject() : { ...b };
+      if (bObj.originalQuotedAmount !== undefined && bObj.originalQuotedAmount > 0) {
+        bObj.quotedAmount = bObj.originalQuotedAmount;
+      }
+      return bObj;
+    });
+
+    return { bids: sanitizedBids as any, total, page, limit };
   }
 
   public static async withdrawBid(userId: string, bidId: string): Promise<IBid> {

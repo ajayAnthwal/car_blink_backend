@@ -49,8 +49,11 @@ export class SuperAdminBookingsService {
       .populate('assignedExecutiveId', 'fullName phone')
       .populate({
         path: 'acceptedBidId',
-        select: 'quotedAmount status partnerId',
-        populate: { path: 'partnerId', select: 'businessName' }
+        select: 'quotedAmount originalQuotedAmount executiveQuoteAmount executiveDiscount isModifiedByExecutive version status partnerId modifiedByUserId',
+        populate: [
+          { path: 'partnerId', select: 'businessName uniquePartnerId' },
+          { path: 'modifiedByUserId', select: 'fullName email' }
+        ]
       })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -94,11 +97,17 @@ export class SuperAdminBookingsService {
         .populate('assignedPartnerId', 'businessName uniquePartnerId userId contactNumber phone')
         .populate({
           path: 'acceptedBidId',
-          populate: {
-            path: 'partnerId',
-            select: 'businessName uniquePartnerId userId contactNumber',
-            populate: { path: 'userId', select: 'fullName email' }
-          }
+          populate: [
+            {
+              path: 'partnerId',
+              select: 'businessName uniquePartnerId userId contactNumber',
+              populate: { path: 'userId', select: 'fullName email phone' }
+            },
+            {
+              path: 'modifiedByUserId',
+              select: 'fullName email role phone'
+            }
+          ]
         })
         .lean();
     }
@@ -116,11 +125,17 @@ export class SuperAdminBookingsService {
           .populate('assignedPartnerId', 'businessName uniquePartnerId userId contactNumber phone')
           .populate({
             path: 'acceptedBidId',
-            populate: {
-              path: 'partnerId',
-              select: 'businessName uniquePartnerId userId contactNumber',
-              populate: { path: 'userId', select: 'fullName email' }
-            }
+            populate: [
+              {
+                path: 'partnerId',
+                select: 'businessName uniquePartnerId userId contactNumber',
+                populate: { path: 'userId', select: 'fullName email phone' }
+              },
+              {
+                path: 'modifiedByUserId',
+                select: 'fullName email role phone'
+              }
+            ]
           })
           .lean();
       }
@@ -134,17 +149,31 @@ export class SuperAdminBookingsService {
     const { JobModel } = require('../../../partner/sub-modules/jobs/job.model');
     const { PaymentModel } = require('../../../payment/payment.model');
 
-    const [invoice, job, payment] = await Promise.all([
+    const [invoice, job, payment, bids] = await Promise.all([
       InvoiceModel.findOne({ $or: [{ bookingId: booking._id }, { jobId: booking.jobId }] }).lean().catch(() => null),
       JobModel.findOne({ bookingId: booking._id }).lean().catch(() => null),
-      PaymentModel.findOne({ bookingId: booking._id }).lean().catch(() => null)
+      PaymentModel.findOne({ bookingId: booking._id }).lean().catch(() => null),
+      BidModel.find({ bookingId: booking._id })
+        .populate({
+          path: 'partnerId',
+          select: 'businessName uniquePartnerId userId contactNumber',
+          populate: { path: 'userId', select: 'fullName email phone' }
+        })
+        .populate({
+          path: 'modifiedByUserId',
+          select: 'fullName email role phone'
+        })
+        .sort({ createdAt: -1 })
+        .lean()
+        .catch(() => [])
     ]);
 
     return {
       ...booking,
       invoice,
       job,
-      payment
+      payment,
+      bids
     };
   }
 
@@ -290,14 +319,19 @@ export class SuperAdminBookingsService {
         if (!resolvedAmount && (booking as any).estimatedAmount) resolvedAmount = (booking as any).estimatedAmount;
 
         const advanceAmt = Math.round((resolvedAmount || 0) * 0.15);
+        const bypassPaymentId = new mongoose.Types.ObjectId();
 
         await PaymentModel.create({
+          _id: bypassPaymentId,
           bookingId: booking._id,
           customerId: booking.customerId,
           amount: advanceAmt > 0 ? advanceAmt : (resolvedAmount || 0),
+          currency: 'INR',
           paymentType: 'ADVANCE',
           status: 'SUCCESS',
           provider: 'SUPER_ADMIN_BYPASS',
+          providerOrderId: `BYPASS_${bypassPaymentId.toString()}`,
+          providerPaymentId: `PAY_BYPASS_${Date.now()}`,
           paidAt: new Date(),
         });
       }
