@@ -399,7 +399,7 @@ export class PaymentService {
               emitToUser(custIdStr, 'booking_confirmed', { bookingId: booking._id.toString(), status: booking.status });
               emitToUser(custIdStr, 'booking_updated', { bookingId: booking._id.toString(), status: booking.status });
               emitToUser(custIdStr, 'payment_success', { bookingId: booking._id.toString(), amount: payment.amount });
-            } catch (cErr) {}
+            } catch (cErr) { }
           }
 
           await booking.save();
@@ -769,7 +769,7 @@ export class PaymentService {
       throw new UnauthorizedError("You are not authorized for this booking");
     }
 
-    if (paymentType === PAYMENT_TYPE.ADVANCE) {
+    if (paymentType === a PAYMENT_TYPE.ADVANCE) {
       throw new BadRequestError("Advance booking deposit must be paid online via payment gateway. Cash payment is not permitted for advance deposits.");
     }
 
