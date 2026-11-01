@@ -779,21 +779,21 @@ export class PaymentService {
       .filter((e: any) => e.status === "APPROVED")
       .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
 
+    // Calculate customer's total gross payable (including executive pricing adjustments & approved extras)
     const baseQuote = Number(
       booking.pricing?.customerGrossQuote ||
       booking.acceptedQuoteAmount ||
       (booking.acceptedBidId as any)?.quotedAmount ||
       booking.totalAmount ||
+      booking.finalAmount ||
+      (job as any)?.invoice?.grandTotal ||
       0
     );
 
-    let totalJobPayable = Number(
-      (job as any)?.invoice?.grandTotal ||
-      (job?.finalAmount && job.finalAmount >= (baseQuote + approvedExtensionsCost) ? job.finalAmount : 0) ||
-      (booking.finalAmount && booking.finalAmount >= (baseQuote + approvedExtensionsCost) ? booking.finalAmount : 0) ||
-      (baseQuote + approvedExtensionsCost) ||
-      job?.finalAmount ||
-      0
+    let totalJobPayable = Math.max(
+      baseQuote + approvedExtensionsCost,
+      Number(booking.finalAmount || 0),
+      Number((job as any)?.invoice?.grandTotal || 0)
     );
 
     const priorPayments = await PaymentModel.find({
@@ -1075,16 +1075,15 @@ export class PaymentService {
       booking.acceptedQuoteAmount ||
       (booking.acceptedBidId as any)?.quotedAmount ||
       booking.totalAmount ||
+      booking.finalAmount ||
+      (job as any)?.invoice?.grandTotal ||
       0
     );
 
-    const totalJobPayable = Number(
-      (job as any)?.invoice?.grandTotal ||
-      (job?.finalAmount && job.finalAmount >= (baseQuote + approvedExtensionsCost) ? job.finalAmount : 0) ||
-      (booking.finalAmount && booking.finalAmount >= (baseQuote + approvedExtensionsCost) ? booking.finalAmount : 0) ||
-      (baseQuote + approvedExtensionsCost) ||
-      job?.finalAmount ||
-      0
+    const totalJobPayable = Math.max(
+      baseQuote + approvedExtensionsCost,
+      Number(booking.finalAmount || 0),
+      Number((job as any)?.invoice?.grandTotal || 0)
     );
 
     const allSuccessfulPayments = await PaymentModel.find({

@@ -126,14 +126,14 @@ export class WalletService {
     const booking = await BookingModel.findById(bookingId).populate('acceptedBidId').lean();
     const job = await JobModel.findOne({ bookingId }).populate('bidId').lean();
 
-    // 1. Calculate partner's legitimate share dynamically without hardcoded static amounts
-    const partnerBaseQuote = Number(
-      booking?.pricing?.partnerBaseQuote ??
-      (booking?.acceptedBidId as any)?.originalQuotedAmount ??
-      (booking?.acceptedBidId as any)?.quotedAmount ??
+    // 1. Calculate partner's legitimate base bid dynamically
+    const partnerBaseBid = Number(
       (job?.bidId as any)?.originalQuotedAmount ??
-      (job?.bidId as any)?.quotedAmount ??
+      (booking?.acceptedBidId as any)?.originalQuotedAmount ??
       job?.originalQuotedAmount ??
+      booking?.pricing?.partnerBaseQuote ??
+      (job?.bidId as any)?.quotedAmount ??
+      (booking?.acceptedBidId as any)?.quotedAmount ??
       0
     );
 
@@ -141,29 +141,32 @@ export class WalletService {
       .filter((e: any) => e.status === 'APPROVED')
       .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0) || (booking?.pricing?.approvedExtrasAmount || 0);
 
-    let partnerShare = 0;
-    if (partnerBaseQuote > 0) {
-      partnerShare = Number((partnerBaseQuote + approvedExtras).toFixed(2));
+    // 2. Partner Net Entitlement = (Partner Original Bid - 15% Platform Commission) + Approved Extras
+    let partnerNetEntitlement = 0;
+    let platformCommission = 0;
+    if (partnerBaseBid > 0) {
+      platformCommission = Number((partnerBaseBid * COMMISSION_RATE).toFixed(2));
+      partnerNetEntitlement = Number(((partnerBaseBid - platformCommission) + approvedExtras).toFixed(2));
     } else {
       // Safe fallback for legacy bookings where pricing breakdown is not present (15% platform commission)
-      const fallbackCommission = Number((totalAmount * COMMISSION_RATE).toFixed(2));
-      partnerShare = Number((totalAmount - fallbackCommission).toFixed(2));
+      platformCommission = Number((totalAmount * COMMISSION_RATE).toFixed(2));
+      partnerNetEntitlement = Number((totalAmount - platformCommission).toFixed(2));
     }
 
-    const customerTotal = Number(
-      (job?.invoice?.grandTotal ||
-       (booking?.pricing?.customerGrossQuote ? (booking.pricing.customerGrossQuote + approvedExtras) : 0) ||
+    const customerGrossTotal = Number(
+      ((booking?.pricing?.customerGrossQuote ? (booking.pricing.customerGrossQuote + approvedExtras) : 0) ||
        booking?.finalAmount ||
        totalAmount ||
        0).toFixed(2)
     );
 
-    const commissionAmount = Math.max(0, Number((customerTotal - partnerShare).toFixed(2)));
+    // Platform revenue = (Customer Total - Partner Net Entitlement)
+    const platformTotalRevenue = Math.max(0, Number((customerGrossTotal - partnerNetEntitlement).toFixed(2)));
 
     // Net settlement owed to partner wallet:
-    // Partner earned `partnerShare`. Partner already collected `cashCollected` physically in hand.
-    // So CarBlink needs to credit or debit:
-    const netWalletAdjustment = Number((partnerShare - cashCollected).toFixed(2));
+    // Partner earned `partnerNetEntitlement`. Partner collected `cashCollected` physically in hand.
+    // Excess cash in partner's hand beyond their entitlement must be debited from wallet to CarBlink.
+    const netWalletAdjustment = Number((partnerNetEntitlement - cashCollected).toFixed(2));
 
     if (netWalletAdjustment > 0) {
       // CarBlink holds online funds that belong to Partner -> Credit Partner Wallet
@@ -175,11 +178,11 @@ export class WalletService {
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: netWalletAdjustment,
         type: TRANSACTION_TYPE.CREDIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Settlement (Share: ₹${partnerShare.toFixed(2)}${cashCollected > 0 ? `, Cash Collected: -₹${cashCollected.toFixed(2)}` : ''})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Online Payment Settlement (Net Share: ₹${partnerNetEntitlement.toFixed(2)}${cashCollected > 0 ? `, Cash Collected: -₹${cashCollected.toFixed(2)}` : ''})`,
         balanceAfter: wallet.balance,
       });
     } else if (netWalletAdjustment < 0) {
-      // Partner collected cash in excess of their share -> Debit Partner Wallet (Negative balance / Commission due)
+      // Partner collected cash in excess of their entitlement -> Debit Partner Wallet (Commission / Markup due to CarBlink)
       const debitAmount = Math.abs(netWalletAdjustment);
       wallet.balance = Number((wallet.balance - debitAmount).toFixed(2));
       await wallet.save();
@@ -189,17 +192,17 @@ export class WalletService {
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: debitAmount,
         type: TRANSACTION_TYPE.DEBIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Cash Collection Commission Due (Cash Collected: ₹${cashCollected.toFixed(2)}, Partner Share: ₹${partnerShare.toFixed(2)})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Cash Collection Settlement (Collected: ₹${cashCollected.toFixed(2)}, Partner Share: ₹${partnerNetEntitlement.toFixed(2)}, Due to CarBlink: ₹${debitAmount.toFixed(2)})`,
         balanceAfter: wallet.balance,
       });
     } else {
-      // Exactly settled! (e.g. 15% advance online to CarBlink, exact cash matches partner share)
+      // Exactly settled! (e.g. online advance + cash matches partner share perfectly)
       await LedgerTransactionModel.create({
         walletId: wallet._id,
         bookingId: new mongoose.Types.ObjectId(bookingId),
         amount: 0,
         type: TRANSACTION_TYPE.CREDIT,
-        description: `Booking #${bookingId.toString().slice(-6)} - Fully Settled (Cash Collected: ₹${cashCollected.toFixed(2)}, Online Advance: ₹${onlineCollected.toFixed(2)})`,
+        description: `Booking #${bookingId.toString().slice(-6)} - Fully Settled (Cash Collected: ₹${cashCollected.toFixed(2)}, Partner Share: ₹${partnerNetEntitlement.toFixed(2)})`,
         balanceAfter: wallet.balance,
       });
     }
