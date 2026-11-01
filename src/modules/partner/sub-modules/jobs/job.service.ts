@@ -148,13 +148,30 @@ export class JobService {
 
       // Ensure partner ALWAYS sees their original submitted quote (plus any approved extras)
       const partnerOrigQuote = (job.bidId as any)?.originalQuotedAmount ?? (job.bookingId as any)?.acceptedBidId?.originalQuotedAmount ?? job.finalAmount;
+      const approvedExtras = (job.jobExtensions || [])
+        .filter((e: any) => e.status === 'APPROVED')
+        .reduce((sum: number, e: any) => sum + (Number(e.cost) || 0), 0);
+
       let displayFinalAmount = job.finalAmount;
       if (partnerOrigQuote !== undefined && partnerOrigQuote > 0) {
-        const approvedExtras = (job.jobExtensions || [])
-          .filter((e: any) => e.status === 'APPROVED')
-          .reduce((sum: number, e: any) => sum + (Number(e.cost) || 0), 0);
         displayFinalAmount = partnerOrigQuote + approvedExtras;
       }
+
+      // Customer package gross quote (customer must pay this, so partner knows remaining balance to collect)
+      const rawBooking = job.bookingId as any;
+      const actualCustomerGrossQuote = Number(
+        rawBooking?.pricing?.customerGrossQuote ??
+        rawBooking?.acceptedQuoteAmount ??
+        rawBooking?.totalAmount ??
+        rawBooking?.finalAmount ??
+        partnerOrigQuote
+      );
+
+      const customerTotalPayable = actualCustomerGrossQuote + approvedExtras;
+      const totalPaidSoFar = jobPayments
+        .filter((p: any) => p?.status === 'SUCCESS')
+        .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+      const customerRemainingDue = Math.max(0, Number((customerTotalPayable - totalPaidSoFar).toFixed(2)));
 
       // Sanitize bid objects in job payload for partner view
       const sanitizedBid = job.bidId && typeof job.bidId === 'object'
@@ -178,11 +195,11 @@ export class JobService {
         sanitizedBooking = {
           ...sanitizedBooking,
           acceptedBidId: sanitizedAcceptedBid,
-          pricing: sanitizedBooking.pricing ? {
-            ...sanitizedBooking.pricing,
-            customerGrossQuote: partnerOrigQuote,
-            partnerBaseQuote: partnerOrigQuote
-          } : sanitizedBooking.pricing
+          pricing: {
+            ...(sanitizedBooking.pricing || {}),
+            partnerBaseQuote: partnerOrigQuote,
+            customerGrossQuote: actualCustomerGrossQuote
+          }
         };
       }
 
@@ -192,6 +209,8 @@ export class JobService {
         originalQuotedAmount: partnerOrigQuote,
         bidId: sanitizedBid,
         bookingId: sanitizedBooking,
+        customerGrossQuote: actualCustomerGrossQuote,
+        customerRemainingDue,
         payments: jobPayments,
         invoice: inv,
         invoiceUrl: invUrl,
@@ -595,6 +614,7 @@ export class JobService {
     const updatedBooking = await BookingModel.findByIdAndUpdate(job.bookingId, {
       $set: { 
         status: BOOKING_STATUS.COMPLETED,
+        finalAmount: Math.max(baseQuotedAmount + approvedExtensionsCost, Number(bookingDoc?.finalAmount || 0)),
         ...(job.beforePhotos?.length ? { beforePhotos: job.beforePhotos } : {}),
         ...(job.afterPhotos?.length ? { afterPhotos: job.afterPhotos } : {})
       },

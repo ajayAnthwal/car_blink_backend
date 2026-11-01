@@ -581,9 +581,11 @@ export class BookingService {
       .filter((e: any) => e.status === 'APPROVED')
       .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
     const couponDisc = (booking as any).couponDiscountAmount || 0;
-    const resolvedTotal = jobDetails?.finalAmount
-      ? Number(jobDetails.finalAmount)
-      : Math.max(0, baseAmt + approvedExtsCost - couponDisc);
+    const customerAgreedTotal = Math.max(0, baseAmt + approvedExtsCost - couponDisc);
+    const resolvedTotal = Math.max(
+      customerAgreedTotal,
+      Number((booking as any).finalAmount || 0)
+    );
     const { advanceFor: bIdAdvanceFor } = require('../../../../common/utils/money.util');
     const bIdCalc = bIdAdvanceFor(resolvedTotal);
 
