@@ -60,6 +60,8 @@ export interface IBooking extends Document {
   partnerSuspendedAt?: Date;
   adminWorkflowFlag?: string;
   acceptedQuoteAmount?: number;
+  executiveQuoteAmount?: number;
+  executiveDiscount?: number;
   totalAmount?: number;
   finalAmount?: number;
   paymentStatus?: 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'REFUNDED';
@@ -275,6 +277,14 @@ const BookingSchema = new Schema<IBooking>(
     },
     acceptedQuoteAmount: {
       type: Number,
+    },
+    executiveQuoteAmount: {
+      type: Number,
+      default: 0,
+    },
+    executiveDiscount: {
+      type: Number,
+      default: 0,
     },
     totalAmount: {
       type: Number,

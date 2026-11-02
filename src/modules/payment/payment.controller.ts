@@ -13,6 +13,14 @@ export class PaymentController {
     return successResponse(res, result, 'Payment initiated successfully', 201);
   });
 
+  public static createPaymentLink = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = String(req.user?.userId);
+    const { bookingId, paymentType } = req.body;
+
+    const result = await paymentService.createShareablePaymentLink(customerId, bookingId, paymentType);
+    return successResponse(res, result, 'Payment link generated successfully', 201);
+  });
+
   public static verify = asyncHandler(async (req: IRequest, res: Response) => {
     const customerId = String(req.user?.userId);
     const { paymentId, orderId, signature } = req.body;

@@ -1205,6 +1205,125 @@ export class PaymentService {
   /**
    * Handle Razorpay webhook notifications
    */
+  /**
+   * Generate a third-party shareable Razorpay payment link (WhatsApp / Copy link)
+   */
+  async createShareablePaymentLink(
+    customerId: string,
+    bookingId: string,
+    paymentType: PAYMENT_TYPE
+  ): Promise<{
+    paymentUrl: string;
+    amount: number;
+    paymentType: PAYMENT_TYPE;
+    bookingId: string;
+    vehicleName?: string;
+  }> {
+    const booking: any = await BookingModel.findById(bookingId).populate('vehicleId').populate('serviceId');
+    if (!booking) {
+      throw new NotFoundError('Booking not found');
+    }
+
+    const { BookingService } = require('../customer/sub-modules/booking/booking.service');
+    const isOwner = await BookingService.verifyBookingCustomerAccess(booking, customerId);
+    if (!isOwner && booking.customerId.toString() !== customerId) {
+      throw new UnauthorizedError('You are not authorized for this booking');
+    }
+
+    let payableAmount = 0;
+    const priorPayments = await PaymentModel.find({
+      bookingId,
+      status: PAYMENT_STATUS.SUCCESS,
+    });
+    const totalPaidSoFar = priorPayments.reduce(
+      (sum, p) => sum + (Number(p.amount) || 0),
+      0
+    );
+
+    const job = await JobModel.findOne({ bookingId });
+    const approvedExtensionsCost = (job?.jobExtensions || [])
+      .filter((e: any) => e.status === 'APPROVED')
+      .reduce((sum: number, ext: any) => sum + (Number(ext.cost) || 0), 0);
+
+    const baseQuote = Number(
+      booking.pricing?.customerGrossQuote ||
+      booking.acceptedQuoteAmount ||
+      (booking.acceptedBidId as any)?.quotedAmount ||
+      booking.totalAmount ||
+      booking.finalAmount ||
+      0
+    );
+
+    const totalBookingPayable = Math.max(
+      baseQuote + approvedExtensionsCost,
+      Number(booking.finalAmount || 0)
+    );
+
+    if (paymentType === PAYMENT_TYPE.ADVANCE) {
+      const { advanceFor } = require('../../common/utils/money.util');
+      const advCalc = advanceFor(totalBookingPayable);
+      const advRequired = typeof booking.advanceAmount === 'number' && booking.advanceAmount > 0
+        ? booking.advanceAmount
+        : advCalc.advanceAmount;
+      const advancePaid = priorPayments
+        .filter((p) => p.paymentType === PAYMENT_TYPE.ADVANCE)
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      payableAmount = Math.max(0, advRequired - advancePaid);
+    } else {
+      payableAmount = Math.max(0, Math.round((totalBookingPayable - totalPaidSoFar) * 100) / 100);
+    }
+
+    if (payableAmount <= 0.01) {
+      throw new BadRequestError(`No pending ${paymentType.toLowerCase()} balance for this booking.`);
+    }
+
+    const vehicleInfo = booking.vehicleId && typeof booking.vehicleId === 'object'
+      ? `${(booking.vehicleId as any).brand || ''} ${(booking.vehicleId as any).model || ''} (${(booking.vehicleId as any).regNumber || ''})`.trim()
+      : 'Vehicle';
+
+    const { UserModel } = require('../user/user.model');
+    const customerUser = await UserModel.findById(booking.customerId);
+
+    // Call RazorpayProvider createPaymentLink
+    const paymentLinkResult = await razorpayProvider.createPaymentLink({
+      amount: payableAmount,
+      currency: 'INR',
+      description: `CarBlink ${paymentType === PAYMENT_TYPE.ADVANCE ? 'Advance Deposit' : 'Final Settlement'} - ${vehicleInfo}`,
+      customer: {
+        name: customerUser?.fullName || 'CarBlink Customer',
+        email: customerUser?.email || 'customer@carblink.in',
+        contact: customerUser?.phone || undefined,
+      },
+      notes: {
+        bookingId: booking._id.toString(),
+        paymentType,
+        source: 'SHAREABLE_LINK',
+      },
+      callbackUrl: `https://dashboard.carblink.in/customer/bookings/${booking._id}?paid=true`,
+    });
+
+    // Create a pending payment tracking record
+    await PaymentModel.create({
+      bookingId: booking._id,
+      customerId: booking.customerId,
+      amount: payableAmount,
+      baseAmount: payableAmount,
+      currency: 'INR',
+      paymentType,
+      provider: PAYMENT_PROVIDER.RAZORPAY,
+      providerOrderId: paymentLinkResult.paymentLinkId,
+      status: PAYMENT_STATUS.PENDING,
+    });
+
+    return {
+      paymentUrl: paymentLinkResult.shortUrl,
+      amount: payableAmount,
+      paymentType,
+      bookingId: booking._id.toString(),
+      vehicleName: vehicleInfo,
+    };
+  }
+
   async handleWebhook(payload: any, signature?: string): Promise<any> {
     const isMock = !env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET;
 
@@ -1292,6 +1411,46 @@ export class PaymentService {
             `Webhook successfully processed: Payment ${payment._id} set to SUCCESS`,
           );
         }
+      }
+    } else if (event === "payment_link.paid") {
+      const plinkEntity = payload.payload?.payment_link?.entity;
+      const paymentEntity = payload.payload?.payment?.entity;
+      const plinkId = plinkEntity?.id;
+      const paymentId = paymentEntity?.id;
+      const bookingId = plinkEntity?.notes?.bookingId;
+
+      let payment = plinkId ? await PaymentModel.findOne({ providerOrderId: plinkId }) : null;
+      if (!payment && bookingId) {
+        payment = await PaymentModel.findOne({ bookingId, status: PAYMENT_STATUS.PENDING });
+      }
+
+      if (payment && payment.status !== PAYMENT_STATUS.SUCCESS) {
+        payment.status = PAYMENT_STATUS.SUCCESS;
+        if (paymentId) payment.providerPaymentId = paymentId;
+        payment.paidAt = new Date();
+        await payment.save();
+
+        await PaymentService.autoConfirmBookingOnPayment(payment);
+
+        try {
+          const socketPayload = {
+            bookingId: payment.bookingId,
+            paymentId: payment._id,
+            status: payment.status,
+            amount: payment.amount,
+            type: payment.paymentType,
+            method: payment.provider,
+          };
+          emitToUser(payment.customerId.toString(), "payment_status_update", socketPayload);
+          const job = await JobModel.findOne({ bookingId: payment.bookingId });
+          if (job && job.partnerId) {
+            emitToUser(job.partnerId.toString(), "payment_status_update", socketPayload);
+          }
+        } catch (socketErr) {
+          logger.warn("Webhook socket emit failed for payment_link.paid:", socketErr);
+        }
+
+        logger.info(`Webhook successfully processed: Payment Link ${payment._id} set to SUCCESS`);
       }
     } else if (event === "payment.failed") {
       const paymentEntity = payload.payload?.payment?.entity;

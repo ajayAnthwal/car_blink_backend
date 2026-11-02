@@ -124,6 +124,77 @@ export class RazorpayProvider implements IPaymentProvider {
       throw error;
     }
   }
+
+  async createPaymentLink(params: {
+    amount: number;
+    currency?: string;
+    description: string;
+    customer?: {
+      name?: string;
+      email?: string;
+      contact?: string;
+    };
+    notes?: Record<string, any>;
+    callbackUrl?: string;
+  }): Promise<{ paymentLinkId: string; shortUrl: string; amount: number; currency: string }> {
+    const currency = params.currency || 'INR';
+    if (isMockMode) {
+      const mockId = `plink_mock_${crypto.randomUUID().replace(/-/g, '')}`;
+      return {
+        paymentLinkId: mockId,
+        shortUrl: `https://rzp.io/i/${mockId.slice(-8)}`,
+        amount: params.amount,
+        currency,
+      };
+    }
+
+    try {
+      const payload: any = {
+        amount: Math.round(params.amount * 100),
+        currency,
+        accept_partial: false,
+        description: params.description,
+        notes: params.notes || {},
+      };
+
+      if (params.customer) {
+        payload.customer = {
+          name: params.customer.name || 'Valued Customer',
+          email: params.customer.email || 'customer@carblink.in',
+          contact: params.customer.contact ? String(params.customer.contact).replace(/^\+91/, '').trim() : undefined,
+        };
+      }
+
+      if (params.callbackUrl) {
+        payload.callback_url = params.callbackUrl;
+        payload.callback_method = 'get';
+      }
+
+      const response = await this.client.paymentLink.create(payload);
+
+      return {
+        paymentLinkId: response.id,
+        shortUrl: response.short_url,
+        amount: params.amount,
+        currency,
+      };
+    } catch (error: any) {
+      logger.error('Razorpay createPaymentLink error:', error);
+      throw error;
+    }
+  }
+
+  async fetchPaymentLink(paymentLinkId: string): Promise<any> {
+    if (isMockMode || !paymentLinkId || paymentLinkId.startsWith('plink_mock_')) {
+      return null;
+    }
+    try {
+      return await this.client.paymentLink.fetch(paymentLinkId);
+    } catch (error: any) {
+      logger.warn('Razorpay fetchPaymentLink error:', error?.message || error);
+      return null;
+    }
+  }
 }
 
 export const razorpayProvider = new RazorpayProvider();

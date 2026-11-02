@@ -406,6 +406,8 @@ export class BookingService {
         hasPaidAdvance: hasPaidAdvanceStrict,
         isAdvancePaid: hasPaidAdvanceStrict,
         acceptedQuoteAmount: (b.acceptedBidId as any)?.quotedAmount || 0,
+        executiveDiscount: (b.acceptedBidId as any)?.executiveDiscount || (b as any).executiveDiscount || 0,
+        executiveQuoteAmount: (b.acceptedBidId as any)?.executiveQuoteAmount || (b as any).executiveQuoteAmount || 0,
         verificationCode: hasPaidAdvanceStrict ? b.verificationCode : null,
         jobDetails: bSanitizedJobDetails,
         jobExtensions: bCustomerExts,
@@ -461,6 +463,12 @@ export class BookingService {
 
     // Fetch associated job details (which includes photos and extensions)
     const jobDetails = await JobModel.findOne({ bookingId }).lean();
+
+    // Reconcile any unconfirmed payments if needed
+    try {
+      const { PaymentService } = require('../../../payment/payment.service');
+      await PaymentService.reconcileBookingPayments(bookingId);
+    } catch (recErr) {}
 
     // Fetch payments
     // PaymentModel imported at top
@@ -604,6 +612,8 @@ export class BookingService {
       isAdvancePaid: hasPaid15PercentAdvance,
       acceptedBidId: acceptedBidDoc || booking.acceptedBidId,
       acceptedQuoteAmount: acceptedBidDoc?.quotedAmount || 0,
+      executiveDiscount: acceptedBidDoc?.executiveDiscount || (booking as any).executiveDiscount || 0,
+      executiveQuoteAmount: acceptedBidDoc?.executiveQuoteAmount || (booking as any).executiveQuoteAmount || 0,
       assignedPartnerId: assignedPartner,
       verificationCode: isUnlocked ? booking.verificationCode : null,
       jobDetails: sanitizedJobDetails,
@@ -943,6 +953,9 @@ export class BookingService {
     booking.status = BOOKING_STATUS.CUSTOMER_ACCEPTED;
     booking.acceptedBidId = selectedBid._id;
     (booking as any).assignedPartnerId = selectedBid.partnerId?._id || selectedBid.partnerId;
+    (booking as any).executiveDiscount = selectedBid.executiveDiscount || 0;
+    (booking as any).executiveQuoteAmount = selectedBid.executiveQuoteAmount || selectedBid.quotedAmount;
+    (booking as any).acceptedQuoteAmount = selectedBid.quotedAmount;
 
     // Server-side pricing calculation and storage
     const { buildPricing } = require('../../../../common/utils/pricing.util');

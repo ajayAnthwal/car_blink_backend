@@ -22,3 +22,10 @@ export const verifyPaymentSchema = z.object({
 export const verifyOfflinePaymentSchema = z.object({
   paymentId: z.string().regex(objectIdRegex, 'Invalid paymentId format'),
 });
+
+export const createPaymentLinkSchema = z.object({
+  bookingId: z.string().regex(objectIdRegex, 'Invalid bookingId format'),
+  paymentType: z.nativeEnum(PAYMENT_TYPE, {
+    errorMap: () => ({ message: 'Invalid paymentType' }),
+  }),
+});
