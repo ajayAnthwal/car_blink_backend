@@ -382,6 +382,29 @@ export class LeadService {
       } catch (srvErr) {}
     }
 
+    // Normalize and preserve vehicle and address fields
+    if ((data as any).fuelType) {
+      data.fuelType = String((data as any).fuelType).toUpperCase().trim();
+    }
+    if ((data as any).vehicleNumber) {
+      data.vehicleNumber = String((data as any).vehicleNumber).toUpperCase().trim();
+    }
+    const rawLeadAddress = (data as any).address || (data as any).location;
+    if (rawLeadAddress && typeof rawLeadAddress === 'string') {
+      data.address = rawLeadAddress.trim();
+    }
+    if ((data as any).latitude !== undefined && (data as any).latitude !== null) {
+      const latNum = Number((data as any).latitude);
+      if (!isNaN(latNum)) data.latitude = latNum;
+    }
+    if ((data as any).longitude !== undefined && (data as any).longitude !== null) {
+      const lngNum = Number((data as any).longitude);
+      if (!isNaN(lngNum)) data.longitude = lngNum;
+    }
+    if ((data as any).services && Array.isArray((data as any).services)) {
+      data.services = (data as any).services.map((s: any) => String(s).trim()).filter(Boolean);
+    }
+
     const lead = await LeadModel.create(data);
     
     // 2. Trigger Interakt WhatsApp Welcome Alert to Customer

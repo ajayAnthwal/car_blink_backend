@@ -527,17 +527,18 @@ export class AssignmentService {
    * Convert Website Lead to a Booking
    */
   async convertWebsiteLeadToBooking(
-    leadId: string, 
-    serviceId: string, 
-    cityId: string, 
-    vehicleBrand: string, 
-    vehicleModel: string
+    leadId: string,
+    serviceId: string,
+    cityId: string,
+    vehicleBrand: string,
+    vehicleModel: string,
+    extraData?: { fuelType?: string; vehicleNumber?: string }
   ): Promise<any> {
     const LeadModel = mongoose.model('Lead');
     const UserModel = mongoose.model('User');
     const GarageModel = mongoose.model('Garage');
 
-    const lead = await LeadModel.findById(leadId);
+    const lead: any = await LeadModel.findById(leadId);
     if (!lead) {
       throw new NotFoundError('Website Lead not found');
     }
@@ -573,26 +574,62 @@ export class AssignmentService {
 
       const fallbackEmail = `${cleanPhone || lead._id.toString()}@guest.carblink.com`;
       userData.email = cleanEmail || fallbackEmail;
+      if (lead.address) userData.address = lead.address;
+      if (cityId) userData.cityId = cityId;
 
       user = await UserModel.create(userData);
+    } else {
+      let userUpdated = false;
+      if (lead.address && !user.address) {
+        user.address = lead.address;
+        userUpdated = true;
+      }
+      if (cityId && !user.cityId) {
+        user.cityId = cityId;
+        userUpdated = true;
+      }
+      if (userUpdated) {
+        await user.save().catch(() => {});
+      }
     }
 
-    // 2. Find or create a generic garage vehicle for this user
-    let vehicle = await GarageModel.findOne({ 
-      customerId: user._id, 
-      brand: vehicleBrand || lead.vehicleBrand || 'Generic Brand',
-      model: vehicleModel || lead.vehicleModel || 'Generic Model'
+    // Resolve vehicle details accurately from extraData, lead, or fallback
+    const resolvedBrand = (vehicleBrand || lead.vehicleBrand || 'Generic Brand').trim();
+    const resolvedModel = (vehicleModel || lead.vehicleModel || 'Generic Model').trim();
+    const resolvedFuelType = (extraData?.fuelType || lead.fuelType || 'PETROL').toUpperCase().trim();
+    const resolvedRegNumber = (extraData?.vehicleNumber || lead.vehicleNumber || 'NEW').toUpperCase().trim();
+
+    // 2. Find or create a garage vehicle for this user
+    let vehicle = await GarageModel.findOne({
+      customerId: user._id,
+      brand: new RegExp(`^${resolvedBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+      model: new RegExp(`^${resolvedModel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
     });
-    
+
     if (!vehicle) {
       vehicle = await GarageModel.create({
         customerId: user._id,
-        brand: vehicleBrand || lead.vehicleBrand || 'Generic Brand',
-        model: vehicleModel || lead.vehicleModel || 'Generic Model',
-        registrationNumber: 'NEW',
-        fuelType: 'PETROL',
-        year: new Date().getFullYear()
+        brand: resolvedBrand,
+        model: resolvedModel,
+        registrationNumber: resolvedRegNumber,
+        fuelType: resolvedFuelType,
+        year: new Date().getFullYear(),
+        isActive: true
       });
+    } else {
+      // If vehicle exists but has placeholder values, update with actual data from lead
+      let vehicleUpdated = false;
+      if (vehicle.registrationNumber === 'NEW' && resolvedRegNumber !== 'NEW') {
+        vehicle.registrationNumber = resolvedRegNumber;
+        vehicleUpdated = true;
+      }
+      if ((!vehicle.fuelType || vehicle.fuelType === 'PETROL') && resolvedFuelType && resolvedFuelType !== 'PETROL') {
+        vehicle.fuelType = resolvedFuelType;
+        vehicleUpdated = true;
+      }
+      if (vehicleUpdated) {
+        await vehicle.save().catch(() => {});
+      }
     }
 
     // 3. Link or Reuse Existing Booking (prevent duplicate bookings for the same lead)
@@ -611,6 +648,15 @@ export class AssignmentService {
       }).sort({ createdAt: -1 });
     }
 
+    // Coordinates resolution
+    let geoPoint: any = null;
+    if (lead.latitude && lead.longitude) {
+      geoPoint = {
+        type: 'Point',
+        coordinates: [lead.longitude, lead.latitude]
+      };
+    }
+
     if (booking) {
       // Update existing booking with converted details rather than creating a duplicate
       booking.serviceId = serviceId;
@@ -619,17 +665,27 @@ export class AssignmentService {
       if (lead.message) {
         booking.description = lead.message;
       }
+      if (lead.address && !booking.address) {
+        booking.address = lead.address;
+      }
+      if (geoPoint && !booking.location) {
+        booking.location = geoPoint;
+      }
       await booking.save();
     } else {
       // Create only if no existing booking found
-      booking = await BookingModel.create({
+      const newBookingPayload: any = {
         customerId: user._id,
         vehicleId: vehicle._id,
         serviceId: serviceId,
         cityId: cityId,
         description: lead.message || 'Created from Website Lead',
         status: BOOKING_STATUS.PENDING
-      });
+      };
+      if (lead.address) newBookingPayload.address = lead.address;
+      if (geoPoint) newBookingPayload.location = geoPoint;
+
+      booking = await BookingModel.create(newBookingPayload);
     }
 
     // 4. Update Lead Status and link bookingId

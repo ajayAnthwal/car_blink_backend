@@ -51,8 +51,8 @@ export class AssignmentController {
 
   public static convertWebsiteLeadToBooking = asyncHandler(async (req: IRequest, res: Response) => {
     const { id } = req.params;
-    const { serviceId, cityId, vehicleBrand, vehicleModel } = req.body;
-    const booking = await assignmentService.convertWebsiteLeadToBooking(id, serviceId, cityId, vehicleBrand, vehicleModel);
+    const { serviceId, cityId, vehicleBrand, vehicleModel, fuelType, vehicleNumber } = req.body;
+    const booking = await assignmentService.convertWebsiteLeadToBooking(id, serviceId, cityId, vehicleBrand, vehicleModel, { fuelType, vehicleNumber });
     return successResponse(res, booking, 'Website lead converted to booking successfully');
   });
 

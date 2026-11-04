@@ -26,6 +26,12 @@ export interface ILead extends Document {
   serviceIds?: mongoose.Types.ObjectId[];
   vehicleBrand?: string;
   vehicleModel?: string;
+  vehicleNumber?: string;
+  fuelType?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  services?: string[];
   city?: string;
   message?: string;
   query?: string;
@@ -55,6 +61,12 @@ const LeadSchema = new Schema<ILead>(
     serviceIds: [{ type: Schema.Types.ObjectId, ref: 'Service' }],
     vehicleBrand: { type: String, trim: true },
     vehicleModel: { type: String, trim: true },
+    vehicleNumber: { type: String, trim: true },
+    fuelType: { type: String, trim: true },
+    address: { type: String, trim: true },
+    latitude: { type: Number },
+    longitude: { type: Number },
+    services: [{ type: String, trim: true }],
     city: { type: String, trim: true },
     message: { type: String, trim: true },
     customServiceName: { type: String, trim: true },
