@@ -148,6 +148,7 @@ export class SuperAdminBookingsService {
     const { InvoiceModel } = require('../../../partner/sub-modules/jobs/invoice.model');
     const { JobModel } = require('../../../partner/sub-modules/jobs/job.model');
     const { PaymentModel } = require('../../../payment/payment.model');
+    const { SettlementModel } = require('../../../accounts/sub-modules/settlements/settlement.model');
 
     const [invoice, job, payment, bids] = await Promise.all([
       InvoiceModel.findOne({ $or: [{ bookingId: booking._id }, { jobId: booking.jobId }] }).lean().catch(() => null),
@@ -168,12 +169,18 @@ export class SuperAdminBookingsService {
         .catch(() => [])
     ]);
 
+    let settlement = null;
+    if (job?._id) {
+      settlement = await SettlementModel.findOne({ jobId: job._id }).lean().catch(() => null);
+    }
+
     return {
       ...booking,
       invoice,
       job,
       payment,
-      bids
+      bids,
+      settlement
     };
   }
 

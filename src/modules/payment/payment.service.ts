@@ -1361,10 +1361,32 @@ export class PaymentService {
       const orderId = paymentEntity?.order_id;
       const paymentId = paymentEntity?.id;
 
-      if (orderId && paymentId) {
-        const payment = await PaymentModel.findOne({
-          providerOrderId: orderId,
-        });
+      if (paymentId) {
+        let payment: any = null;
+        if (orderId) {
+          payment = await PaymentModel.findOne({
+            providerOrderId: orderId,
+          });
+        }
+
+        // Fallback for payment links (where providerOrderId was saved as plink_xxxx)
+        if (!payment && paymentEntity?.notes?.bookingId) {
+          const bookingId = paymentEntity.notes.bookingId;
+          const pType = paymentEntity.notes.paymentType;
+          const filter: any = {
+            bookingId,
+            status: { $in: [PAYMENT_STATUS.CREATED, PAYMENT_STATUS.PENDING] },
+          };
+          if (pType) filter.paymentType = pType;
+          payment = await PaymentModel.findOne(filter).sort({ createdAt: -1 });
+        }
+
+        if (!payment && paymentEntity?.invoice_id) {
+          payment = await PaymentModel.findOne({
+            providerOrderId: paymentEntity.invoice_id,
+          });
+        }
+
         if (payment && payment.status !== PAYMENT_STATUS.SUCCESS) {
           payment.status = PAYMENT_STATUS.SUCCESS;
           if (paymentId) payment.providerPaymentId = paymentId;
@@ -1416,12 +1438,14 @@ export class PaymentService {
       const plinkEntity = payload.payload?.payment_link?.entity;
       const paymentEntity = payload.payload?.payment?.entity;
       const plinkId = plinkEntity?.id;
-      const paymentId = paymentEntity?.id;
+      const paymentId = paymentEntity?.id || 
+        (plinkEntity?.payments && plinkEntity.payments[0]?.payment_id) || 
+        (plinkEntity?.payments && plinkEntity.payments[0]?.id);
       const bookingId = plinkEntity?.notes?.bookingId;
 
       let payment = plinkId ? await PaymentModel.findOne({ providerOrderId: plinkId }) : null;
       if (!payment && bookingId) {
-        payment = await PaymentModel.findOne({ bookingId, status: PAYMENT_STATUS.PENDING });
+        payment = await PaymentModel.findOne({ bookingId, status: { $in: [PAYMENT_STATUS.CREATED, PAYMENT_STATUS.PENDING] } }).sort({ createdAt: -1 });
       }
 
       if (payment && payment.status !== PAYMENT_STATUS.SUCCESS) {
@@ -1493,9 +1517,23 @@ export class PaymentService {
         }
 
         try {
-          const paymentsRes = await razorpayProvider.fetchOrderPayments(payment.providerOrderId);
-          const items = paymentsRes?.items || [];
-          const capturedPayment = items.find((p: any) => p.status === 'captured');
+          let capturedPayment: any = null;
+
+          if (payment.providerOrderId.startsWith('plink_')) {
+            const plinkRes = await razorpayProvider.fetchPaymentLink(payment.providerOrderId);
+            if (plinkRes && (plinkRes.status === 'paid' || (plinkRes.amount_paid && plinkRes.amount_paid >= (plinkRes.amount || 0)))) {
+              const plinkPayments = plinkRes.payments || [];
+              const pItem = plinkPayments.find((p: any) => p.status === 'captured') || plinkPayments[0];
+              capturedPayment = {
+                id: pItem?.payment_id || pItem?.id || payment.providerPaymentId || plinkRes.id,
+                created_at: pItem?.created_at || Math.floor(Date.now() / 1000),
+              };
+            }
+          } else {
+            const paymentsRes = await razorpayProvider.fetchOrderPayments(payment.providerOrderId);
+            const items = paymentsRes?.items || [];
+            capturedPayment = items.find((p: any) => p.status === 'captured');
+          }
 
           if (capturedPayment) {
             payment.status = PAYMENT_STATUS.SUCCESS;
