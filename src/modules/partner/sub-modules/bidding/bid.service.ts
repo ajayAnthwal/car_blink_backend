@@ -112,7 +112,27 @@ export class BidService {
       BookingModel.countDocuments(filter),
     ]);
 
-    return { bookings, total, page, limit };
+    // Attach assignment notes to bookings so partners always receive specific executive instructions
+    try {
+      const bookingIds = bookings.map((b: any) => b._id);
+      const { AssignmentModel } = require('../../../executive/sub-modules/lead-assignment/assignment.model');
+      const assignments = await AssignmentModel.find({ bookingId: { $in: bookingIds } }).lean();
+      const assignmentMap = new Map<string, any>(assignments.map((a: any) => [a.bookingId.toString(), a]));
+
+      const enrichedBookings = bookings.map((doc: any) => {
+        const b = doc.toObject ? doc.toObject() : doc;
+        const a: any = assignmentMap.get(b._id.toString());
+        return {
+          ...b,
+          remarks: b.remarks || a?.notes || '',
+          assignment: a || undefined,
+        };
+      });
+
+      return { bookings: enrichedBookings as any, total, page, limit };
+    } catch (e) {
+      return { bookings, total, page, limit };
+    }
   }
 
   public static async placeBid(

@@ -71,6 +71,7 @@ export class AccountsService {
     const [payments, total] = await Promise.all([
       PaymentModel.find(filter)
         .populate('customerId', 'fullName email phone')
+        .populate('bookingId', 'bookingNumber paymentMode status remarks')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -78,17 +79,25 @@ export class AccountsService {
       PaymentModel.countDocuments(filter)
     ]);
 
-    const transactions = payments.map((p: any) => ({
-      _id: p._id,
-      transactionId: p.providerPaymentId || p.providerOrderId || String(p._id).slice(-8),
-      bookingId: p.bookingId,
-      customer: p.customerId,
-      amount: p.amount,
-      paymentType: p.paymentType,
-      method: p.provider || 'RAZORPAY',
-      status: p.status,
-      createdAt: p.createdAt
-    }));
+    const transactions = payments.map((p: any) => {
+      const isCash = p.provider === 'CASH' || p.bookingId?.paymentMode === 'CASH' || p.paymentMode === 'CASH';
+      return {
+        _id: p._id,
+        transactionId: p.providerPaymentId || p.providerOrderId || String(p._id).slice(-8),
+        bookingId: p.bookingId?._id || p.bookingId,
+        bookingNumber: p.bookingId?.bookingNumber,
+        bookingPaymentMode: p.bookingId?.paymentMode,
+        customer: p.customerId,
+        amount: p.amount,
+        paymentType: p.paymentType,
+        method: isCash ? 'CASH' : (p.provider || 'RAZORPAY'),
+        provider: p.provider || (isCash ? 'CASH' : 'RAZORPAY'),
+        paymentMode: isCash ? 'CASH' : 'ONLINE',
+        status: p.status,
+        createdAt: p.createdAt,
+        paidAt: p.paidAt
+      };
+    });
 
     return { transactions, total, page, limit };
   }

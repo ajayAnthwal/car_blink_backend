@@ -270,23 +270,26 @@ export class AssignmentService {
       }
     }
 
+    const effectiveNotes = (notes !== undefined && notes !== '') ? notes : (booking.remarks || undefined);
+
     const assignment = await AssignmentModel.findOneAndUpdate(
       { bookingId: new mongoose.Types.ObjectId(bookingId) },
       {
         assignedExecutiveId: executiveId,
         assignedPartnerIds: partnerIds && partnerIds.length > 0 ? partnerIds : undefined,
         assignmentType: ASSIGNMENT_TYPE.MANUALLY_ASSIGNED,
-        notes,
+        notes: effectiveNotes,
       },
       { upsert: true, new: true }
     )
       .populate('assignedExecutiveId', 'fullName email')
       .populate('assignedPartnerIds', 'businessName isVerified');
 
-    // Store assignedPartnerId in the booking record
+    // Store assignedPartnerId in the booking record and persist remarks/notes
     await BookingModel.findByIdAndUpdate(bookingId, {
       assignedExecutiveId: executiveId,
       assignedPartnerId: partnerIds && partnerIds.length > 0 ? partnerIds[0] : null,
+      ...(effectiveNotes ? { remarks: effectiveNotes } : {}),
     });
 
     // Notify ONLY the selected partner(s) (do NOT broadcast to all partners)
@@ -520,6 +523,70 @@ export class AssignmentService {
     }
 
     await booking.save();
+
+    // Sync with AssignmentModel notes if exists or upsert it
+    try {
+      const { AssignmentModel } = require('./assignment.model');
+      if (AssignmentModel && updateData.remarks !== undefined) {
+        await AssignmentModel.findOneAndUpdate(
+          { bookingId: booking._id },
+          { $set: { notes: updateData.remarks } },
+          { upsert: false }
+        );
+      }
+    } catch (e) {
+      console.error('Failed to sync assignment notes:', e);
+    }
+
+    // If partner(s) assigned, notify them immediately in real time
+    if (updateData.remarks !== undefined) {
+      try {
+        const partnerIdsToNotify = new Set<string>();
+        if (booking.assignedPartnerId) {
+          partnerIdsToNotify.add(booking.assignedPartnerId.toString());
+        }
+        const { AssignmentModel } = require('./assignment.model');
+        const assignment = await AssignmentModel.findOne({ bookingId: booking._id });
+        if (assignment && Array.isArray(assignment.assignedPartnerIds)) {
+          for (const pId of assignment.assignedPartnerIds) {
+            if (pId) partnerIdsToNotify.add(pId.toString());
+          }
+        }
+
+        if (partnerIdsToNotify.size > 0) {
+          const { PartnerModel } = require('../../../partner/partner.model');
+          const { NotificationModel } = require('../../../notification/notification.model');
+          const { emitToUser } = require('../../../../config/socket.io');
+
+          const partners = await PartnerModel.find({ _id: { $in: Array.from(partnerIdsToNotify) } });
+          for (const partner of partners) {
+            if (partner && partner.userId) {
+              emitToUser(partner.userId.toString(), 'lead_notes_updated', {
+                bookingId: booking._id.toString(),
+                notes: updateData.remarks,
+              });
+              emitToUser(partner.userId.toString(), 'booking_updated', {
+                bookingId: booking._id.toString(),
+                remarks: updateData.remarks,
+              });
+              await NotificationModel.create({
+                userId: partner.userId,
+                title: 'Lead Instructions Updated',
+                message: `Executive updated instructions for booking #${booking.bookingNumber || booking._id.toString().slice(-6).toUpperCase()}: "${updateData.remarks}"`,
+                type: 'IN_APP',
+                category: 'BOOKING_UPDATE',
+                status: 'SENT',
+                metadata: { bookingId: booking._id.toString() },
+                isRead: false,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to notify partner of remarks update:', e);
+      }
+    }
+
     return booking;
   }
 
