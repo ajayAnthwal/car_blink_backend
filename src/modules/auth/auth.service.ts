@@ -696,8 +696,8 @@ export class AuthService {
     return { message: 'Password has been reset successfully' };
   }
 
-  public static async getCurrentUser(userId: string): Promise<Partial<IUser>> {
-    const user = await UserModel.findById(userId);
+  public static async getCurrentUser(userId: string): Promise<Partial<IUser> & { hasCustomPassword?: boolean }> {
+    const user = await UserModel.findById(userId).select('+password');
     if (!user) {
       throw new NotFoundError('User not found');
     }
@@ -709,8 +709,12 @@ export class AuthService {
       await user.save();
     }
     
-    const userObj = user.toObject();
+    const isDefaultOtpPassword = user.password ? await user.comparePassword('CarBlink@123') : false;
+    const hasCustomPassword = Boolean(user.password && !isDefaultOtpPassword);
+
+    const userObj: any = user.toObject();
     delete userObj.password;
+    userObj.hasCustomPassword = hasCustomPassword;
     await AuthService.populatePartnerDetails(userObj, user._id);
 
     return userObj;

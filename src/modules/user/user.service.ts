@@ -1,6 +1,7 @@
 import { UserModel, IUser } from './user.model';
 import { NotFoundError } from '../../common/errors/NotFoundError';
 import { UnauthorizedError } from '../../common/errors/UnauthorizedError';
+import { BadRequestError } from '../../common/errors/BadRequestError';
 
 export class UserService {
   public static async getUserProfile(userId: string): Promise<Partial<IUser>> {
@@ -40,25 +41,23 @@ export class UserService {
       throw new NotFoundError('User not found');
     }
 
-    let isMatch = false;
-    if (currentPassword) {
-      isMatch = await user.comparePassword(currentPassword);
-    }
-    if (!isMatch) {
-      const isDefaultOtpPassword = await user.comparePassword('CarBlink@123');
-      if (isDefaultOtpPassword || !user.password || !currentPassword) {
-        isMatch = true;
-      }
-    }
+    const isDefaultOtpPassword = user.password ? await user.comparePassword('CarBlink@123') : true;
 
-    if (!isMatch) {
-      throw new UnauthorizedError('Current password is incorrect');
+    if (!isDefaultOtpPassword) {
+      // Account HAS a custom password: currentPassword is required and must match
+      if (!currentPassword || typeof currentPassword !== 'string' || currentPassword.trim() === '') {
+        throw new BadRequestError('Current password is required');
+      }
+      const isMatch = await user.comparePassword(currentPassword);
+      if (!isMatch) {
+        throw new UnauthorizedError('Current password is incorrect');
+      }
     }
 
     user.password = newPassword;
     await user.save();
 
-    return { message: 'Password changed successfully' };
+    return { message: isDefaultOtpPassword ? 'Password set successfully' : 'Password changed successfully' };
   }
 
   public static async deactivateOwnAccount(userId: string): Promise<{ success: boolean }> {
