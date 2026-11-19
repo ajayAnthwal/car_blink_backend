@@ -90,11 +90,18 @@ export class RefundService {
       throw new ConflictError('This payment has already been refunded');
     }
 
+    // 15% CarBlink Platform Fee retention (15% retained by platform, 85% returned to customer)
+    const grossAmount = Number(data.amount);
+    const platformFeeRate = 0.15;
+    const platformFee = Number((grossAmount * platformFeeRate).toFixed(2));
+    const customerRefundAmount = Number((grossAmount - platformFee).toFixed(2));
+
     const refund = await RefundModel.create({
       paymentId: data.paymentId,
       bookingId: payment.bookingId,
       customerId: payment.customerId,
-      amount: data.amount,
+      amount: customerRefundAmount,
+      deductionAmount: platformFee,
       reason: data.reason,
       status: 'REQUESTED',
       processedByAccountsId: accountsId,
@@ -147,6 +154,15 @@ export class RefundService {
     // Update related Payment status to REFUNDED and issue actual Razorpay Refund
     const payment = await PaymentModel.findById(refund.paymentId);
     if (payment) {
+      // Safeguard: Ensure 15% CarBlink platform fee is retained if not already deducted
+      if ((!refund.deductionAmount || refund.deductionAmount === 0) && refund.amount === payment.amount) {
+        const platformFeeRate = 0.15;
+        const fee = Number((refund.amount * platformFeeRate).toFixed(2));
+        refund.deductionAmount = fee;
+        refund.amount = Number((refund.amount - fee).toFixed(2));
+        await refund.save();
+      }
+
       if (payment.providerPaymentId) {
         try {
           const providerRefundId = await razorpayProvider.issueRefund(
@@ -184,6 +200,21 @@ export class RefundService {
     refund.status = 'PROCESSED';
     refund.processedByAccountsId = accountsId as any;
     await refund.save();
+
+    // Update cancellationDetails status on Booking if exists
+    try {
+      if (refund.bookingId) {
+        const BookingModel = mongoose.model('Booking');
+        await BookingModel.findByIdAndUpdate(refund.bookingId, {
+          $set: {
+            'cancellationDetails.accountsStatus': 'PROCESSED',
+            'cancellationDetails.accountsProcessedAt': new Date(),
+          },
+        });
+      }
+    } catch (bookingErr: any) {
+      logger.warn('Failed to update booking accountsStatus to PROCESSED:', bookingErr);
+    }
 
     // Trigger customer & accounts notification (try-catch wrapped)
     try {
@@ -254,6 +285,21 @@ export class RefundService {
     refund.rejectionReason = rejectionReason;
     refund.processedByAccountsId = accountsId as any;
     await refund.save();
+
+    // Update cancellationDetails status on Booking if exists
+    try {
+      if (refund.bookingId) {
+        const BookingModel = mongoose.model('Booking');
+        await BookingModel.findByIdAndUpdate(refund.bookingId, {
+          $set: {
+            'cancellationDetails.accountsStatus': 'REJECTED',
+            'cancellationDetails.accountsProcessedAt': new Date(),
+          },
+        });
+      }
+    } catch (bookingErr: any) {
+      logger.warn('Failed to update booking accountsStatus to REJECTED:', bookingErr);
+    }
 
     return refund;
   }

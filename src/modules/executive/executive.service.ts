@@ -868,10 +868,14 @@ export class ExecutiveService {
     });
     const totalPaid = (successfulPayments || []).reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
 
-    const deduction = Math.max(0, Number(data.deductionAmount) || 0);
-    const authorizedAmount = data.authorizedRefundAmount !== undefined 
-      ? Number(data.authorizedRefundAmount) 
-      : Math.max(0, totalPaid - deduction);
+    // 15% CarBlink Platform Fee retention (15% retained by platform, 85% returned to customer)
+    const platformFeeRate = 0.15;
+    const defaultPlatformFee = Number((totalPaid * platformFeeRate).toFixed(2));
+    const deduction = Math.max(defaultPlatformFee, Number(data.deductionAmount) || 0);
+    const netCustomerRefund = Math.max(0, Number((totalPaid - deduction).toFixed(2)));
+    const authorizedAmount = data.authorizedRefundAmount !== undefined && Number(data.authorizedRefundAmount) < totalPaid
+      ? Math.min(Number(data.authorizedRefundAmount), netCustomerRefund)
+      : netCustomerRefund;
 
     // Cancel booking and job
     booking.status = BOOKING_STATUS.CANCELLED;
