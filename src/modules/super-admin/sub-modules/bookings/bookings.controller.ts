@@ -30,7 +30,8 @@ export class SuperAdminBookingsController {
     const { id } = req.params;
     const adminUserId = req.user?.userId || 'system';
     const adminRole = req.user?.role || 'SUPER_ADMIN';
-    const booking = await superAdminBookingsService.manualAssignAndBypass(adminUserId, adminRole, id, req.body);
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip || req.socket.remoteAddress;
+    const booking = await superAdminBookingsService.manualAssignAndBypass(adminUserId, adminRole, id, req.body, clientIp);
     return successResponse(res, booking, 'Manual override/assignment executed successfully');
   });
 

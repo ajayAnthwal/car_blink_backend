@@ -5,6 +5,9 @@ import { ServiceModel } from '../../../master-data/models/service.model';
 import { GarageModel } from '../../../customer/sub-modules/garage/garage.model';
 import { CityModel } from '../../../master-data/models/city.model';
 import { BidModel } from '../../../partner/sub-modules/bidding/bid.model';
+import { JobModel } from '../../../partner/sub-modules/jobs/job.model';
+import { PaymentModel } from '../../../payment/payment.model';
+import AuditLogModel from '../audit-logs/audit-log.model';
 import { BOOKING_STATUS } from '../../../../common/constants/status.constant';
 import { NotFoundError } from '../../../../common/errors/NotFoundError';
 import { BadRequestError } from '../../../../common/errors/BadRequestError';
@@ -244,219 +247,343 @@ export class SuperAdminBookingsService {
       quotedAmount?: number;
       overridePayment?: boolean;
       reason: string;
-    }
+    },
+    clientIp?: string
   ) {
     const { partnerId, executiveId, status, quotedAmount, overridePayment, reason } = data;
 
-    const booking = await BookingModel.findById(bookingId);
-    if (!booking) {
-      throw new NotFoundError('Booking not found');
-    }
-
-    const prevStatus = booking.status;
-    const updatesPerformed: string[] = [];
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
     let resolvedPartnerDoc: any = null;
-    if (partnerId && mongoose.Types.ObjectId.isValid(partnerId)) {
-      const { PartnerModel } = require('../../../partner/partner.model');
-      resolvedPartnerDoc = await PartnerModel.findById(partnerId);
-      if (!resolvedPartnerDoc) {
-        resolvedPartnerDoc = await PartnerModel.findOne({ userId: partnerId });
+    const updatesPerformed: string[] = [];
+
+    try {
+      const booking = await BookingModel.findById(bookingId).session(session);
+      if (!booking) {
+        throw new NotFoundError('Booking not found');
       }
 
-      if (!resolvedPartnerDoc) {
-        throw new BadRequestError(`Partner not found with ID '${partnerId}'`);
+      const prevStatus = booking.status;
+      const previousValues = {
+        status: booking.status,
+        assignedPartnerId: booking.assignedPartnerId,
+        assignedExecutiveId: booking.assignedExecutiveId,
+        acceptedQuoteAmount: booking.acceptedQuoteAmount,
+        finalAmount: booking.finalAmount,
+        pricing: booking.pricing ? JSON.parse(JSON.stringify(booking.pricing)) : undefined,
+        hasPaidAdvance: booking.hasPaidAdvance,
+        isAdvancePaid: (booking as any).isAdvancePaid,
+        paymentStatus: (booking as any).paymentStatus,
+        verificationCode: (booking as any).verificationCode,
+      };
+
+      // 1. Validate & Assign Partner
+      if (partnerId && partnerId.trim() !== '') {
+        if (!mongoose.Types.ObjectId.isValid(partnerId)) {
+          throw new BadRequestError(`Invalid Partner ID format: '${partnerId}'`);
+        }
+
+        resolvedPartnerDoc = await PartnerModel.findById(partnerId).session(session);
+        if (!resolvedPartnerDoc) {
+          resolvedPartnerDoc = await PartnerModel.findOne({ userId: partnerId }).session(session);
+        }
+
+        if (!resolvedPartnerDoc) {
+          throw new BadRequestError(`Partner not found with ID '${partnerId}'`);
+        }
+
+        booking.assignedPartnerId = resolvedPartnerDoc._id;
+        updatesPerformed.push(`Partner assigned: ${resolvedPartnerDoc.businessName || resolvedPartnerDoc._id}`);
       }
 
-      booking.assignedPartnerId = resolvedPartnerDoc._id;
-      updatesPerformed.push(`Partner assigned: ${resolvedPartnerDoc.businessName || resolvedPartnerDoc._id}`);
-    }
+      // 2. Validate & Assign Executive
+      if (executiveId && executiveId.trim() !== '') {
+        if (!mongoose.Types.ObjectId.isValid(executiveId)) {
+          throw new BadRequestError(`Invalid Executive ID format: '${executiveId}'`);
+        }
 
-    if (executiveId && mongoose.Types.ObjectId.isValid(executiveId)) {
-      const { UserModel } = require('../../../user/user.model');
-      const execUser = await UserModel.findById(executiveId);
-      if (execUser) {
+        const execUser = await UserModel.findById(executiveId).session(session);
+        if (!execUser) {
+          throw new BadRequestError(`Executive user not found with ID '${executiveId}'`);
+        }
+
+        if (execUser.role !== 'EXECUTIVE' && execUser.role !== 'ADMIN' && execUser.role !== 'SUPER_ADMIN') {
+          throw new BadRequestError(`User '${execUser.fullName || executiveId}' does not have EXECUTIVE role`);
+        }
+
         booking.assignedExecutiveId = execUser._id;
         updatesPerformed.push(`Executive assigned: ${execUser.fullName || execUser.phone} (${execUser._id})`);
-      } else {
-        booking.assignedExecutiveId = executiveId as any;
-        updatesPerformed.push(`Executive assigned (${executiveId})`);
-      }
-    }
-
-    if (status) {
-      booking.status = status as any;
-      updatesPerformed.push(`Status changed from ${prevStatus} to ${status}`);
-    }
-
-    if (quotedAmount !== undefined && quotedAmount !== null && !isNaN(Number(quotedAmount))) {
-      const numAmt = Number(quotedAmount);
-      booking.acceptedQuoteAmount = numAmt;
-      booking.finalAmount = numAmt;
-      if (!booking.pricing) {
-        booking.pricing = {};
-      }
-      booking.pricing.partnerBaseQuote = numAmt;
-      booking.pricing.customerGrossQuote = numAmt;
-      booking.pricing.advanceRequired = Math.round(numAmt * 0.15);
-      updatesPerformed.push(`Custom quote price set to ₹${numAmt}`);
-    }
-
-    if (overridePayment) {
-      booking.hasPaidAdvance = true;
-      (booking as any).isAdvancePaid = true;
-      (booking as any).paymentStatus = 'PARTIALLY_PAID';
-
-      if (!booking.verificationCode) {
-        booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
       }
 
-      const { PaymentModel } = require('../../../payment/payment.model');
-      const existingSuccessPayment = await PaymentModel.findOne({ bookingId: booking._id, status: 'SUCCESS' });
-      if (!existingSuccessPayment) {
-        let resolvedAmount = quotedAmount;
-        if (!resolvedAmount && booking.acceptedBidId) {
-          try {
-            const { BidModel } = require('../../../partner/sub-modules/bidding/bid.model');
-            const bidObj = await BidModel.findById(booking.acceptedBidId).lean();
-            if (bidObj?.quotedAmount) resolvedAmount = bidObj.quotedAmount;
-          } catch (e) {}
+      // 3. Force Status
+      if (status && status.trim() !== '') {
+        booking.status = status as any;
+        updatesPerformed.push(`Status changed from ${prevStatus} to ${status}`);
+      }
+
+      // 4. Custom Quote Price
+      if (quotedAmount !== undefined && quotedAmount !== null && !isNaN(Number(quotedAmount))) {
+        const numAmt = Number(quotedAmount);
+        if (numAmt <= 0) {
+          throw new BadRequestError('Custom quote price must be greater than 0');
         }
-        if (!resolvedAmount && (booking as any).finalAmount) resolvedAmount = (booking as any).finalAmount;
-        if (!resolvedAmount && (booking as any).estimatedAmount) resolvedAmount = (booking as any).estimatedAmount;
-
-        const advanceAmt = Math.round((resolvedAmount || 0) * 0.15);
-        const bypassPaymentId = new mongoose.Types.ObjectId();
-
-        await PaymentModel.create({
-          _id: bypassPaymentId,
-          bookingId: booking._id,
-          customerId: booking.customerId,
-          amount: advanceAmt > 0 ? advanceAmt : (resolvedAmount || 0),
-          currency: 'INR',
-          paymentType: 'ADVANCE',
-          status: 'SUCCESS',
-          provider: 'SUPER_ADMIN_BYPASS',
-          providerOrderId: `BYPASS_${bypassPaymentId.toString()}`,
-          providerPaymentId: `PAY_BYPASS_${Date.now()}`,
-          paidAt: new Date(),
-        });
+        booking.acceptedQuoteAmount = numAmt;
+        booking.finalAmount = numAmt;
+        if (!booking.pricing) {
+          (booking as any).pricing = {};
+        }
+        (booking.pricing as any).partnerBaseQuote = numAmt;
+        (booking.pricing as any).customerGrossQuote = numAmt;
+        (booking.pricing as any).advanceRequired = Math.round(numAmt * 0.15);
+        updatesPerformed.push(`Custom quote price set to ₹${numAmt}`);
       }
-      updatesPerformed.push(`Payment requirement bypassed & marked as PAID`);
-    }
 
-    // If partner assigned, ensure BidModel is linked as acceptedBidId
-    if (resolvedPartnerDoc) {
-      try {
-        const { BidModel } = require('../../../partner/sub-modules/bidding/bid.model');
-        let existingBid = await BidModel.findOne({ bookingId: booking._id, partnerId: resolvedPartnerDoc._id });
+      // 5. Bypass Payment Gateway (Idempotent)
+      if (overridePayment) {
+        booking.hasPaidAdvance = true;
+        (booking as any).isAdvancePaid = true;
+        (booking as any).paymentStatus = 'PARTIALLY_PAID';
+
+        if (!booking.verificationCode) {
+          booking.verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+        }
+
+        const existingSuccessPayment = await PaymentModel.findOne({
+          bookingId: booking._id,
+          $or: [{ status: 'SUCCESS' }, { paymentType: 'ADVANCE' }],
+        }).session(session);
+
+        if (!existingSuccessPayment) {
+          const resolvedAmount =
+            quotedAmount ||
+            booking.finalAmount ||
+            booking.acceptedQuoteAmount ||
+            (booking as any).estimatedAmount ||
+            0;
+          const advanceAmt = Math.round(resolvedAmount * 0.15);
+          const balanceAmt = resolvedAmount - advanceAmt;
+          const bypassPaymentId = new mongoose.Types.ObjectId();
+
+          await PaymentModel.create(
+            [
+              {
+                _id: bypassPaymentId,
+                bookingId: booking._id,
+                customerId: booking.customerId,
+                amount: advanceAmt > 0 ? advanceAmt : resolvedAmount,
+                currency: 'INR',
+                paymentType: 'ADVANCE',
+                status: 'SUCCESS',
+                provider: 'SUPER_ADMIN_BYPASS',
+                providerOrderId: `BYPASS_${bypassPaymentId.toString()}`,
+                providerPaymentId: `PAY_BYPASS_${Date.now()}`,
+                paidAt: new Date(),
+                meta: {
+                  totalBookingAmount: resolvedAmount,
+                  advanceAmount: advanceAmt,
+                  balanceAmount: balanceAmt,
+                  overrideBy: adminUserId,
+                  reason: reason || 'Manual workflow override by Super Admin',
+                },
+              },
+            ],
+            { session }
+          );
+          updatesPerformed.push(`Payment requirement bypassed: advance ₹${advanceAmt} marked as PAID`);
+        } else {
+          updatesPerformed.push(
+            `Payment requirement confirmed (existing payment #${existingSuccessPayment._id} preserved)`
+          );
+        }
+      }
+
+      // 6. Ensure BidModel is linked as acceptedBidId (Idempotent)
+      let existingBid: any = null;
+      if (resolvedPartnerDoc) {
+        existingBid = await BidModel.findOne({
+          bookingId: booking._id,
+          partnerId: resolvedPartnerDoc._id,
+        }).session(session);
+
         const bidPrice = quotedAmount || booking.finalAmount || booking.acceptedQuoteAmount || 0;
-        
+
         if (!existingBid) {
-          existingBid = await BidModel.create({
-            bookingId: booking._id,
-            partnerId: resolvedPartnerDoc._id,
-            quotedAmount: bidPrice,
-            estimatedDuration: 'Same Day',
-            status: 'ACCEPTED',
-            notes: reason || 'Assigned directly by Super Admin',
-          });
+          const [newBid] = await BidModel.create(
+            [
+              {
+                bookingId: booking._id,
+                partnerId: resolvedPartnerDoc._id,
+                quotedAmount: bidPrice,
+                estimatedDuration: 'Same Day',
+                status: 'ACCEPTED',
+                notes: reason || 'Assigned directly by Super Admin',
+              },
+            ],
+            { session }
+          );
+          existingBid = newBid;
         } else {
           existingBid.status = 'ACCEPTED';
           if (quotedAmount) existingBid.quotedAmount = quotedAmount;
-          await existingBid.save();
+          await existingBid.save({ session });
         }
 
         booking.acceptedBidId = existingBid._id;
-        if (!booking.forwardedBidIds?.includes(existingBid._id)) {
+        if (!booking.forwardedBidIds?.some((bId: any) => bId.toString() === existingBid._id.toString())) {
           booking.forwardedBidIds = [...(booking.forwardedBidIds || []), existingBid._id];
         }
-      } catch (bidErr) {
-        console.warn('Super Admin: Could not auto-sync BidModel:', bidErr);
       }
-    }
 
-    await booking.save();
+      // 7. Save Booking within session
+      await booking.save({ session });
 
-    if (resolvedPartnerDoc) {
-      const { JobModel } = require('../../../partner/sub-modules/jobs/job.model');
-      const existingJob = await JobModel.findOne({ bookingId: booking._id });
-      let jobStatus = 'ASSIGNED';
-      if (status === 'COMPLETED') jobStatus = 'COMPLETED';
-      else if (status === 'IN_PROGRESS') jobStatus = 'IN_PROGRESS';
-      else if (status === 'CANCELLED') jobStatus = 'CANCELLED';
+      // 8. Create or Update JobModel with correct schema & status mapping (Idempotent)
+      if (resolvedPartnerDoc) {
+        let targetJobStatus: 'NOT_STARTED' | 'VERIFIED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' = 'NOT_STARTED';
 
-      if (!existingJob) {
-        await JobModel.create({
-          bookingId: booking._id,
-          partnerId: resolvedPartnerDoc._id,
-          customerId: booking.customerId,
-          serviceId: booking.serviceId,
-          vehicleId: booking.vehicleId,
-          status: jobStatus,
-          jobDetails: { finalAmount: quotedAmount || booking.finalAmount || 0 },
-        });
-      } else {
-        existingJob.partnerId = resolvedPartnerDoc._id;
-        if (status) existingJob.status = jobStatus as any;
-        if (quotedAmount) {
-          existingJob.jobDetails = existingJob.jobDetails || {};
-          existingJob.jobDetails.finalAmount = quotedAmount;
+        if (status === 'COMPLETED') {
+          targetJobStatus = 'COMPLETED';
+        } else if (status === 'IN_PROGRESS') {
+          targetJobStatus = 'IN_PROGRESS';
+        } else if (status === 'CANCELLED') {
+          targetJobStatus = 'CANCELLED';
+        } else if (status === 'VERIFIED') {
+          targetJobStatus = 'VERIFIED';
+        } else {
+          targetJobStatus = (booking as any).isVerifiedByPartner ? 'VERIFIED' : 'NOT_STARTED';
         }
-        await existingJob.save();
-      }
-    }
 
-    // Emit live socket events & notifications
-    try {
-      const { emitToRole, emitToUser } = require('../../../../sockets');
-      emitToRole('SUPER_ADMIN', 'booking_status_update', booking);
-      emitToRole('EXECUTIVE', 'booking_status_update', booking);
-      if (booking.customerId) {
-        emitToUser(booking.customerId.toString(), 'booking_status_update', booking);
+        const linkedBidId = existingBid?._id || booking.acceptedBidId || new mongoose.Types.ObjectId();
+        const finalJobAmount = quotedAmount || booking.finalAmount || booking.acceptedQuoteAmount || 0;
+
+        const existingJob = await JobModel.findOne({ bookingId: booking._id }).session(session);
+
+        if (!existingJob) {
+          await JobModel.create(
+            [
+              {
+                bookingId: booking._id,
+                partnerId: resolvedPartnerDoc._id,
+                bidId: linkedBidId,
+                status: targetJobStatus,
+                finalAmount: finalJobAmount,
+              },
+            ],
+            { session }
+          );
+          updatesPerformed.push(`Job created with status '${targetJobStatus}'`);
+        } else {
+          existingJob.partnerId = resolvedPartnerDoc._id;
+          existingJob.bidId = linkedBidId;
+          existingJob.status = targetJobStatus;
+          existingJob.finalAmount = finalJobAmount;
+          await existingJob.save({ session });
+          updatesPerformed.push(`Existing job updated to status '${targetJobStatus}'`);
+        }
       }
-      if (resolvedPartnerDoc?.userId) {
-        emitToUser(resolvedPartnerDoc.userId.toString(), 'job_assigned', {
-          bookingId: booking._id,
-          jobStatus: status || 'ASSIGNED',
+
+      // 9. Snapshot newValues and write AuditLog within transaction
+      const newValues = {
+        status: booking.status,
+        assignedPartnerId: booking.assignedPartnerId,
+        assignedExecutiveId: booking.assignedExecutiveId,
+        acceptedQuoteAmount: booking.acceptedQuoteAmount,
+        finalAmount: booking.finalAmount,
+        pricing: booking.pricing ? JSON.parse(JSON.stringify(booking.pricing)) : undefined,
+        hasPaidAdvance: booking.hasPaidAdvance,
+        isAdvancePaid: (booking as any).isAdvancePaid,
+        paymentStatus: (booking as any).paymentStatus,
+        verificationCode: (booking as any).verificationCode,
+      };
+
+      await AuditLogModel.create(
+        [
+          {
+            userId: adminUserId && mongoose.Types.ObjectId.isValid(adminUserId) ? adminUserId : undefined,
+            userRole: adminRole || 'SUPER_ADMIN',
+            action: 'SUPER_ADMIN_MANUAL_BYPASS',
+            endpoint: `/api/super-admin/bookings/${bookingId}/manual-assign`,
+            method: 'POST',
+            payload: {
+              bookingId,
+              partnerId: resolvedPartnerDoc?._id || partnerId,
+              executiveId,
+              status,
+              quotedAmount,
+              overridePayment,
+              reason: reason || 'Manual workflow override by Super Admin',
+              summary: updatesPerformed.join(', '),
+              previousValues,
+              newValues,
+            },
+            ipAddress: clientIp,
+            status: 'SUCCESS',
+          },
+        ],
+        { session }
+      );
+
+      // 10. Commit transaction
+      await session.commitTransaction();
+      session.endSession();
+
+      // 11. Emit live socket events & notifications (after successful commit)
+      try {
+        const { emitToRole, emitToUser } = require('../../../../sockets');
+        emitToRole('SUPER_ADMIN', 'booking_status_update', booking);
+        emitToRole('EXECUTIVE', 'booking_status_update', booking);
+        if (booking.customerId) {
+          emitToUser(booking.customerId.toString(), 'booking_status_update', booking);
+        }
+        if (resolvedPartnerDoc?.userId) {
+          emitToUser(resolvedPartnerDoc.userId.toString(), 'job_assigned', {
+            bookingId: booking._id,
+            jobStatus: booking.status,
+          });
+          emitToUser(resolvedPartnerDoc.userId.toString(), 'booking_status_update', booking);
+        }
+        if (executiveId) {
+          emitToUser(executiveId.toString(), 'booking_assigned', {
+            bookingId: booking._id,
+          });
+        }
+      } catch (socketErr) {
+        console.error('Socket emission error during manual bypass:', socketErr);
+      }
+
+      return booking;
+    } catch (error: any) {
+      await session.abortTransaction();
+      session.endSession();
+
+      // Log failure in audit log
+      try {
+        await AuditLogModel.create({
+          userId: adminUserId && mongoose.Types.ObjectId.isValid(adminUserId) ? adminUserId : undefined,
+          userRole: adminRole || 'SUPER_ADMIN',
+          action: 'SUPER_ADMIN_MANUAL_BYPASS_FAILED',
+          endpoint: `/api/super-admin/bookings/${bookingId}/manual-assign`,
+          method: 'POST',
+          payload: {
+            bookingId,
+            partnerId,
+            executiveId,
+            status,
+            quotedAmount,
+            overridePayment,
+            reason,
+          },
+          ipAddress: clientIp,
+          status: 'FAILED',
+          errorMessage: error?.message || 'Manual bypass failed',
         });
-        emitToUser(resolvedPartnerDoc.userId.toString(), 'booking_status_update', booking);
+      } catch (auditFailErr) {
+        console.error('Failed to log audit failure:', auditFailErr);
       }
-      if (executiveId) {
-        emitToUser(executiveId.toString(), 'booking_assigned', {
-          bookingId: booking._id,
-        });
-      }
-    } catch (socketErr) {
-      console.error('Socket emission error during manual bypass:', socketErr);
-    }
 
-    // Write audit log entry
-    try {
-      const AuditLog = require('../audit-logs/audit-log.model').default;
-      await AuditLog.create({
-        userId: adminUserId,
-        userRole: adminRole || 'SUPER_ADMIN',
-        action: 'SUPER_ADMIN_MANUAL_BYPASS',
-        endpoint: `/api/super-admin/bookings/${bookingId}/manual-assign`,
-        method: 'POST',
-        payload: {
-          bookingId,
-          partnerId: resolvedPartnerDoc?._id || partnerId,
-          executiveId,
-          status,
-          quotedAmount,
-          overridePayment,
-          reason: reason || 'Manual workflow override by Super Admin',
-          summary: updatesPerformed.join(', '),
-        },
-        status: 'SUCCESS',
-      });
-    } catch (auditErr) {
-      console.error('Audit Log Error:', auditErr);
+      throw error;
     }
-
-    return booking;
   }
 
   async getEligiblePartners(bookingId: string, query: any = {}) {
