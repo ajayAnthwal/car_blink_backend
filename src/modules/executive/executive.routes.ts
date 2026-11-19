@@ -12,6 +12,7 @@ import { createFollowUpSchema, updateFollowUpSchema } from './sub-modules/follow
 import { EscalationController } from './sub-modules/escalation/escalation.controller';
 import { createEscalationSchema, updateEscalationSchema } from './sub-modules/escalation/escalation.validation';
 import { ExecutiveController } from './executive.controller';
+import executiveWalletRouter from './sub-modules/wallet/executive-wallet.routes';
 
 import bannerAdRouter from './sub-modules/ads/banner-ad.routes';
 
@@ -74,5 +75,6 @@ router.post('/cancellations/:id/forward-accounts', ExecutiveController.forwardCa
 router.use("/logistics", (logisticsRouter as any).default || logisticsRouter);
 router.use("/tickets", (ticketsRouter as any).default || ticketsRouter);
 router.use("/ads", (bannerAdRouter as any).default || bannerAdRouter);
+router.use('/wallet', executiveWalletRouter);
 
 export default router;

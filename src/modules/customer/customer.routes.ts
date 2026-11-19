@@ -11,6 +11,7 @@ import subscriptionRouter from "./sub-modules/subscription/subscription.routes";
 import referralRouter from "./sub-modules/referral/referral.routes";
 import ticketRouter from './sub-modules/support-ticket/ticket.routes';
 import customerInvoiceRouter from './sub-modules/invoices/customer-invoice.routes';
+import customerWalletRouter from './sub-modules/wallet/customer-wallet.routes';
 import { CustomerController } from './customer.controller';
 import { BookingController } from './sub-modules/booking/booking.controller';
 
@@ -30,6 +31,7 @@ router.use('/bookings', bookingRouter);
 router.use('/invoices', customerInvoiceRouter);
 router.use('/warranties', warrantyRouter);
 router.use('/support-tickets', ticketRouter);
+router.use('/wallet', customerWalletRouter);
 
 router.use("/rsa", rsaRouter);
 router.use("/subscriptions", subscriptionRouter);
