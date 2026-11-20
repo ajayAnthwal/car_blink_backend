@@ -1,3 +1,4 @@
+import { env } from '../../../../config/env.config';
 import { emitToUser } from '../../../../sockets';
 import mongoose from 'mongoose';
 import { BookingModel } from '../../../customer/sub-modules/booking/booking.model';
@@ -241,6 +242,7 @@ export class AssignmentService {
       payments: payments || [],
       job: job || null,
       jobExtensions: allJobExtensions,
+      notesWorkflowEnabled: env.ENABLE_NOTES_APPROVAL_WORKFLOW === true,
     };
   }
 
@@ -509,6 +511,12 @@ export class AssignmentService {
    * Update lead follow-up date and remarks
    */
   async updateLead(leadId: string, updateData: { followUpDate?: string; remarks?: string }): Promise<any> {
+    if (env.ENABLE_NOTES_APPROVAL_WORKFLOW === true && updateData.remarks !== undefined) {
+      throw new BadRequestError(
+        'Notes Approval Workflow is enabled. Direct updates to remarks via updateLead are disabled. Please use the Notes Approval Workflow endpoints.'
+      );
+    }
+
     const BookingModel = mongoose.model('Booking');
     const booking = await BookingModel.findById(leadId);
     if (!booking) {

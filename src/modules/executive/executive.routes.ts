@@ -12,6 +12,12 @@ import { createFollowUpSchema, updateFollowUpSchema } from './sub-modules/follow
 import { EscalationController } from './sub-modules/escalation/escalation.controller';
 import { createEscalationSchema, updateEscalationSchema } from './sub-modules/escalation/escalation.validation';
 import { ExecutiveController } from './executive.controller';
+import {
+  sendNoteToCustomerSchema,
+  verifyNoteSchema,
+  forwardNoteSchema,
+  resendNoteSchema,
+} from './sub-modules/lead-assignment/notes-workflow.validation';
 import executiveWalletRouter from './sub-modules/wallet/executive-wallet.routes';
 
 import bannerAdRouter from './sub-modules/ads/banner-ad.routes';
@@ -32,6 +38,13 @@ router.get('/leads/:id/eligible-partners', AssignmentController.getEligiblePartn
 router.post('/leads/:id/convert', AssignmentController.convertWebsiteLeadToBooking);
 router.post('/leads/:id/forward-quote', AssignmentController.forwardQuoteToCustomer);
 router.post('/leads/:id/confirm-quote', AssignmentController.confirmQuoteSelection);
+
+// SUB-MODULE 1.5: Notes Approval Workflow
+router.post('/leads/:id/notes/send-to-customer', validate({ body: sendNoteToCustomerSchema }), AssignmentController.sendNoteToCustomer);
+router.post('/leads/:id/notes/verify', validate({ body: verifyNoteSchema }), AssignmentController.verifyNote);
+router.post('/leads/:id/notes/forward-to-partner', validate({ body: forwardNoteSchema }), AssignmentController.forwardNoteToPartner);
+router.post('/leads/:id/notes/resend', validate({ body: resendNoteSchema }), AssignmentController.resendNoteToCustomer);
+router.post('/leads/:id/notes/remind', AssignmentController.sendReminderToCustomer);
 router.post('/leads/:id/satisfaction/send', (req, res, next) => {
   const { BookingController } = require('../customer/sub-modules/booking/booking.controller');
   return BookingController.sendSatisfactionTemplate(req, res, next);

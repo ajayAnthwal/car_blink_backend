@@ -120,12 +120,15 @@ export class BidService {
       const assignmentMap = new Map<string, any>(assignments.map((a: any) => [a.bookingId.toString(), a]));
 
       const enrichedBookings = bookings.map((doc: any) => {
-        const b = doc.toObject ? doc.toObject() : doc;
+        const b = doc.toObject ? doc.toObject() : { ...doc };
         const a: any = assignmentMap.get(b._id.toString());
+        const isForwardedOrLegacy = !b.notesWorkflow || b.notesWorkflow.status === 'FORWARDED_TO_PARTNER';
+        const partnerRemarks = isForwardedOrLegacy ? (b.remarks || a?.notes || '') : '';
+        delete b.notesWorkflow;
         return {
           ...b,
-          remarks: b.remarks || a?.notes || '',
-          assignment: a || undefined,
+          remarks: partnerRemarks,
+          assignment: a ? { ...a, notes: partnerRemarks } : undefined,
         };
       });
 
@@ -262,9 +265,17 @@ export class BidService {
     const limit = Math.max(1, parseInt(query.limit || '10', 10));
     const skip = (page - 1) * limit;
 
+    // Efficiently identify cancelled bookings to exclude bids on cancelled bookings from active lists
+    const cancelledBookingIds = await BookingModel.find({
+      status: BOOKING_STATUS.CANCELLED,
+    }).distinct('_id');
+
     const filter: any = { partnerId: partner._id };
     if (query.status) {
       filter.status = query.status;
+    }
+    if (cancelledBookingIds.length > 0) {
+      filter.bookingId = { $nin: cancelledBookingIds };
     }
 
     const [bids, total] = await Promise.all([

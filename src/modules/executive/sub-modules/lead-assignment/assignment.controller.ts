@@ -84,4 +84,53 @@ export class AssignmentController {
     });
     return successResponse(res, result, 'Eligible partners retrieved successfully');
   });
+
+  public static sendNoteToCustomer = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const actorId = String(req.user?.userId);
+    const actorRole = String(req.user?.role || 'EXECUTIVE');
+    const { noteText, version } = req.body;
+    const { notesWorkflowService } = require('./notes-workflow.service');
+    const updated = await notesWorkflowService.sendNoteToCustomer(id, actorId, actorRole, noteText, version);
+    return successResponse(res, updated, 'Note sent to customer for review successfully');
+  });
+
+  public static verifyNote = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const actorId = String(req.user?.userId);
+    const actorRole = String(req.user?.role || 'EXECUTIVE');
+    const { version } = req.body;
+    const { notesWorkflowService } = require('./notes-workflow.service');
+    const updated = await notesWorkflowService.verifyNote(id, actorId, actorRole, version);
+    return successResponse(res, updated, 'Note verified successfully');
+  });
+
+  public static forwardNoteToPartner = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const actorId = String(req.user?.userId);
+    const actorRole = String(req.user?.role || 'EXECUTIVE');
+    const { version } = req.body;
+    const { notesWorkflowService } = require('./notes-workflow.service');
+    const updated = await notesWorkflowService.forwardNoteToPartner(id, actorId, actorRole, version);
+    return successResponse(res, updated, 'Note forwarded to partner workshop successfully');
+  });
+
+  public static resendNoteToCustomer = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const actorId = String(req.user?.userId);
+    const actorRole = String(req.user?.role || 'EXECUTIVE');
+    const { newNoteText, reason, version } = req.body;
+    const { notesWorkflowService } = require('./notes-workflow.service');
+    const updated = await notesWorkflowService.resendNoteToCustomer(id, actorId, actorRole, newNoteText, reason, version);
+    return successResponse(res, updated, 'Note resent to customer successfully');
+  });
+
+  public static sendReminderToCustomer = asyncHandler(async (req: IRequest, res: Response) => {
+    const { id } = req.params;
+    const actorId = String(req.user?.userId);
+    const actorRole = String(req.user?.role || 'EXECUTIVE');
+    const { notesWorkflowService } = require('./notes-workflow.service');
+    const result = await notesWorkflowService.sendReminderToCustomer(id, actorId, actorRole);
+    return successResponse(res, result, 'Reminder sent to customer successfully');
+  });
 }

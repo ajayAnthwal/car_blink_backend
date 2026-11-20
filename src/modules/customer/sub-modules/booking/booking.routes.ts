@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { BookingController } from './booking.controller';
 import { validate } from '../../../../middlewares/validate.middleware';
 import { createBookingSchema, cancelBookingSchema, selectQuoteSchema } from './booking.validation';
+import { customerRespondNoteSchema } from '../../../executive/sub-modules/lead-assignment/notes-workflow.validation';
 
 const router = Router();
 
@@ -35,5 +36,12 @@ router.post('/:id/satisfaction/respond', BookingController.respondSatisfactionTe
 
 // Payment mode preference update
 router.patch('/:id/payment-mode', BookingController.updatePaymentMode);
+
+// Service Notes Review & Response
+router.post(
+  '/:id/notes/respond',
+  validate({ body: customerRespondNoteSchema }),
+  BookingController.respondToNote
+);
 
 export default router;

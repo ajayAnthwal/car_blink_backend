@@ -48,6 +48,10 @@ const envSchema = z.object({
     (val) => (val === 'false' || val === false ? false : true),
     z.boolean()
   ).default(true),
+  ENABLE_NOTES_APPROVAL_WORKFLOW: z.preprocess(
+    (val) => (val === 'true' || val === true ? true : false),
+    z.boolean()
+  ).default(false),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

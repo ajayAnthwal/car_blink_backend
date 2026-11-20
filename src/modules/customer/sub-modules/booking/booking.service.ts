@@ -1,6 +1,8 @@
 import { PaymentModel } from '../../../payment/payment.model';
 import mongoose from 'mongoose';
 import { BookingModel, IBooking } from './booking.model';
+import { env } from '../../../../config/env.config';
+import { notesWorkflowService } from '../../../executive/sub-modules/lead-assignment/notes-workflow.service';
 import { GarageModel } from '../garage/garage.model';
 import { ServiceModel } from '../../../master-data/models/service.model';
 import { CityModel } from '../../../master-data/models/city.model';
@@ -417,6 +419,8 @@ export class BookingService {
         balance: (b as any).pricing?.balanceAmount ?? bCalc.balanceAmount,
         balanceAmount: (b as any).pricing?.balanceAmount ?? bCalc.balanceAmount,
         pricing: sanitizeCustomerPricing((b as any).pricing),
+        notesWorkflow: notesWorkflowService.filterForCustomer((b as any).notesWorkflow),
+        notesWorkflowEnabled: env.ENABLE_NOTES_APPROVAL_WORKFLOW === true,
       };
     });
 
@@ -608,6 +612,8 @@ export class BookingService {
     const { sanitizeCustomerPricing: sanitizeIdPricing } = require('../../../../common/utils/pricing.util');
     return {
       ...booking,
+      notesWorkflow: notesWorkflowService.filterForCustomer((booking as any).notesWorkflow),
+      notesWorkflowEnabled: env.ENABLE_NOTES_APPROVAL_WORKFLOW === true,
       hasPaidAdvance: hasPaid15PercentAdvance,
       isAdvancePaid: hasPaid15PercentAdvance,
       acceptedBidId: acceptedBidDoc || booking.acceptedBidId,

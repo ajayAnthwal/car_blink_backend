@@ -89,5 +89,20 @@ export class BookingController {
     const booking = await BookingService.updatePaymentMode(String(customerId), id, paymentMode);
     return successResponse(res, booking, 'Payment mode updated successfully');
   });
+
+  public static respondToNote = asyncHandler(async (req: IRequest, res: Response) => {
+    const customerId = req.user?.userId;
+    const { id } = req.params;
+    const { action, editedNote, version } = req.body;
+    const { notesWorkflowService } = require('../../../executive/sub-modules/lead-assignment/notes-workflow.service');
+    const result = await notesWorkflowService.customerRespondToNote(
+      id,
+      String(customerId),
+      action,
+      editedNote,
+      version
+    );
+    return successResponse(res, result, 'Response to service note submitted successfully');
+  });
 }
 export default BookingController;

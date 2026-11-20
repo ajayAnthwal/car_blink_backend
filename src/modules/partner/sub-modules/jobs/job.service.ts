@@ -25,12 +25,23 @@ export class JobService {
     const limit = Math.max(1, parseInt(query.limit || "10", 10));
     const skip = (page - 1) * limit;
 
+    // Efficiently identify cancelled bookings to exclude stale active jobs
+    const cancelledBookingIds = await BookingModel.find({
+      status: BOOKING_STATUS.CANCELLED,
+    }).distinct('_id');
+
     const filter: any = { partnerId: partner._id };
-    if (query.status) {
-      if (query.status === "NOT_STARTED") {
-        filter.status = { $in: ["NOT_STARTED", "VERIFIED"] };
-      } else {
-        filter.status = query.status;
+    if (query.status === "CANCELLED") {
+      filter.$or = [
+        { status: "CANCELLED" },
+        { bookingId: { $in: cancelledBookingIds } },
+      ];
+    } else {
+      filter.status = query.status === "NOT_STARTED"
+        ? { $in: ["NOT_STARTED", "VERIFIED"] }
+        : (query.status ? query.status : { $ne: "CANCELLED" });
+      if (cancelledBookingIds.length > 0) {
+        filter.bookingId = { $nin: cancelledBookingIds };
       }
     }
     // Self-healing: Check for any confirmed bookings belonging to this partner that miss a Job document
@@ -184,6 +195,10 @@ export class JobService {
 
       let sanitizedBooking: any = job.bookingId;
       if (sanitizedBooking && typeof sanitizedBooking === 'object') {
+        const isForwardedOrLegacy = !sanitizedBooking.notesWorkflow || sanitizedBooking.notesWorkflow?.status === 'FORWARDED_TO_PARTNER';
+        const partnerRemarks = isForwardedOrLegacy ? (sanitizedBooking.remarks || '') : '';
+        delete sanitizedBooking.notesWorkflow;
+
         const sanitizedAcceptedBid = sanitizedBooking.acceptedBidId && typeof sanitizedBooking.acceptedBidId === 'object'
           ? { 
               ...sanitizedBooking.acceptedBidId, 
@@ -194,6 +209,7 @@ export class JobService {
 
         sanitizedBooking = {
           ...sanitizedBooking,
+          remarks: partnerRemarks,
           acceptedBidId: sanitizedAcceptedBid,
           pricing: {
             ...(sanitizedBooking.pricing || {}),
@@ -203,8 +219,12 @@ export class JobService {
         };
       }
 
+      const isBookingCancelled = (job.bookingId as any)?.status === BOOKING_STATUS.CANCELLED;
+      const effectiveJobStatus = isBookingCancelled ? 'CANCELLED' : job.status;
+
       return {
         ...job,
+        status: effectiveJobStatus,
         finalAmount: displayFinalAmount,
         originalQuotedAmount: partnerOrigQuote,
         bidId: sanitizedBid,
@@ -463,6 +483,14 @@ export class JobService {
       throw new NotFoundError("Associated booking not found");
     }
 
+    if (booking.status === BOOKING_STATUS.CANCELLED || job.status === "CANCELLED") {
+      throw new ApiError(
+        400,
+        "Cannot start job: This booking has been cancelled.",
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
     // MANDATORY GATE: Check if customer verification has occurred
     if (!booking.isVerifiedByPartner && (job.status as string) !== "VERIFIED") {
       if (verificationCode) {
@@ -536,6 +564,15 @@ export class JobService {
     if (job.partnerId.toString() !== partner._id.toString()) {
       throw new UnauthorizedError(
         "You are not authorized to complete this job",
+      );
+    }
+
+    const bookingCheck = await BookingModel.findById(job.bookingId);
+    if (!bookingCheck || bookingCheck.status === BOOKING_STATUS.CANCELLED || job.status === "CANCELLED") {
+      throw new ApiError(
+        400,
+        "Cannot complete job: This booking has been cancelled.",
+        ERROR_CODES.VALIDATION_ERROR,
       );
     }
 
@@ -744,6 +781,15 @@ export class JobService {
       );
     }
 
+    const booking = await BookingModel.findById(job.bookingId);
+    if (!booking || booking.status === BOOKING_STATUS.CANCELLED || job.status === "CANCELLED") {
+      throw new ApiError(
+        400,
+        "Cannot upload invoice: This booking has been cancelled.",
+        ERROR_CODES.VALIDATION_ERROR,
+      );
+    }
+
     job.invoiceUrl = invoiceUrl;
     return job.save();
   }
@@ -767,6 +813,15 @@ export class JobService {
     if (job.partnerId.toString() !== partner._id.toString()) {
       throw new UnauthorizedError(
         "You are not authorized to upload photos for this job",
+      );
+    }
+
+    const booking = await BookingModel.findById(job.bookingId);
+    if (!booking || booking.status === BOOKING_STATUS.CANCELLED || job.status === "CANCELLED") {
+      throw new ApiError(
+        400,
+        "Cannot upload photos: This booking has been cancelled.",
+        ERROR_CODES.VALIDATION_ERROR,
       );
     }
 
@@ -928,6 +983,14 @@ export class JobService {
     }
 
     const booking = await BookingModel.findById(job.bookingId);
+    if (!booking || booking.status === BOOKING_STATUS.CANCELLED || job.status === "CANCELLED") {
+      throw new ApiError(
+        400,
+        "Cannot request extra work: This booking has been cancelled.",
+        ERROR_CODES.VALIDATION_ERROR,
+      );
+    }
+
     let targetExtId: mongoose.Types.ObjectId;
 
     if (data.extensionId) {

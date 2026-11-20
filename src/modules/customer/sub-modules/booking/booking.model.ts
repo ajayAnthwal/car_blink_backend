@@ -17,7 +17,30 @@ export interface IBookingCancellationDetails {
   accountsProcessedAt?: Date;
 }
 
+export interface INotesWorkflowHistory {
+  actorId?: mongoose.Types.ObjectId;
+  actorRole: 'EXECUTIVE' | 'CUSTOMER' | 'ADMIN' | 'SUPER_ADMIN';
+  action: 'SENT_TO_CUSTOMER' | 'ACCEPTED_BY_CUSTOMER' | 'EDITED_BY_CUSTOMER' | 'VERIFIED_BY_EXECUTIVE' | 'RESENT_TO_CUSTOMER' | 'FORWARDED_TO_PARTNER';
+  noteText: string;
+  timestamp: Date;
+}
+
+export interface INotesWorkflow {
+  status: 'PENDING_CUSTOMER_REVIEW' | 'CUSTOMER_SUBMITTED' | 'EXECUTIVE_VERIFIED' | 'FORWARDED_TO_PARTNER';
+  currentNote: string;
+  originalExecutiveNote: string;
+  customerEditedNote?: string;
+  customerAction?: 'ACCEPTED' | 'EDITED';
+  customerRespondedAt?: Date;
+  verifiedAt?: Date;
+  forwardedAt?: Date;
+  lastReminderSentAt?: Date;
+  version: number;
+  history: INotesWorkflowHistory[];
+}
+
 export interface IBooking extends Document {
+  bookingNumber?: string;
   customerId: mongoose.Types.ObjectId;
   vehicleId: mongoose.Types.ObjectId;
   serviceId: mongoose.Types.ObjectId;
@@ -48,6 +71,7 @@ export interface IBooking extends Document {
   address?: string;
   landmark?: string;
   remarks?: string;
+  notesWorkflow?: INotesWorkflow;
   verificationCode?: string;
   isVerifiedByPartner?: boolean;
   verifiedAt?: Date;
@@ -224,6 +248,35 @@ const BookingSchema = new Schema<IBooking>(
     remarks: {
       type: String,
       trim: true,
+    },
+    notesWorkflow: {
+      type: {
+        status: {
+          type: String,
+          enum: ['PENDING_CUSTOMER_REVIEW', 'CUSTOMER_SUBMITTED', 'EXECUTIVE_VERIFIED', 'FORWARDED_TO_PARTNER'],
+          required: true,
+        },
+        currentNote: { type: String, trim: true, required: true },
+        originalExecutiveNote: { type: String, trim: true, required: true },
+        customerEditedNote: { type: String, trim: true },
+        customerAction: { type: String, enum: ['ACCEPTED', 'EDITED'] },
+        customerRespondedAt: { type: Date },
+        verifiedAt: { type: Date },
+        forwardedAt: { type: Date },
+        lastReminderSentAt: { type: Date },
+        version: { type: Number, default: 1 },
+        history: [
+          {
+            actorId: { type: Schema.Types.ObjectId, ref: 'User' },
+            actorRole: { type: String, required: true },
+            action: { type: String, required: true },
+            noteText: { type: String, trim: true, required: true },
+            timestamp: { type: Date, default: Date.now },
+          },
+        ],
+      },
+      _id: false,
+      required: false,
     },
     verificationCode: {
       type: String,

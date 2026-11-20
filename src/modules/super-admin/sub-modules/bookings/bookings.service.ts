@@ -188,30 +188,138 @@ export class SuperAdminBookingsService {
   }
 
   /**
-   * Force cancel a booking as super admin with audit log
+   * Force cancel a booking as super admin with audit log, cascading to active jobs
    */
   async cancelBooking(adminUserId: string, adminRole: string, bookingId: string, reason: string) {
-    const booking = await BookingModel.findById(bookingId);
-    if (!booking) {
+    const existing = await BookingModel.findById(bookingId);
+    if (!existing) {
       throw new NotFoundError('Booking not found');
     }
 
-    booking.status = BOOKING_STATUS.CANCELLED;
-    booking.cancellationReason = `Super Admin: ${reason || 'Cancelled by administration'}`;
-    await booking.save();
+    // Idempotent: if already cancelled, return existing state without duplicate side-effects
+    if (existing.status === BOOKING_STATUS.CANCELLED) {
+      return existing;
+    }
 
-    // Notify customer via DLT Cancellation SMS (Template 1561221)
+    const bookingStatusBefore = existing.status;
+    let jobStatusBefore: string | null = null;
+    let jobStatusAfter: string | null = null;
+    let updatedBooking: any;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const booking = await BookingModel.findById(bookingId).session(session);
+      if (!booking) {
+        throw new NotFoundError('Booking not found');
+      }
+
+      booking.status = BOOKING_STATUS.CANCELLED;
+      booking.cancellationReason = `Super Admin: ${reason || 'Cancelled by administration'}`;
+      await booking.save({ session });
+
+      const existingJob = await JobModel.findOne({ bookingId: booking._id }).session(session);
+      if (existingJob) {
+        jobStatusBefore = existingJob.status;
+        if (existingJob.status !== 'COMPLETED') {
+          existingJob.status = 'CANCELLED';
+          await existingJob.save({ session });
+          jobStatusAfter = 'CANCELLED';
+        } else {
+          jobStatusAfter = 'COMPLETED';
+        }
+      }
+
+      await session.commitTransaction();
+      updatedBooking = booking;
+    } catch (txErr) {
+      await session.abortTransaction();
+      throw txErr;
+    } finally {
+      await session.endSession();
+    }
+
+    // Notify customer via DLT Cancellation SMS (Template 1561221) - existing behavior unchanged
     try {
       const { UserModel } = require('../../../user/user.model');
-      const custUser = await UserModel.findById(booking.customerId);
+      const custUser = await UserModel.findById(updatedBooking.customerId);
       if (custUser && custUser.phone) {
         const { smsProvider } = require('../../../notification/providers/sms.provider');
-        smsProvider.sendBookingCancelled(custUser.phone, booking._id.toString()).catch(() => {});
+        smsProvider.sendBookingCancelled(custUser.phone, updatedBooking._id.toString()).catch(() => {});
       }
     } catch (smsErr) {
       console.warn('Failed to send cancellation SMS to customer:', smsErr);
     }
 
+    // Partner In-App Notification and Sockets (In-App only, NO WhatsApp or SMS)
+    try {
+      const { AssignmentModel } = require('../../../executive/sub-modules/lead-assignment/assignment.model');
+      const { NotificationModel, NOTIFICATION_TYPE, NOTIFICATION_CATEGORY } = require('../../../notification/notification.model');
+      const { emitToUser, emitToRole } = require('../../../../sockets');
+
+      const partnerIdsToNotify = new Set<string>();
+      if (updatedBooking.assignedPartnerId) {
+        partnerIdsToNotify.add(updatedBooking.assignedPartnerId.toString());
+      }
+      const assignment = await AssignmentModel.findOne({ bookingId: updatedBooking._id });
+      if (assignment && Array.isArray(assignment.assignedPartnerIds)) {
+        for (const pId of assignment.assignedPartnerIds) {
+          if (pId) partnerIdsToNotify.add(pId.toString());
+        }
+      }
+
+      if (partnerIdsToNotify.size > 0) {
+        const partners = await PartnerModel.find({ _id: { $in: Array.from(partnerIdsToNotify) } });
+        for (const partner of partners) {
+          if (partner && partner.userId) {
+            // In-app notification
+            await NotificationModel.create({
+              userId: partner.userId,
+              type: NOTIFICATION_TYPE.IN_APP,
+              category: NOTIFICATION_CATEGORY.BOOKING_UPDATE,
+              title: 'Booking Cancelled by Administration',
+              message: `Booking #${(updatedBooking as any).bookingNumber || updatedBooking._id.toString().slice(-6).toUpperCase()} has been cancelled by administration. Reason: ${reason || 'Cancelled by administration'}.`,
+              status: 'SENT',
+              metadata: { bookingId: updatedBooking._id.toString(), status: 'CANCELLED' },
+              isRead: false,
+            });
+
+            // Sockets to partner
+            emitToUser(partner.userId.toString(), 'job_cancelled', {
+              bookingId: updatedBooking._id.toString(),
+              status: 'CANCELLED',
+              reason: reason || 'Cancelled by administration',
+            });
+            emitToUser(partner.userId.toString(), 'booking_cancelled', {
+              bookingId: updatedBooking._id.toString(),
+              status: 'CANCELLED',
+              reason: reason || 'Cancelled by administration',
+            });
+          }
+        }
+      }
+
+      // Also emit to Customer and Executive rooms
+      if (updatedBooking.customerId) {
+        emitToUser(updatedBooking.customerId.toString(), 'booking_updated', {
+          bookingId: updatedBooking._id.toString(),
+          status: BOOKING_STATUS.CANCELLED,
+        });
+      }
+      emitToRole('EXECUTIVE', 'booking_cancelled', {
+        bookingId: updatedBooking._id.toString(),
+        status: BOOKING_STATUS.CANCELLED,
+      });
+      emitToRole('SUPER_ADMIN', 'booking_cancelled', {
+        bookingId: updatedBooking._id.toString(),
+        status: BOOKING_STATUS.CANCELLED,
+      });
+    } catch (notifErr) {
+      console.warn('Failed to send cancellation notification/sockets to partner:', notifErr);
+    }
+
+    // Audit log with before and after statuses
     try {
       const AuditLog = require('../audit-logs/audit-log.model').default;
       await AuditLog.create({
@@ -223,6 +331,10 @@ export class SuperAdminBookingsService {
         payload: {
           bookingId,
           reason: reason || 'Cancelled by administration',
+          bookingStatusBefore,
+          bookingStatusAfter: BOOKING_STATUS.CANCELLED,
+          jobStatusBefore,
+          jobStatusAfter,
         },
         status: 'SUCCESS',
       });
@@ -230,7 +342,7 @@ export class SuperAdminBookingsService {
       console.error('Audit Log Error:', auditErr);
     }
 
-    return booking;
+    return updatedBooking;
   }
 
   /**
