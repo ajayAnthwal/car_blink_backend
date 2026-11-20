@@ -483,7 +483,7 @@ export class NotesWorkflowService {
     }
     if (
       !booking.notesWorkflow ||
-      !['CUSTOMER_SUBMITTED', 'EXECUTIVE_VERIFIED', 'FORWARDED_TO_PARTNER'].includes(booking.notesWorkflow.status)
+      !['PENDING_CUSTOMER_REVIEW', 'CUSTOMER_SUBMITTED', 'EXECUTIVE_VERIFIED', 'FORWARDED_TO_PARTNER'].includes(booking.notesWorkflow.status)
     ) {
       throw new BadRequestError(`Note cannot be resent in current state (${booking.notesWorkflow?.status || 'NONE'}).`);
     }
