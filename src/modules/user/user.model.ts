@@ -27,6 +27,10 @@ export interface IUser extends Document {
   state?: string;
   address?: string;
   referralCode?: string;
+  termsAcceptedAt?: Date;
+  termsVersion?: string;
+  termsAcceptedIp?: string;
+  termsAcceptedUserAgent?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -58,7 +62,11 @@ const userSchema = new Schema<IUser>(
     cityId: { type: Schema.Types.ObjectId, ref: 'City' },
     state: { type: String, trim: true },
     address: { type: String },
-    referralCode: { type: String, unique: true, sparse: true }
+    referralCode: { type: String, unique: true, sparse: true },
+    termsAcceptedAt: { type: Date },
+    termsVersion: { type: String, trim: true },
+    termsAcceptedIp: { type: String },
+    termsAcceptedUserAgent: { type: String }
   },
   {
     timestamps: true,

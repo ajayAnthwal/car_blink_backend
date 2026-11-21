@@ -25,6 +25,7 @@ router.post('/bookings/:id/satisfaction/send', roleMiddleware([ROLES.CUSTOMER, R
 router.use(roleMiddleware([ROLES.CUSTOMER]) as any);
 
 router.get('/stats', CustomerController.getCustomerStats);
+router.post('/terms/accept', CustomerController.acceptTerms);
 
 router.use('/garage', garageRouter);
 router.use('/bookings', bookingRouter);

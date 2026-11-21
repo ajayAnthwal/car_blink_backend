@@ -714,7 +714,13 @@ export class AuthService {
 
     const userObj: any = user.toObject();
     delete userObj.password;
+    delete userObj.securityPin;
     userObj.hasCustomPassword = hasCustomPassword;
+    userObj.isTermsAccepted = Boolean(user.termsAcceptedAt && user.termsVersion);
+    userObj.termsAcceptedAt = user.termsAcceptedAt || null;
+    userObj.termsVersion = user.termsVersion || null;
+    delete userObj.termsAcceptedIp;
+    delete userObj.termsAcceptedUserAgent;
     await AuthService.populatePartnerDetails(userObj, user._id);
 
     return userObj;
